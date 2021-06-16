@@ -1,0 +1,1 @@
+Illuminated control panel from Eduardo's electrical room. SURF-only signature derived from a single, fronto-parallel view (270). The source is unblurred--BUT we have masked out the illuminated display because it can change. Let's see how well pose estimation performs without it.
