@@ -1,0 +1,173 @@
+#  Objects subject to an IGNORE rule are ignored completely.
+#  Objects subject to a PERMIT rule are included in the *_subprops.txt file to be used later but are
+#                                   understood to be singletons: they have no components or parts.
+#  Objects subject to a DEFINE rule read as follows: DEFINE <A> <B> ==> <A> is an instance of <B>
+#                                                    Note that <B> may not be a "real" type; it may be an intermediate subject to a COND.
+#  Objects subject to a COLLECT rule read as follows: COLLECT <A_0> AS <l_0>... <A_n> AS <l_n> <B> ==> <A_0> through <A_n> make up a single instance of <B>
+#                                                     Throughout, refer to <A_i> as <l_i>.
+#                                                     Note that this is how we invent labels that do not otherwise exist.
+#  Objects subject to a COND rule read as follows: COND <A> <B> <C> <D> <type> X ==> An instance of <A> is an instance <B>
+#                                                                                    if component <C> has attribute <D> == X of <type>
+IGNORE	Head
+IGNORE	Environment
+
+PERMIT	LeftHand
+PERMIT	RightHand
+
+DEFINE	Global_ArcHelmet_Global	ArcHelmet
+DEFINE	Global_FixedLabel_4007	FixedLabel
+DEFINE	Global_FixedLabel_Spare	FixedLabel
+DEFINE	Global_Flashlight_Global	Flashlight
+DEFINE	Global_SubstationTag_Red	RedTag
+DEFINE	Global_SubstationTag_Red2	RedTag
+DEFINE	Global_SubstationTag_White	WhiteTag
+DEFINE	Global_SubstationTag_White2	WhiteTag
+DEFINE	Global_SubstationTag_Yellow	YellowTag
+DEFINE	Global_SubstationTag_Yellow2	YellowTag
+DEFINE	Global_SwitchStick_Global	SwitchStick
+DEFINE	Global_Tritector_Global	Tritector
+DEFINE	Global_Voltmeter_Global	Voltmeter
+
+DEFINE	Spare_AuxiliaryFeederBox_Auxiliary	AuxiliaryFeederBox
+DEFINE	Spare_BackBreaker_Spare	BackBreaker
+DEFINE	Spare_ControlPanel_Main	ControlPanel
+DEFINE	Spare_FrontBreaker_Spare	FrontBreaker
+DEFINE	Spare_MainFeederBox_Main	MainFeederBox
+DEFINE	Spare_Regulator_A	Regulator
+DEFINE	Spare_Regulator_B	Regulator
+DEFINE	Spare_Regulator_C	Regulator
+DEFINE	Spare_TransferFeederBox_Transfer	TransferFeederBox
+
+DEFINE	Target1_AuxiliaryFeederBox_Auxiliary	AuxiliaryFeederBox
+DEFINE	Target1_BackBreaker_4007	BackBreaker
+DEFINE	Target1_ControlPanel_Main	ControlPanel
+DEFINE	Target1_FrontBreaker_4007	FrontBreaker
+DEFINE	Target1_MainFeederBox_Main	MainFeederBox
+DEFINE	Target1_Regulator_A	Regulator
+DEFINE	Target1_Regulator_B	Regulator
+DEFINE	Target1_Regulator_C	Regulator
+DEFINE	Target1_TransferFeederBox_Transfer	TransferFeederBox
+
+DEFINE	Target2_AuxiliaryFeederBox_Auxiliary	AuxiliaryFeederBox
+DEFINE	Target2_BackBreaker_4007	BackBreaker
+DEFINE	Target2_ControlPanel_Main	ControlPanel
+DEFINE	Target2_FrontBreaker_4007	FrontBreaker
+DEFINE	Target2_MainFeederBox_Main	MainFeederBox
+DEFINE	Target2_Regulator_A	Regulator
+DEFINE	Target2_Regulator_B	Regulator
+DEFINE	Target2_Regulator_C	Regulator
+DEFINE	Target2_TransferFeederBox_Transfer	TransferFeederBox
+
+COLLECT	Spare_AuxiliaryFeederBox_Auxiliary.Connector1	AS	Contact	Spare_AuxiliaryFeederBox_Auxiliary.Jaw1	AS	Jaw	Disconnect1
+COLLECT	Spare_AuxiliaryFeederBox_Auxiliary.Connector2	AS	Contact	Spare_AuxiliaryFeederBox_Auxiliary.Jaw2	AS	Jaw	Disconnect2
+COLLECT	Spare_AuxiliaryFeederBox_Auxiliary.Connector3	AS	Contact	Spare_AuxiliaryFeederBox_Auxiliary.Jaw3	AS	Jaw	Disconnect3
+
+COLLECT	Spare_MainFeederBox_Main.Connector1	AS	Contact	Spare_MainFeederBox_Main.Jaw1	AS	Jaw	Disconnect4
+COLLECT	Spare_MainFeederBox_Main.Connector2	AS	Contact	Spare_MainFeederBox_Main.Jaw2	AS	Jaw	Disconnect5
+COLLECT	Spare_MainFeederBox_Main.Connector3	AS	Contact	Spare_MainFeederBox_Main.Jaw3	AS	Jaw	Disconnect6
+
+COLLECT	Spare_TransferFeederBox_Transfer.Connector1	AS	Contact	Spare_TransferFeederBox_Transfer.Jaw1	AS	Jaw	Disconnect7
+COLLECT	Spare_TransferFeederBox_Transfer.Connector2	AS	Contact	Spare_TransferFeederBox_Transfer.Jaw2	AS	Jaw	Disconnect8
+COLLECT	Spare_TransferFeederBox_Transfer.Connector3	AS	Contact	Spare_TransferFeederBox_Transfer.Jaw3	AS	Jaw	Disconnect9
+COLLECT	Spare_TransferFeederBox_Transfer.Connector4	AS	Contact	Spare_TransferFeederBox_Transfer.Jaw4	AS	Jaw	Disconnect10
+COLLECT	Spare_TransferFeederBox_Transfer.Connector5	AS	Contact	Spare_TransferFeederBox_Transfer.Jaw5	AS	Jaw	Disconnect11
+COLLECT	Spare_TransferFeederBox_Transfer.Connector6	AS	Contact	Spare_TransferFeederBox_Transfer.Jaw6	AS	Jaw	Disconnect12
+
+COLLECT	Target1_AuxiliaryFeederBox_Auxiliary.Connector1	AS	Contact	Target1_AuxiliaryFeederBox_Auxiliary.Jaw1	AS	Jaw	Disconnect13
+COLLECT	Target1_AuxiliaryFeederBox_Auxiliary.Connector2	AS	Contact	Target1_AuxiliaryFeederBox_Auxiliary.Jaw2	AS	Jaw	Disconnect14
+COLLECT	Target1_AuxiliaryFeederBox_Auxiliary.Connector3	AS	Contact	Target1_AuxiliaryFeederBox_Auxiliary.Jaw3	AS	Jaw	Disconnect15
+
+COLLECT	Target1_MainFeederBox_Main.Connector1	AS	Contact	Target1_MainFeederBox_Main.Jaw1	AS	Jaw	Disconnect16
+COLLECT	Target1_MainFeederBox_Main.Connector2	AS	Contact	Target1_MainFeederBox_Main.Jaw2	AS	Jaw	Disconnect17
+COLLECT	Target1_MainFeederBox_Main.Connector3	AS	Contact	Target1_MainFeederBox_Main.Jaw3	AS	Jaw	Disconnect18
+
+COLLECT	Target1_TransferFeederBox_Transfer.Connector1	AS	Contact	Target1_TransferFeederBox_Transfer.Jaw1	AS	Jaw	Disconnect19
+COLLECT	Target1_TransferFeederBox_Transfer.Connector2	AS	Contact	Target1_TransferFeederBox_Transfer.Jaw2	AS	Jaw	Disconnect20
+COLLECT	Target1_TransferFeederBox_Transfer.Connector3	AS	Contact	Target1_TransferFeederBox_Transfer.Jaw3	AS	Jaw	Disconnect21
+COLLECT	Target1_TransferFeederBox_Transfer.Connector4	AS	Contact	Target1_TransferFeederBox_Transfer.Jaw4	AS	Jaw	Disconnect22
+COLLECT	Target1_TransferFeederBox_Transfer.Connector5	AS	Contact	Target1_TransferFeederBox_Transfer.Jaw5	AS	Jaw	Disconnect23
+COLLECT	Target1_TransferFeederBox_Transfer.Connector6	AS	Contact	Target1_TransferFeederBox_Transfer.Jaw6	AS	Jaw	Disconnect24
+
+COLLECT	Target2_AuxiliaryFeederBox_Auxiliary.Connector1	AS	Contact	Target2_AuxiliaryFeederBox_Auxiliary.Jaw1	AS	Jaw	Disconnect25
+COLLECT	Target2_AuxiliaryFeederBox_Auxiliary.Connector2	AS	Contact	Target2_AuxiliaryFeederBox_Auxiliary.Jaw2	AS	Jaw	Disconnect26
+COLLECT	Target2_AuxiliaryFeederBox_Auxiliary.Connector3	AS	Contact	Target2_AuxiliaryFeederBox_Auxiliary.Jaw3	AS	Jaw	Disconnect27
+
+COLLECT	Target2_MainFeederBox_Main.Connector1	AS	Contact	Target2_MainFeederBox_Main.Jaw1	AS	Jaw	Disconnect28
+COLLECT	Target2_MainFeederBox_Main.Connector2	AS	Contact	Target2_MainFeederBox_Main.Jaw2	AS	Jaw	Disconnect29
+COLLECT	Target2_MainFeederBox_Main.Connector3	AS	Contact	Target2_MainFeederBox_Main.Jaw3	AS	Jaw	Disconnect30
+
+COLLECT	Target2_TransferFeederBox_Transfer.Connector1	AS	Contact	Target2_TransferFeederBox_Transfer.Jaw1	AS	Jaw	Disconnect31
+COLLECT	Target2_TransferFeederBox_Transfer.Connector2	AS	Contact	Target2_TransferFeederBox_Transfer.Jaw2	AS	Jaw	Disconnect32
+COLLECT	Target2_TransferFeederBox_Transfer.Connector3	AS	Contact	Target2_TransferFeederBox_Transfer.Jaw3	AS	Jaw	Disconnect33
+COLLECT	Target2_TransferFeederBox_Transfer.Connector4	AS	Contact	Target2_TransferFeederBox_Transfer.Jaw4	AS	Jaw	Disconnect34
+COLLECT	Target2_TransferFeederBox_Transfer.Connector5	AS	Contact	Target2_TransferFeederBox_Transfer.Jaw5	AS	Jaw	Disconnect35
+COLLECT	Target2_TransferFeederBox_Transfer.Connector6	AS	Contact	Target2_TransferFeederBox_Transfer.Jaw6	AS	Jaw	Disconnect36
+
+DEFINE	Disconnect1	Disconnect
+DEFINE	Disconnect2	Disconnect
+DEFINE	Disconnect3	Disconnect
+DEFINE	Disconnect4	Disconnect
+DEFINE	Disconnect5	Disconnect
+DEFINE	Disconnect6	Disconnect
+DEFINE	Disconnect7	Disconnect
+DEFINE	Disconnect8	Disconnect
+DEFINE	Disconnect9	Disconnect
+DEFINE	Disconnect10	Disconnect
+DEFINE	Disconnect11	Disconnect
+DEFINE	Disconnect12	Disconnect
+DEFINE	Disconnect13	Disconnect
+DEFINE	Disconnect14	Disconnect
+DEFINE	Disconnect15	Disconnect
+DEFINE	Disconnect16	Disconnect
+DEFINE	Disconnect17	Disconnect
+DEFINE	Disconnect18	Disconnect
+DEFINE	Disconnect19	Disconnect
+DEFINE	Disconnect20	Disconnect
+DEFINE	Disconnect21	Disconnect
+DEFINE	Disconnect22	Disconnect
+DEFINE	Disconnect23	Disconnect
+DEFINE	Disconnect24	Disconnect
+DEFINE	Disconnect25	Disconnect
+DEFINE	Disconnect26	Disconnect
+DEFINE	Disconnect27	Disconnect
+DEFINE	Disconnect28	Disconnect
+DEFINE	Disconnect29	Disconnect
+DEFINE	Disconnect30	Disconnect
+DEFINE	Disconnect31	Disconnect
+DEFINE	Disconnect32	Disconnect
+DEFINE	Disconnect33	Disconnect
+DEFINE	Disconnect34	Disconnect
+DEFINE	Disconnect35	Disconnect
+DEFINE	Disconnect36	Disconnect
+
+DEFINE	Spare_TransferFeederBox_Transfer.SafetyPlank	SafetyPlank
+DEFINE	Target1_TransferFeederBox_Transfer.SafetyPlank	SafetyPlank
+DEFINE	Target2_TransferFeederBox_Transfer.SafetyPlank	SafetyPlank
+
+COND	AuxiliaryFeederBox	AuxiliaryFeederBox_Closed	Door	hingeStatus	int	0
+COND	AuxiliaryFeederBox	AuxiliaryFeederBox_Open	Door	hingeStatus	int	1
+COND	AuxiliaryFeederBox	AuxiliaryFeederBox_Unknown	Door	hingeStatus	int	2
+
+COND	BackBreaker	BackBreaker_Closed	Door	hingeStatus	int	0
+COND	BackBreaker	BackBreaker_Open	Door	hingeStatus	int	1
+COND	BackBreaker	BackBreaker_Unknown	Door	hingeStatus	int	2
+
+COND	MainFeederBox	MainFeederBox_Closed	Door	hingeStatus	int	0
+COND	MainFeederBox	MainFeederBox_Open	Door	hingeStatus	int	1
+COND	MainFeederBox	MainFeederBox_Unknown	Door	hingeStatus	int	2
+
+COND	Regulator	Regulator_Closed	Door	hingeStatus	int	0
+COND	Regulator	Regulator_Open	Door	hingeStatus	int	1
+COND	Regulator	Regulator_Unknown	Door	hingeStatus	int	2
+
+COND	TransferFeederBox	TransferFeederBox_Closed	Door	hingeStatus	int	0
+COND	TransferFeederBox	TransferFeederBox_Open	Door	hingeStatus	int	1
+COND	TransferFeederBox	TransferFeederBox_Unknown	Door	hingeStatus	int	2
+
+COND	SafetyPlank	SafetyPlank_Closed	*	hingeStatus	int	0
+COND	SafetyPlank	SafetyPlank_Open	*	hingeStatus	int	1
+COND	SafetyPlank	SafetyPlank_Unknown	*	hingeStatus	int	2
+
+COND	Disconnect	Disconnect_Closed	Jaw	hingeStatus	int	1
+COND	Disconnect	Disconnect_Open	Jaw	hingeStatus	int	0
+COND	Disconnect	Disconnect_Unknown	Jaw	hingeStatus	int	2
