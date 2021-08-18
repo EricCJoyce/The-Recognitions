@@ -6,9 +6,9 @@ This repository contains the modules of a pipeline. The primordial inputs are la
 
 ## Requirements
 
-Python
-OpenCV
-R
-TensorFlow
-Keras
-Mask-RCNN
+### Python
+### OpenCV
+### R
+### TensorFlow
+### Keras
+### Mask-RCNN
