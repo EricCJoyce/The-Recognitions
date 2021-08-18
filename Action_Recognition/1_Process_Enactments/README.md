@@ -20,7 +20,7 @@ Enactments must have the expected structure:
     |                     |--- /ColorMapCameraFrames
     |                     |--- /DepthMapCameraFrames
     |                     `--- /NormalViewCameraFrames
-    `--- Labels.fvr
+    |--- Labels.fvr
     `--- metadata.fvr
 ```
 
