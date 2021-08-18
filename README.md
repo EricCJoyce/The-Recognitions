@@ -1,7 +1,9 @@
 # The Recognitions
 
-## Characterize 3D objects for recognition and pose estimation from 2D images
+## Recognize 3D objects in 2D images
 
 T.B.C.
 
-## Requirements
+## Recognize first-person actions performed by a user in VR
+
+T.B.C.
