@@ -1,6 +1,6 @@
-# The Recognitions
+# Action Recognition
 
-## Characterize 3D objects for recognition and pose estimation from 2D images
+## Build a first-person action classification system from VR enactments
 
 T.B.C.
 
