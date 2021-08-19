@@ -4,11 +4,14 @@ The deployed classifier will have an on-board database of action snippets. A rea
 
 ## Inputs
 
+One or more `*.enactment` files from the same detection source, that is from ground-truth or from a trained network.
 
 ## Outputs
 
+A human-readable `*.db` database file. (For deployment, you may want to re-write this as a binary file.)
 
 ## Requirements
-
-### Python
-### R
+- Python
+- MatPlotLib
+- SciKit-Learn
+- R
