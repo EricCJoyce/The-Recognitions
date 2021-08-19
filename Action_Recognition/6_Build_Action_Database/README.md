@@ -13,5 +13,6 @@ A human-readable `*.db` database file. (For deployment, you may want to re-write
 ## Requirements
 - Python
 - MatPlotLib
+- NumPy
 - SciKit-Learn
 - R
