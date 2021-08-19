@@ -4,15 +4,7 @@ from sklearn.isotonic import IsotonicRegression
 import sys
 
 def main():
-	if len(sys.argv) > 1:
-		flag = sys.argv[1]
-	else:
-		flag = 'winners'
-
-	if flag == 'all':
-		fh = open('conf-pred-gt-all.txt', 'r')
-	else:
-		fh = open('conf-pred-gt.txt', 'r')
+	fh = open(sys.argv[1], 'r')
 	lines = fh.readlines()
 	fh.close()
 
@@ -44,7 +36,7 @@ def main():
 	plt.plot(X, pred_y, 'bo')
 	plt.xlabel('Confidence')
 	plt.ylabel('Probability')
-	if flag == 'all':
+	if 'all' in sys.argv[1]:
 		plt.savefig('isoreg-ALL.png')
 	else:
 		plt.savefig('isoreg.png')
@@ -67,7 +59,7 @@ def main():
 			buckets[pred_y[i]]['min'] = min(buckets[pred_y[i]]['min'], X[i])
 			buckets[pred_y[i]]['max'] = max(buckets[pred_y[i]]['max'], X[i + 1])
 
-	if flag == 'all':
+	if 'all' in sys.argv[1]:
 		fh = open('isoreg-ALL.txt', 'w')
 	else:
 		fh = open('isoreg.txt', 'w')
