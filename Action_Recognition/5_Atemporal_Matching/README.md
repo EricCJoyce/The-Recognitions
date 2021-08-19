@@ -15,5 +15,6 @@ This script is used mainly for reporting classification performance under ideal 
 Notice that at this point in the pipeline, we have abstracted classification away from using actual enactment video frames. We will re-introduce video input when we proceed to real-time classification.
 - Python
 - MatPlotLib
+- NumPy
 - SciKit-Learn
 - R
