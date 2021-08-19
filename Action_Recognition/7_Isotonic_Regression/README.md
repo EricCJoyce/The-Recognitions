@@ -17,4 +17,5 @@ A human-readable file `isoreg.txt` or `isoreg-ALL.txt` depending on which of the
 ## Requirements
 - Python
 - MatPlotLib
+- NumPy
 - Sci-Kit Learn
