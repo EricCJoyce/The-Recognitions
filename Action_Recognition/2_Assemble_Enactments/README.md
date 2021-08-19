@@ -59,5 +59,6 @@ From each target enactment, this script produces an `*.enactment` file.
 
 ## Requirements
 - Python
-- OpenCV
 - MatPlotLib
+- NumPy
+- OpenCV
