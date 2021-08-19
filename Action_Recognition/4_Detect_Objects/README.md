@@ -31,13 +31,36 @@ This is the deep-learning version of module 1. Rather than use color-maps and ob
 
 ## Outputs
 
+```
+./EnactmentName
+    |
+    |--- /gt
+    |--- /<network-name>  <--- This folder will be created and filled with detection masks
+    |--- /Props
+    |--- /Subprops
+    |--- /Users
+    |      |
+    |      `--- /UserName
+    |              |
+    |              |--- Head.fvr
+    |              |--- LeftHand.fvr
+    |              |--- RightHand.fvr
+    |              `--- /POV
+    |                     |
+    |                     |--- CameraIntrinsics.fvr
+    |                     |--- SubpropColorMap.fvr
+    |                     |--- /ColorMapCameraFrames
+    |                     |--- /DepthMapCameraFrames
+    |                     `--- /NormalViewCameraFrames
+    |--- Labels.fvr
+    `--- metadata.fvr
+```
 
-
-### 
+The created file `*_<network-name>_detections.txt` provides indices into the directory `EnactmentName/<network-name>`.
 
 ## Requirements
-### Python
-### OpenCV
-### TensorFlow
-### Keras
-### Mask-RCNN
+- Python
+- OpenCV
+- TensorFlow
+- Keras
+- Mask-RCNN
