@@ -1,0 +1,76 @@
+#  In order to consider A we must have non-zero elements for B and/or C and/or ...
+#  To consider A, we must have non-zeros for B or C
+#  A  <tab>  OR  <tab>  B  <tab>  C
+#  To consider A, we must have non-zeros for B and C
+#  A  <tab>  AND  <tab>  B  <tab>  C
+#  Singleton conditions can be either
+#
+#  This file contains conditions for all actions, of all durations
+#  Read (Control Panel)    11.0
+#  Ungrab (R.Tag)          14.4
+#  Hang (R.Tag)            14.5
+#  Ungrab (Tritector)      15.764705882352942
+#  Ungrab (S.Stick)        16.25
+#  Ungrab (Flash light)    16.428571428571427
+#  Unwear (Arcsuit)        16.846153846153847
+#  Ungrab (Arcsuit)        17.0
+#  Grab (S.Stick)          17.272727272727273
+#  Ungrab (Y.Tag)          17.733333333333334
+#  Grab (Tritector)        18.235294117647058
+#  Grab (Arcsuit)          18.5
+#  Hang (Meter)            19.0
+#  Grab (Flash light)      19.285714285714285
+#  Grab (Y.Tag)            19.413793103448278
+#  Test (Disconnect)       19.5
+#  Grab (R.Tag)            19.571428571428573
+#  Push (Control Panel)    19.79310344827586
+#  Goto (Meter)            20.0
+#  Ungrab (Meter)          20.058823529411764
+#  Grab (Meter)            20.94736842105263
+#  Wear (Arcsuit)          21.53846153846154
+#  Hang (Y.Tag)            21.714285714285715
+#  Test (Tritector)        26.416666666666668
+#  Work (Reg)              26.911392405063292
+#  Close Door (MFB)        28.285714285714285
+#  Close Door (Reg)        31.636363636363637
+#  Open Door (Reg)         33.30769230769231
+#  Close Door (BB)         33.84615384615385
+#  Open Door (BB)          34.30769230769231
+#  Close Safety (TFB)      34.666666666666664
+#  Open Door (MFB)         36.285714285714285
+#  Close Disconnect (MFB)  40.30769230769231
+#  Open Safety (TFB)       41.666666666666664
+#  Open Disconnect (MFB)   56.07692307692308
+#
+Close Disconnect (MFB)	AND	MainFeederBox_Open
+Close Door (BB)	OR	BackBreaker_Closed	BackBreaker_Open	BackBreaker_Unknown
+Close Door (MFB)	OR	MainFeederBox_Closed	MainFeederBox_Open	MainFeederBox_Unknown
+Close Door (Reg)	OR	Regulator_Closed	Regulator_Open	Regulator_Unknown
+Grab (Arcsuit)	AND	ArcHelmet
+Grab (Flash light)	AND	Flashlight
+Grab (Meter)	AND	Voltmeter
+Grab (R.Tag)	AND RedTag
+Grab (S.Stick)	AND	SwitchStick
+Grab (Tritector)	AND	Tritector
+Grab (Y.Tag)	AND	YellowTag
+Hang (Meter)	AND	Voltmeter
+Hang (R.Tag)	AND	RedTag
+Hang (Y.Tag)	AND	YellowTag
+Open Disconnect (MFB)	AND	MainFeederBox_Open
+Open Door (BB)	OR	BackBreaker_Closed	BackBreaker_Open	BackBreaker_Unknown
+Open Door (MFB)	OR	MainFeederBox_Closed	MainFeederBox_Open	MainFeederBox_Unknown
+Open Door (Reg)	OR	Regulator_Closed	Regulator_Open	Regulator_Unknown
+Push (Control Panel)	AND	ControlPanel
+Read (Control Panel)	AND	ControlPanel
+Test (Disconnect)	AND Tritector
+Test (Tritector)	AND Tritector
+Ungrab (Arcsuit)	AND	ArcHelmet
+Ungrab (Flash light)	AND	Flashlight
+Ungrab (Meter)	AND	Voltmeter
+Ungrab (R.Tag)	AND	RedTag
+Ungrab (S.Stick)	AND	SwitchStick
+Ungrab (Tritector)	AND	Tritector
+Ungrab (Y.Tag)	AND	YellowTag
+Unwear (Arcsuit)	AND	ArcHelmet
+Wear (Arcsuit)	AND	ArcHelmet
+Work (Reg)	AND	Regulator_Open
