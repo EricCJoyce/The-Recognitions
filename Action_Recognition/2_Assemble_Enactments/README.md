@@ -32,7 +32,7 @@ To a degree, an `*.enactment` file is an interpretation of those facts. Objects 
     `--- metadata.fvr
 ```
 
-### For each enactment, the files created by module 1:
+### For each enactment, the files created by module 1...
 ```
 *_groundtruth.txt
 *_IKposes.bbox.shutoff.txt
@@ -43,13 +43,21 @@ To a degree, an `*.enactment` file is an interpretation of those facts. Objects 
 *_subprops.txt
 ```
 
+### ...or the files created by module 4:
+```
+*_<network-name>_detections.txt
+*_IKposes.bbox.shutoff.txt
+*_IKposes.cntr.shutoff.txt
+*_poses.full.txt
+*_poses.head.txt
+*_poses.shutoff.txt
+```
+
 ## Outputs
 
 From each target enactment, this script produces an `*.enactment` file.
 
-### 
-
 ## Requirements
-### Python
-### OpenCV
-### MatPlotLib
+- Python
+- OpenCV
+- MatPlotLib
