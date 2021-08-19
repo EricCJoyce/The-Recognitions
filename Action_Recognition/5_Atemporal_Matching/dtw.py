@@ -457,8 +457,8 @@ def main():
 
 			dist = alignment.rx('normalizedDistance')[0][0]			#  (Normalized) cost of matching this query to this template
 																	#  Save sequences of aligned frames (we might render them side by side)
-			templateIndices = list(np.array(alignment.rx('index1s'), dtype=np.uint64)[0])
-			queryIndices = list(np.array(alignment.rx('index2s'), dtype=np.uint64)[0])
+			templateIndices = [int(x) for x in list(alignment.rx('index1s')[0])]
+			queryIndices = [int(x) for x in list(alignment.rx('index2s')[0])]
 
 			if len(distances[ labels[ y_train[i] ] ]) == 0:			#  Add this (dist, index, T_Idx, Q_Idx) tuple to list of distances for this label
 				distances[ labels[ y_train[i] ] ].append( (dist, i, templateIndices, queryIndices) )
