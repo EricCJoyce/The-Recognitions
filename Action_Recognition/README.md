@@ -23,7 +23,6 @@ This repository contains the modules of a pipeline. The primordial inputs are la
  V       V       V
 [6]     [8]     [7]
  |       |       |
- |       |       |
  +-------+-------+
          |
          V
