@@ -60,7 +60,8 @@ The created file `*_<network-name>_detections.txt` provides indices into the dir
 
 ## Requirements
 - Python
-- OpenCV
-- TensorFlow
 - Keras
 - Mask-RCNN
+- NumPy
+- OpenCV
+- TensorFlow
