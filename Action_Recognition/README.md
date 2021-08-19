@@ -118,7 +118,7 @@ Install multivariate dynamic time-warping:
 install.packages("dtw")
 ```
 
-Quit R. (No need to same the work environment, so enter `n` when asked.)
+Quit R. (No need to save the workspace image, so enter `n` when asked.)
 ```
 q()
 ```
