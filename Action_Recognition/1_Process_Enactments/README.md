@@ -53,6 +53,12 @@ This script also adds a folder, `gt`, to each enactment's directory. Inside this
 
 If you enable rendering when you call `process_enactment.py`, additionally expect for each enactment:
 ```
+*.actions.global.ply
+*.actions.headframe.ply
+*.IK.avg.ply
+*.IK.bbox.ply
+*.IK.skeleton.global.ply
+*.IK.skeleton.headframe.ply
 *_annotated.avi
 *_annotated-avg.avi
 *_annotated-bbox.avi
@@ -67,6 +73,6 @@ We can use this information both to train a neural network and to create an `.en
 ### 
 
 ## Requirements
-### Python
-### OpenCV
-### MatPlotLib
+- Python
+- OpenCV
+- MatPlotLib
