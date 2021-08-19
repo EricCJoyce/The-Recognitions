@@ -4,6 +4,31 @@
 
 This repository contains the modules of a pipeline. The primordial inputs are labeled recordings of actions performed in a virtual environment. The primary output is a real-time action classification system, though there are several intermediate products and by-products on the way to developing this classifier.
 
+## Roadmap
+
+```
+[1]
+ |
+ |----->[3]
+ |       |
+ V       V
+[2]<----[4]
+ |
+ |----->[5]------+
+ |               |
+ |               V
+ |-------+-------|
+ |       |       |
+ V       V       V
+[6]     [8]     [7]
+ |       |       |
+ |       |       |
+ +-------+-------+
+         |
+         V
+        [9]
+```
+
 ## Requirements
 
 ### [Python](https://www.python.org/)
