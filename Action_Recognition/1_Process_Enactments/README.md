@@ -49,6 +49,8 @@ For each enactment, expect:
 *_poses.shutoff.txt
 *_subprops.txt
 ```
+This script also adds a folder, `gt`, to each enactment's directory. Inside this new directory are all the masks referenced by `*_groundtruth.txt`.
+
 If you enable rendering when you call `process_enactment.py`, additionally expect for each enactment:
 ```
 *_annotated.avi
@@ -57,6 +59,10 @@ If you enable rendering when you call `process_enactment.py`, additionally expec
 *_composite.avi
 *_groundtruth.avi
 ```
+
+The net effect of running this script is that color-coded parts have been (re)assigned to recognizable objects according to the rules we provided in the rules file. In each enactment, in each frame, we know what is the recognizable object, where it is within the frame, and which mask separates it from everything else in the frame.
+
+We can use this information both to train a neural network and to create an `.enactment` file directly, according to ground-truth.
 
 ### 
 
