@@ -39,6 +39,7 @@ Once training begins, this script will save all epochs with improved (lower) val
 
 ## Requirements
 - Python
+- Keras
+- NumPy
 - OpenCV
 - TensorFlow
-- Keras
