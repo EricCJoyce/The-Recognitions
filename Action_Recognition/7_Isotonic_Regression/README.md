@@ -8,11 +8,13 @@ Isotonic regression maps the confidences collected by module 5 to the range \[0.
 
 ## Inputs
 
+The classification files `conf-pred-gt_<timestamp>.txt` and `conf-pred-gt-all_<timestamp>.txt` created by module 5.
 
 ## Outputs
 
+A human-readable file `isoreg.txt` or `isoreg-ALL.txt` depending on which of the input files was used. This file itemizes all the "buckets" determined by isotonic regression. These are used during classification to map a confidence score to a probability. (Again, for deployment, you would probably prefer that this be a binary file.)
 
 ## Requirements
-
-### Python
-### Sci-Kit Learn
+- Python
+- MatPlotLib
+- Sci-Kit Learn
