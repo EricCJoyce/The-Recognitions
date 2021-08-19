@@ -34,7 +34,7 @@ This repository contains the modules of a pipeline. The primordial inputs are la
 ### [Python](https://www.python.org/)
 We recommend Python 3.5.2, though later versions may also be compatible.
 
-Ubuntu 16.04 LTS:
+**Ubuntu 16.04 LTS**:
 ```
 sudo apt-get update
 sudo apt-get upgrade
@@ -50,7 +50,7 @@ curl -fsSL -o- https://bootstrap.pypa.io/pip/3.5/get-pip.py | python3.5
 pip3 install --upgrade setuptools
 ```
 
-Windows:
+**Windows**:
 
 Download the desired version from Python's website and double-click to run the installer.
 
@@ -65,7 +65,7 @@ pip -V
 
 ### [OpenCV](https://opencv.org/) (and other tools)
 
-Ubuntu 16.04 LTS:
+**Ubuntu 16.04 LTS**:
 
 ```
 pip3 install numpy scipy scikit-learn
@@ -78,7 +78,7 @@ pip3 install h5py
 pip3 install opencv-python
 ```
 
-Windows:
+**Windows**:
 
 ```
 pip install numpy scipy scikit-learn
@@ -93,7 +93,7 @@ pip install opencv-python
 
 ### [R](https://www.r-project.org/)
 
-Ubuntu 16.04 LTS:
+**Ubuntu 16.04 LTS**:
 ```
 sudo apt install apt-transport-https software-properties-common
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E298A3A825C0D65DFD57CBB651716619E084DAB9
@@ -128,20 +128,36 @@ Now that you've installed the R backend, install Python 3's rpy2 library like so
 sudo /home/eric/.local/bin/pip3.5 install rpy2==2.9.5
 ```
 
+**Windows**:
+
+???
+
 ### [TensorFlow](https://www.tensorflow.org/)
 
 We recommend TensorFlow for the GPU, version 1.14. If you work with TensorFlow version 2, then please see below for leekunhee's version of the Mask-RCNN library updated for version 2.
 
+**Ubuntu 16.04 LTS**:
 ```
 pip3 install tensorflow-gpu==1.14
+```
+
+**Windows**:
+```
+pip install tensorflow-gpu==1.14
 ```
 
 ### [Keras](https://keras.io/)
 
 We recommend pairing Keras 2.2.5 with TensorFlow-GPU 1.14
 
+**Ubuntu 16.04 LTS**:
 ```
 pip3 install keras==2.2.5
+```
+
+**Windows**:
+```
+pip install keras==2.2.5
 ```
 
 ### [Mask-RCNN](https://github.com/matterport/Mask_RCNN) (see also [this version](https://github.com/leekunhee/Mask_RCNN) adapted for TensorFlow version 2)
