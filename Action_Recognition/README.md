@@ -134,7 +134,7 @@ sudo /home/eric/.local/bin/pip3.5 install rpy2==2.9.5
 
 ### [TensorFlow](https://www.tensorflow.org/)
 
-We recommend TensorFlow for the GPU, version 1.14. If you work with TensorFlow version 2, then please see below for leekunhee's version of the Mask-RCNN library updated for version 2.
+We recommend TensorFlow for the GPU, version 1.14. If you work with TensorFlow version 2, then please see below for [leekunhee](https://github.com/leekunhee)'s version of the Mask-RCNN library updated for version 2.
 
 **Ubuntu 16.04 LTS**:
 ```
