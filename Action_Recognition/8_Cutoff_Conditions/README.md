@@ -4,8 +4,11 @@ The script `survey_enactments.py` scans the given enactments and reports which o
 
 ## Inputs
 
+One or more `*.enactment` files from the same detection source, that is from ground-truth or from a trained network.
 
 ## Outputs
+
+This script prints its results to screen.
 
 Be careful drawing conclusions from this script. Things may happen to be true without any necessity.
 
@@ -33,5 +36,5 @@ Regulator_Closed is non-zero in every frame of Work (Reg)
 The first line makes sense: one cannot close a disconnect without using the switch stick. The last line is misleading. If a user is working on a regulator, then the regulator must be open. The vector element for closed regulators is always non-zero because regulators appear in banks of three, and there always happens to be a closed regulator near whichever opened one the user is operating. We therefore do not want to make the presence of a closed regulator a condition for considering the action "Work(Regulator)".
 
 ## Requirements
-
-### Python
+- Python
+- NumPy
