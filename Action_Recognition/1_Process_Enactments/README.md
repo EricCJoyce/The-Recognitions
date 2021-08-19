@@ -74,5 +74,6 @@ We can use this information both to train a neural network and to create an `.en
 
 ## Requirements
 - Python
-- OpenCV
 - MatPlotLib
+- NumPy
+- OpenCV
