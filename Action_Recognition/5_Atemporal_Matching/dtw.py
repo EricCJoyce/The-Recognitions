@@ -109,10 +109,20 @@ def main():
 
 			if params['window-length-T'] < float('inf'):			#  Use window and stride
 				if params['window-stride-T'] < float('inf'):		#  Finite stride
-					for fr_head_index in range(0, len(seqs[indices[i]]) - params['window-length-T'], params['window-stride-T']):
+																	#  The sequence is equal to or longer than the window
+					if len(seqs[indices[i]]) >= params['window-length-T']:
+						for fr_head_index in range(0, len(seqs[indices[i]]) - params['window-length-T'], params['window-stride-T']):
+							seq = []
+							for fr_ctr in range(0, params['window-length-T']):
+								seq.append( seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+							X.append( seq )
+							X_train.append( seq )
+							y.append(action)
+							y_train.append(action)
+					elif params['include-shorts']:					#  What to do if the sequence is shorter than the window?
 						seq = []
-						for fr_ctr in range(0, params['window-length-T']):
-							seq.append( seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+						for fr_ctr in range(0, min(len(seqs[indices[i]]), params['window-length-T'])):
+							seq.append( seqs[indices[i]][fr_ctr]['vec'] )
 						X.append( seq )
 						X_train.append( seq )
 						y.append(action)
@@ -146,12 +156,24 @@ def main():
 
 			if params['window-length-V'] < float('inf'):			#  Use window and stride
 				if params['window-stride-V'] < float('inf'):		#  Finite stride
-					for fr_head_index in range(0, len(validation_seqs[indices[i]]) - params['window-length-V'], params['window-stride-V']):
+																	#  The sequence is equal to or longer than the window
+					if len(seqs[indices[i]]) >= params['window-length-T']:
+						for fr_head_index in range(0, len(validation_seqs[indices[i]]) - params['window-length-V'], params['window-stride-V']):
 																	#  Append index into 'validation_seqs' of test-set sample
-						X_test_lookup.append( (indices[i], fr_head_index, fr_head_index + params['window-length-V'] - 1) )
+							X_test_lookup.append( (indices[i], fr_head_index, fr_head_index + params['window-length-V'] - 1) )
+							seq = []
+							for fr_ctr in range(0, params['window-length-V']):
+								seq.append( validation_seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+							X.append( seq )
+							X_test.append( seq )
+							y.append(action)
+							y_test.append(action)
+					elif params['include-shorts']:					#  What to do if the sequence is shorter than the window?
+																	#  Append index into 'validation_seqs' of test-set sample
+						X_test_lookup.append( (indices[i], 0, min(len(validation_seqs[indices[i]]), params['window-length-V']) - 1) )
 						seq = []
-						for fr_ctr in range(0, params['window-length-V']):
-							seq.append( validation_seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+						for fr_ctr in range(0, min(len(seqs[indices[i]]), params['window-length-T'])):
+							seq.append( seqs[indices[i]][fr_ctr]['vec'] )
 						X.append( seq )
 						X_test.append( seq )
 						y.append(action)
@@ -851,30 +873,30 @@ def confidences_from_distances(dists, params):
 		min_d_2 = dists[1][0]
 
 		for i in range(0, len(dists)):								#  Now use it to compute putative confidences
-			confidences.append( (min_d + min_d_2) / dists[i][0] )
+			confidences.append( (min_d + min_d_2) / (dists[i][0] + params['epsilon']) )
 
 	elif params['conf-func'] == 'sum3':								#  (Sum of three minimal distances) / my distance
 		s = sum([x[0] for x in dists[:3]])
 
 		for i in range(0, len(dists)):								#  Now use it to compute putative confidences
-			confidences.append( s / dists[i][0] )
+			confidences.append( s / (dists[i][0] + params['epsilon']) )
 
 	elif params['conf-func'] == 'sum4':								#  (Sum of four minimal distances) / my distance
 		s = sum([x[0] for x in dists[:4]])
 
 		for i in range(0, len(dists)):								#  Now use it to compute putative confidences
-			confidences.append( s / dists[i][0] )
+			confidences.append( s / (dists[i][0] + params['epsilon']) )
 
 	elif params['conf-func'] == 'sum5':								#  (Sum of five minimal distances) / my distance
 		s = sum([x[0] for x in dists[:5]])
 
 		for i in range(0, len(dists)):								#  Now use it to compute putative confidences
-			confidences.append( s / dists[i][0] )
+			confidences.append( s / (dists[i][0] + params['epsilon']) )
 
 	elif params['conf-func'] == 'n-min-obsv':						#  Normalized minimum distance observed over your distance
 		min_d = dists[0][0]
 		for i in range(0, len(dists)):								#  Now use it to compute putative confidences
-			confidences.append( min_d / dists[i][0] )
+			confidences.append( min_d / (dists[i][0] + params['epsilon']) )
 		s = sum(confidences)
 		for i in range(0, len(dists)):								#  Normalize confidences
 			confidences[i] /= s
@@ -883,7 +905,7 @@ def confidences_from_distances(dists, params):
 	elif params['conf-func'] == 'min-obsv':							#  Minimum distance observed over your distance.
 		min_d = dists[0][0]
 		for i in range(0, len(dists)):
-			confidences.append( min_d / dists[i][0] )
+			confidences.append( min_d / (dists[i][0] + params['epsilon']) )
 
 	elif params['conf-func'] == 'max-marg':							#  'max-marg': second-best distance minus best distance. Worst match gets zero.
 		for i in range(0, len(dists)):
@@ -1414,6 +1436,7 @@ def getCommandLineParams():
 	params['v-portion'] = 1.0 - params['t-portion']					#  and this portion to the validation set
 
 	params['drops'] = []											#  List of (RE-LABELED) lables to be dropped (Use underscores rather than spaces)
+	params['include-shorts'] = True									#  Whether to include sequences shorter than the sliding window
 
 	params['window-length-T'] = float('inf')						#  By default, "infinite" windows cover entire (Training Set) sequences
 	params['window-stride-T'] = float('inf')						#  By default, advance the window to infinity (past the end of the sequence)
@@ -1449,7 +1472,7 @@ def getCommandLineParams():
 
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
-	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-x', \
+	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-x', '-short', '-shorts', \
 	         '-Tw', '-Ts', '-Vw', '-Vs', \
 	         '-iso', '-C', '-th', '-metric', \
 	         '-minlen', '-k', '-reduce', '-joinfile', '-graph', \
@@ -1486,6 +1509,12 @@ def getCommandLineParams():
 
 				elif argtarget == '-x':
 					params['drops'].append(argval.replace('_', ' '))
+
+				elif argtarget == '-short' or argtarget == '-shorts':
+					if argval[0].lower() == 'y':
+						params['include-shorts'] = True
+					elif argval[0].lower() == 'n':
+						params['include-shorts'] = False
 
 				elif argtarget == '-Tw':
 					params['window-length-T'] = int(argval)
@@ -1594,6 +1623,8 @@ def usage():
 	print('                   Default is 0.2, and this only matters if there are enactments to be divided.')
 	print('        -x         Following argument is a class label to be dropped from all sets.')
 	print('                   Target labels according to their RE-labeled names (if applicable) and use underscores instead of spaces.')
+	print('        -shorts    Following Y or N indicates whether sequences shorter than the sliding window should be included in the set.')
+	print('                   By default, short sequences are included.')
 	print('')
 	print('        However they are partitioned, neither the training set nor the validation set can be empty.')
 	print('')
