@@ -40,6 +40,30 @@ def main():
 		print('')
 
 	#################################################################  Load, merge, clean, redistribute...
+	params['classes'] = get_all_enactment_objects(params)			#  Get a list of recognizable objects and make sure they all agree
+	if params['classes'] is None:
+		print('ERROR: The objects recognized in the given enactments do not agree.')
+		print('       Please make sure that all enactments represent the same objects in the same order in the props subvector.')
+		return
+	if params['colors'] is not None:								#  Open the given colors file
+		fh = open(params['colors'], 'r')
+		params['colors'] = {}
+		for line in fh.readlines():
+			arr = line.strip().split('\t')
+			params['colors'][arr[0]] = (int(arr[1]), int(arr[2]), int(arr[3]))
+		fh.close()
+		for object_name in params['classes']:						#  Any missing? Give them random colors
+			if object_name not in params['colors']:
+				params['colors'][object_name] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
+	else:															#  Use random colors
+		params['colors'] = {}
+		for object_name in params['classes']:
+			params['colors'][object_name] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
+	if params['verbose']:
+		print('>>> Enactments align on recognizable objects:')
+		for object_name in params['classes']:
+			print('    ' + object_name)
+		print('')
 
 	all_actions, validation_actions, divide_actions = load_raw_actions(params)
 
@@ -72,7 +96,8 @@ def main():
 	X_test = []														#  To contain time series
 	y_test = []														#  To contain labels (indices into 'labels')
 
-	X_test_lookup = []												#  Store tuples: (index-into-'validation_seqs', start-frame-inclusinv, end-frame-inclusive)
+	X_train_lookup = []												#  Store tuples: (index-into-'seqs', start-frame-inclusive, end-frame, inclusive)
+	X_test_lookup = []												#  Store tuples: (index-into-'validation_seqs', start-frame-inclusive, end-frame-inclusive)
 
 	#################################################################  Build sets of frames to fit and transform
 
@@ -102,8 +127,17 @@ def main():
 
 		for i in range(0, len(indices)):							#  For every training-set sequence, seqs[indices[i]]...
 			for frame in seqs[indices[i]]:							#  Anticipating that we will be doing metric learning or plotting,
-				X_learn.append( frame['vec'] )						#  build a set of all the vectors--NOT time-series!!
-				X_train_learn.append( frame['vec'] )
+																	#  build a set of all the vectors--NOT time-series!!
+				coeff_vec = frame['vec'][:]
+				for j in range(0, 3):								#  Apply coefficient to the left hand subvector
+					coeff_vec[j] *= params['hand-coeff']
+				for j in range(6, 9):								#  Apply coefficient to the right hand subvector
+					coeff_vec[j] *= params['hand-coeff']
+				for j in range(12, len(coeff_vec)):					#  Apply coefficient to the props subvector
+					coeff_vec[j] *= params['props-coeff']
+
+				X_learn.append( coeff_vec )
+				X_train_learn.append( coeff_vec )
 				y_learn.append(action)
 				y_train_learn.append(action)
 
@@ -112,33 +146,81 @@ def main():
 																	#  The sequence is equal to or longer than the window
 					if len(seqs[indices[i]]) >= params['window-length-T']:
 						for fr_head_index in range(0, len(seqs[indices[i]]) - params['window-length-T'], params['window-stride-T']):
+																	#  Append index into 'seqs' of training-set sample
+							X_train_lookup.append( (indices[i], fr_head_index, fr_head_index + params['window-length-T'] - 1) )
+
 							seq = []
 							for fr_ctr in range(0, params['window-length-T']):
-								seq.append( seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+								coeff_vec = seqs[indices[i]][fr_head_index + fr_ctr]['vec'][:]
+								for j in range(0, 3):				#  Apply coefficient to the left hand subvector
+									coeff_vec[j] *= params['hand-coeff']
+								for j in range(6, 9):				#  Apply coefficient to the right hand subvector
+									coeff_vec[j] *= params['hand-coeff']
+								for j in range(12, len(coeff_vec)):	#  Apply coefficient to the props subvector
+									coeff_vec[j] *= params['props-coeff']
+								seq.append( coeff_vec )
+								#seq.append( seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+
 							X.append( seq )
 							X_train.append( seq )
 							y.append(action)
 							y_train.append(action)
 					elif params['include-shorts']:					#  What to do if the sequence is shorter than the window?
+																	#  Append index into 'seqs' of training-set sample
+						X_train_lookup.append( (indices[i], 0, min(len(seqs[indices[i]]), params['window-length-T']) - 1) )
+
 						seq = []
 						for fr_ctr in range(0, min(len(seqs[indices[i]]), params['window-length-T'])):
-							seq.append( seqs[indices[i]][fr_ctr]['vec'] )
+							coeff_vec = seqs[indices[i]][fr_ctr]['vec'][:]
+							for j in range(0, 3):					#  Apply coefficient to the left hand subvector
+								coeff_vec[j] *= params['hand-coeff']
+							for j in range(6, 9):					#  Apply coefficient to the right hand subvector
+								coeff_vec[j] *= params['hand-coeff']
+							for j in range(12, len(coeff_vec)):		#  Apply coefficient to the props subvector
+								coeff_vec[j] *= params['props-coeff']
+							seq.append( coeff_vec )
+							#seq.append( seqs[indices[i]][fr_ctr]['vec'] )
+
 						X.append( seq )
 						X_train.append( seq )
 						y.append(action)
 						y_train.append(action)
 				else:												#  Infinite stride: only read the window once
+																	#  Append index into 'seqs' of training-set sample
+					X_train_lookup.append( (indices[i], 0, min(len(seqs[indices[i]]), params['window-length-T']) - 1) )
+
 					seq = []
 					for fr_ctr in range(0, min(len(seqs[indices[i]]), params['window-length-T'])):
-						seq.append( seqs[indices[i]][fr_ctr]['vec'] )
+						coeff_vec = seqs[indices[i]][fr_ctr]['vec'][:]
+						for j in range(0, 3):						#  Apply coefficient to the left hand subvector
+							coeff_vec[j] *= params['hand-coeff']
+						for j in range(6, 9):						#  Apply coefficient to the right hand subvector
+							coeff_vec[j] *= params['hand-coeff']
+						for j in range(12, len(coeff_vec)):			#  Apply coefficient to the props subvector
+							coeff_vec[j] *= params['props-coeff']
+						seq.append( coeff_vec )
+						#seq.append( seqs[indices[i]][fr_ctr]['vec'] )
+
 					X.append( seq )
 					X_train.append( seq )
 					y.append(action)
 					y_train.append(action)
 			else:													#  Use the whole sequence
+																	#  Append index into 'seqs' of training-set sample
+				X_train_lookup.append( (indices[i], 0, len(seqs[indices[i]]) - 1) )
+
 				seq = []
 				for frame in seqs[indices[i]]:
-					seq.append( frame['vec'] )						#  Build the sequence
+					coeff_vec = frame['vec'][:]
+					for j in range(0, 3):							#  Apply coefficient to the left hand subvector
+						coeff_vec[j] *= params['hand-coeff']
+					for j in range(6, 9):							#  Apply coefficient to the right hand subvector
+						coeff_vec[j] *= params['hand-coeff']
+					for j in range(12, len(coeff_vec)):				#  Apply coefficient to the props subvector
+						coeff_vec[j] *= params['props-coeff']
+					seq.append( coeff_vec )							#  Build the sequence
+					#seq.append( frame['vec'] )
+
 				X.append( seq )										#  Append the sequence
 				X_train.append( seq )								#  Append the sequence
 				y.append(action)
@@ -149,21 +231,40 @@ def main():
 
 		for i in range(0, len(indices)):							#  For every validation-set sequence, validation_seqs[indices[i]]...
 			for frame in validation_seqs[indices[i]]:				#  Anticipating that we will be doing metric learning or plotting,
-				X_learn.append( frame['vec'] )						#  build a set of all the vectors--NOT time-series!!
-				X_test_learn.append( frame['vec'] )
+																	#  build a set of all the vectors--NOT time-series!!
+				coeff_vec = frame['vec'][:]
+				for j in range(0, 3):								#  Apply coefficient to the left hand subvector
+					coeff_vec[j] *= params['hand-coeff']
+				for j in range(6, 9):								#  Apply coefficient to the right hand subvector
+					coeff_vec[j] *= params['hand-coeff']
+				for j in range(12, len(coeff_vec)):					#  Apply coefficient to the props subvector
+					coeff_vec[j] *= params['props-coeff']
+
+				X_learn.append( coeff_vec )
+				X_test_learn.append( coeff_vec )
 				y_learn.append(action)
 				y_test_learn.append(action)
 
 			if params['window-length-V'] < float('inf'):			#  Use window and stride
 				if params['window-stride-V'] < float('inf'):		#  Finite stride
 																	#  The sequence is equal to or longer than the window
-					if len(seqs[indices[i]]) >= params['window-length-T']:
+					if len(validation_seqs[indices[i]]) >= params['window-length-V']:
 						for fr_head_index in range(0, len(validation_seqs[indices[i]]) - params['window-length-V'], params['window-stride-V']):
 																	#  Append index into 'validation_seqs' of test-set sample
 							X_test_lookup.append( (indices[i], fr_head_index, fr_head_index + params['window-length-V'] - 1) )
+
 							seq = []
 							for fr_ctr in range(0, params['window-length-V']):
-								seq.append( validation_seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+								coeff_vec = validation_seqs[indices[i]][fr_head_index + fr_ctr]['vec'][:]
+								for j in range(0, 3):				#  Apply coefficient to the left hand subvector
+									coeff_vec[j] *= params['hand-coeff']
+								for j in range(6, 9):				#  Apply coefficient to the right hand subvector
+									coeff_vec[j] *= params['hand-coeff']
+								for j in range(12, len(coeff_vec)):	#  Apply coefficient to the props subvector
+									coeff_vec[j] *= params['props-coeff']
+								seq.append( coeff_vec )
+								#seq.append( validation_seqs[indices[i]][fr_head_index + fr_ctr]['vec'] )
+
 							X.append( seq )
 							X_test.append( seq )
 							y.append(action)
@@ -171,9 +272,19 @@ def main():
 					elif params['include-shorts']:					#  What to do if the sequence is shorter than the window?
 																	#  Append index into 'validation_seqs' of test-set sample
 						X_test_lookup.append( (indices[i], 0, min(len(validation_seqs[indices[i]]), params['window-length-V']) - 1) )
+
 						seq = []
-						for fr_ctr in range(0, min(len(seqs[indices[i]]), params['window-length-T'])):
-							seq.append( seqs[indices[i]][fr_ctr]['vec'] )
+						for fr_ctr in range(0, min(len(validation_seqs[indices[i]]), params['window-length-V'])):
+							coeff_vec = validation_seqs[indices[i]][fr_ctr]['vec'][:]
+							for j in range(0, 3):					#  Apply coefficient to the left hand subvector
+								coeff_vec[j] *= params['hand-coeff']
+							for j in range(6, 9):					#  Apply coefficient to the right hand subvector
+								coeff_vec[j] *= params['hand-coeff']
+							for j in range(12, len(coeff_vec)):		#  Apply coefficient to the props subvector
+								coeff_vec[j] *= params['props-coeff']
+							seq.append( coeff_vec )
+							#seq.append( validation_seqs[indices[i]][fr_ctr]['vec'] )
+
 						X.append( seq )
 						X_test.append( seq )
 						y.append(action)
@@ -181,9 +292,19 @@ def main():
 				else:												#  Infinite stride: only read the window once
 																	#  Append index into 'validation_seqs' of test-set sample
 					X_test_lookup.append( (indices[i], 0, min(len(validation_seqs[indices[i]]), params['window-length-V']) - 1) )
+
 					seq = []
 					for fr_ctr in range(0, min(len(validation_seqs[indices[i]]), params['window-length-V'])):
-						seq.append( validation_seqs[indices[i]][fr_ctr]['vec'] )
+						coeff_vec = validation_seqs[indices[i]][fr_ctr]['vec'][:]
+						for j in range(0, 3):						#  Apply coefficient to the left hand subvector
+							coeff_vec[j] *= params['hand-coeff']
+						for j in range(6, 9):						#  Apply coefficient to the right hand subvector
+							coeff_vec[j] *= params['hand-coeff']
+						for j in range(12, len(coeff_vec)):			#  Apply coefficient to the props subvector
+							coeff_vec[j] *= params['props-coeff']
+						seq.append( coeff_vec )
+						#seq.append( validation_seqs[indices[i]][fr_ctr]['vec'] )
+
 					X.append( seq )
 					X_test.append( seq )
 					y.append(action)
@@ -191,9 +312,19 @@ def main():
 			else:													#  Use the whole sequence
 																	#  Append index into 'validation_seqs' of test-set sample
 				X_test_lookup.append( (indices[i], 0, len(validation_seqs[indices[i]]) - 1) )
+
 				seq = []
 				for frame in validation_seqs[indices[i]]:
-					seq.append( frame['vec'] )						#  Build the sequence
+					coeff_vec = frame['vec'][:]
+					for j in range(0, 3):							#  Apply coefficient to the left hand subvector
+						coeff_vec[j] *= params['hand-coeff']
+					for j in range(6, 9):							#  Apply coefficient to the right hand subvector
+						coeff_vec[j] *= params['hand-coeff']
+					for j in range(12, len(coeff_vec)):				#  Apply coefficient to the props subvector
+						coeff_vec[j] *= params['props-coeff']
+					seq.append( coeff_vec )							#  Build the sequence
+					#seq.append( frame['vec'] )
+
 				X.append( seq )										#  Append the sequence
 				X_test.append( seq )								#  Append the sequence
 				y.append(action)
@@ -554,6 +685,9 @@ def main():
 
 		if params['render']:										#  We are rendering
 
+			if params['verbose']:
+				print('\t  >>> Rendering')
+
 			if prediction != labels[ y_test[test_ctr] ]:			#  Rendering a misclassification
 																	#  Init video object
 				vid = cv2.VideoWriter('mismatch_' + str(errctr + 1) + '.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 10, (params['renderw'], params['renderh']) )
@@ -562,30 +696,31 @@ def main():
 				vid = cv2.VideoWriter('success_' + str(successctr + 1) + '.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 10, (params['renderw'], params['renderh']) )
 				successctr += 1
 
-			#  validation_seqs[query_seq_index]  <--matched with-->  seqs[nearest_neighbor_index]
+			#  validation_seqs[query_seq_index]  <--matched with-->  seqs[ X_train_lookup[nearest_neighbor_index][0] ]
 			#  alignment_Q                                           alignment_T
 			#  (1-indexed)                                           (1-indexed)
 
-			if prediction != '*':									#  A prediction was made. Something valid exists for seqs[nearest_neighbor_index], alignment_Q, and alignment_T
+			if prediction != '*':									#  A prediction was made. Something valid exists for
+																	#  seqs[ X_train_lookup[nearest_neighbor_index][0] ], alignment_Q, and alignment_T
 				for i in range(0, len(alignment_Q)):				#  For every frame of the alignment
 																	#  Make a base-frame (black)
 					frame = np.zeros((params['renderh'], params['renderw'], 3), dtype='uint8')
 
 					#################################################  Open the source image from the query sequence
-					img_q_fn  = validation_seqs[query_seq_index][ int(alignment_Q[i] - 1) ]['file']
+					img_q_fn  = validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['file']
 					img_q_fn += '/Users/' + params['User'] + '/POV/NormalViewCameraFrames/'
-					img_q_fn += validation_seqs[query_seq_index][ int(alignment_Q[i] - 1) ]['frame']
+					img_q_fn += validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['frame']
 																	#  Open the query image frame
 					img_q = cv2.imread(img_q_fn, cv2.IMREAD_UNCHANGED)
 					if img_q.shape[2] > 3:							#  Drop alpha channel
 						img_q = cv2.cvtColor(img_q, cv2.COLOR_RGBA2RGB)
 																	#  Add mask overlays
 					maskcanvas = np.zeros((img_q.shape[0], img_q.shape[1], 3), dtype='uint8')
-					maskfiles_for_frame = fetch_masks_for_enactment_frame(validation_seqs[query_seq_index][ int(alignment_Q[i] - 1) ]['file'], \
-					                                                      validation_seqs[query_seq_index][ int(alignment_Q[i] - 1) ]['frame'], \
+					maskfiles_for_frame = fetch_masks_for_enactment_frame(validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['file'], \
+					                                                      validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['frame'], \
 					                                                      params)
 					for maskdata in maskfiles_for_frame:			#  Each is (object-class-name, BBox, mask-filename)
-						g = validation_seqs[query_seq_index][ int(alignment_Q[i] - 1) ]['vec'][params['classes'].index(maskdata[0]) + 12]
+						g = validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['vec'][params['classes'].index(maskdata[0]) + 12]
 																	#  Open the mask file
 						mask = cv2.imread(maskdata[2], cv2.IMREAD_UNCHANGED)
 						mask[mask > 1] = 1							#  All things greater than 1 become 1
@@ -597,9 +732,9 @@ def main():
 						mask[:, :, 2] *= int(round(params['colors'][ maskdata[0] ][0] * g))
 
 						cv2.rectangle(mask, (maskdata[1][0], maskdata[1][1]), \
-						                    (maskdata[1][2], maskdata[1][3]), (params['colors'][ maskdata[0] ][0], \
+						                    (maskdata[1][2], maskdata[1][3]), (params['colors'][ maskdata[0] ][2], \
 						                                                       params['colors'][ maskdata[0] ][1], \
-						                                                       params['colors'][ maskdata[0] ][2]), 1)
+						                                                       params['colors'][ maskdata[0] ][0]), 1)
 
 						maskcanvas += mask							#  Add mask to mask accumulator
 						maskcanvas[maskcanvas > 255] = 255			#  Clip accumulator to 255
@@ -610,20 +745,20 @@ def main():
 					img_q = cv2.resize(img_q, (int(round(params['renderw'] * 0.5)), int(round(params['renderh'] * 0.5))), interpolation=cv2.INTER_AREA)
 
 					#################################################  Open the source image from the template sequence
-					img_t_fn  = seqs[nearest_neighbor_index][ int(alignment_T[i] - 1) ]['file']
+					img_t_fn  = seqs[ X_train_lookup[nearest_neighbor_index][0] ][ alignment_T[i] - 1 ]['file']
 					img_t_fn += '/Users/' + params['User'] + '/POV/NormalViewCameraFrames/'
-					img_t_fn += seqs[nearest_neighbor_index][ int(alignment_T[i] - 1) ]['frame']
+					img_t_fn += seqs[ X_train_lookup[nearest_neighbor_index][0] ][ alignment_T[i] - 1 ]['frame']
 																	#  Open the template image frame
 					img_t = cv2.imread(img_t_fn, cv2.IMREAD_UNCHANGED)
 					if img_t.shape[2] > 3:							#  Drop alpha channel
 						img_t = cv2.cvtColor(img_t, cv2.COLOR_RGBA2RGB)
 																	#  Add mask overlays
 					maskcanvas = np.zeros((img_t.shape[0], img_t.shape[1], 3), dtype='uint8')
-					maskfiles_for_frame = fetch_masks_for_enactment_frame(seqs[nearest_neighbor_index][ int(alignment_T[i] - 1) ]['file'], \
-					                                                      seqs[nearest_neighbor_index][ int(alignment_T[i] - 1) ]['frame'], \
+					maskfiles_for_frame = fetch_masks_for_enactment_frame(seqs[ X_train_lookup[nearest_neighbor_index][0] ][ alignment_T[i] - 1 ]['file'], \
+					                                                      seqs[ X_train_lookup[nearest_neighbor_index][0] ][ alignment_T[i] - 1 ]['frame'], \
 					                                                      params)
 					for maskdata in maskfiles_for_frame:			#  Each is (object-class-name, BBox, mask-filename)
-						g = seqs[nearest_neighbor_index][ int(alignment_T[i] - 1) ]['vec'][params['classes'].index(maskdata[0]) + 12]
+						g = seqs[ X_train_lookup[nearest_neighbor_index][0] ][ alignment_T[i] - 1 ]['vec'][params['classes'].index(maskdata[0]) + 12]
 																	#  Open the mask file
 						mask = cv2.imread(maskdata[2], cv2.IMREAD_UNCHANGED)
 						mask[mask > 1] = 1							#  All things greater than 1 become 1
@@ -635,9 +770,9 @@ def main():
 						mask[:, :, 2] *= int(round(params['colors'][ maskdata[0] ][0] * g))
 
 						cv2.rectangle(mask, (maskdata[1][0], maskdata[1][1]), \
-						                    (maskdata[1][2], maskdata[1][3]), (params['colors'][ maskdata[0] ][0], \
+						                    (maskdata[1][2], maskdata[1][3]), (params['colors'][ maskdata[0] ][2], \
 						                                                       params['colors'][ maskdata[0] ][1], \
-						                                                       params['colors'][ maskdata[0] ][2]), 1)
+						                                                       params['colors'][ maskdata[0] ][0]), 1)
 
 						maskcanvas += mask							#  Add mask to mask accumulator
 						maskcanvas[maskcanvas > 255] = 255			#  Clip accumulator to 255
@@ -653,8 +788,13 @@ def main():
 
 					cv2.putText(frame, 'Query: ' + validation_seqs[query_seq_index][0]['label'], \
 					    (10, params['v_label_offset']), cv2.FONT_HERSHEY_SIMPLEX, params['fontsize'], (255, 255, 255, 255), 3)
-					cv2.putText(frame, 'Train: ' + seqs[nearest_neighbor_index][0]['label'], \
+					cv2.putText(frame, validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['file'] + ', frame ' + validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['frame'].split('_')[0], \
+					    (10, params['v_label_offset'] + 40), cv2.FONT_HERSHEY_SIMPLEX, params['fontsize'], (255, 255, 255, 255), 3)
+
+					cv2.putText(frame, 'Train: ' + seqs[ X_train_lookup[nearest_neighbor_index][0] ][0]['label'], \
 					    (970, params['v_label_offset']), cv2.FONT_HERSHEY_SIMPLEX, params['fontsize'], (255, 255, 255, 255), 3)
+					cv2.putText(frame, seqs[X_train_lookup[nearest_neighbor_index][0]][ alignment_T[i] - 1 ]['file'] + ', frame ' + seqs[X_train_lookup[nearest_neighbor_index][0]][ alignment_T[i] - 1 ]['frame'].split('_')[0], \
+					    (970, params['v_label_offset'] + 40), cv2.FONT_HERSHEY_SIMPLEX, params['fontsize'], (255, 255, 255, 255), 3)
 
 					vid.write(frame)
 			else:													#  No prediction was made; only validation_seqs[query_seq_index] exists
@@ -677,7 +817,7 @@ def main():
 					                                                      validation_seqs[query_seq_index][ i ]['frame'], \
 					                                                      params)
 					for maskdata in maskfiles_for_frame:			#  Each is (object-class-name, BBox, mask-filename)
-						g = validation_seqs[query_seq_index][ int(alignment_Q[i] - 1) ]['vec'][params['classes'].index(maskdata[0]) + 12]
+						g = validation_seqs[query_seq_index][ alignment_Q[i] - 1 ]['vec'][params['classes'].index(maskdata[0]) + 12]
 																	#  Open the mask file
 						mask = cv2.imread(maskdata[2], cv2.IMREAD_UNCHANGED)
 						mask[mask > 1] = 1							#  All things greater than 1 become 1
@@ -689,9 +829,9 @@ def main():
 						mask[:, :, 2] *= int(round(params['colors'][ maskdata[0] ][0] * g))
 
 						cv2.rectangle(mask, (maskdata[1][0], maskdata[1][1]), \
-						                    (maskdata[1][2], maskdata[1][3]), (params['colors'][ maskdata[0] ][0], \
+						                    (maskdata[1][2], maskdata[1][3]), (params['colors'][ maskdata[0] ][2], \
 						                                                       params['colors'][ maskdata[0] ][1], \
-						                                                       params['colors'][ maskdata[0] ][2]), 1)
+						                                                       params['colors'][ maskdata[0] ][0]), 1)
 
 						maskcanvas += mask							#  Add mask to mask accumulator
 						maskcanvas[maskcanvas > 255] = 255			#  Clip accumulator to 255
@@ -942,7 +1082,7 @@ def fetch_masks_for_enactment_frame(enactment, frame, params):
 			score = arr[4]
 			bboxstr = arr[5]
 			mask_filename = arr[6]
-			if filename == frame and object_class_name != 'LeftHand' and object_class_name != 'RightHand':
+			if filename == frame and object_class_name != 'LeftHand' and object_class_name != 'RightHand' and bboxstr != '*':
 				bbox = bboxstr.split(';')							#  Yields "x1,y1", "x2,y2"
 				bbox = bbox[0].split(',') + bbox[1].split(',')		#  Yields ["x1", "y1"] + ["x2", "y2"] = ["x1", "y1", "x2", "y2"]
 				bbox = tuple([int(x) for x in bbox])				#  Yields (x1, y1, x2, y2)
@@ -1427,6 +1567,87 @@ def load_raw_actions(params):
 
 	return all_actions, validation_actions, divide_actions
 
+#  Survey all enactments and assemble a list of all objects that these enactments recognize.
+#  If any two enactments do not agree, return None and halt the program above.
+def get_all_enactment_objects(params):
+	objects = []
+	first_pass = True												#  The first enactment we read determines which objects are expected
+	fail = False													#  Any departures from the expectation, and we halt the script
+
+	for enactment in params['train']:
+		fh = open(enactment + '.enactment', 'r')
+		reading_classes = False
+		for line in fh.readlines():
+			if line[0] == '#':
+				if 'CLASSES' in line:
+					reading_classes = True
+				elif reading_classes:
+					arr = line[1:].strip().split()
+					if first_pass:
+						for a in arr:
+							objects.append( a )
+						first_pass = False
+					else:
+						ctr = 0
+						for a in arr:
+							if a not in objects or objects.index(a) != ctr:
+								fail = True
+								break
+							ctr += 1
+					reading_classes = False
+		fh.close()
+
+	for enactment in params['valid']:
+		fh = open(enactment + '.enactment', 'r')
+		reading_classes = False
+		for line in fh.readlines():
+			if line[0] == '#':
+				if 'CLASSES' in line:
+					reading_classes = True
+				elif reading_classes:
+					arr = line[1:].strip().split()
+					if first_pass:
+						for a in arr:
+							objects.append( a )
+						first_pass = False
+					else:
+						ctr = 0
+						for a in arr:
+							if a not in objects or objects.index(a) != ctr:
+								fail = True
+								break
+							ctr += 1
+					reading_classes = False
+		fh.close()
+
+	for enactment in params['divided']:
+		fh = open(enactment + '.enactment', 'r')
+		reading_classes = False
+		for line in fh.readlines():
+			if line[0] == '#':
+				if 'CLASSES' in line:
+					reading_classes = True
+				elif reading_classes:
+					arr = line[1:].strip().split()
+					if first_pass:
+						for a in arr:
+							objects.append( a )
+						first_pass = False
+					else:
+						ctr = 0
+						for a in arr:
+							if a not in objects or objects.index(a) != ctr:
+								fail = True
+								break
+							ctr += 1
+					reading_classes = False
+		fh.close()
+
+	if fail:
+		return None
+
+	return objects
+
 def getCommandLineParams():
 	params = {}
 	params['train'] = []											#  List of filenames
@@ -1438,6 +1659,9 @@ def getCommandLineParams():
 	params['drops'] = []											#  List of (RE-LABELED) lables to be dropped (Use underscores rather than spaces)
 	params['include-shorts'] = True									#  Whether to include sequences shorter than the sliding window
 
+	params['hand-coeff'] = 1.0										#  Coefficient for the hands-subvectors: this affects Lx, Ly, Lz, Rx, Ry, Rz--NOT the one-hots
+	params['props-coeff'] = 1.0										#  Coefficient for the props-subvector
+
 	params['window-length-T'] = float('inf')						#  By default, "infinite" windows cover entire (Training Set) sequences
 	params['window-stride-T'] = float('inf')						#  By default, advance the window to infinity (past the end of the sequence)
 
@@ -1445,7 +1669,7 @@ def getCommandLineParams():
 	params['window-stride-V'] = float('inf')						#  By default, advance the window to infinity (past the end of the sequence)
 
 	params['iso-map'] = None										#  By default, no isotonic mapping is applied
-	params['conf-func'] = '2over1'									#  Default is distance of 2nd-best match over best match (plus epsilon)
+	params['conf-func'] = 'sum2'									#  Default to sum2
 	params['threshold'] = 0.0										#  Default is no threshold; just attempt to classify everything
 
 	params['epsilon'] = 0.00001
@@ -1464,6 +1688,7 @@ def getCommandLineParams():
 	params['fontsize'] = 1											#  For rendering text to images and videos
 	params['User'] = 'vr1'											#  It used to be "admin", and I don't want to change a bunch of file paths when it changes again
 	params['detsrc'] = 'groundtruth'
+	params['colors'] = None
 
 	params['joins'] = {}											#  key: new label; val: [old labels]
 	params['verbose'] = False
@@ -1475,8 +1700,9 @@ def getCommandLineParams():
 	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-x', '-short', '-shorts', \
 	         '-Tw', '-Ts', '-Vw', '-Vs', \
 	         '-iso', '-C', '-th', '-metric', \
+	         '-hands', '-hand', '-props', '-prop', \
 	         '-minlen', '-k', '-reduce', '-joinfile', '-graph', \
-	         '-render', '-renderw', '-renderh', '-fontsize', '-User', '-classes', '-colors', \
+	         '-render', '-renderw', '-renderh', '-fontsize', '-User', '-color', '-colors', \
 	         '-V', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
 		if sys.argv[i] in flags:
@@ -1534,6 +1760,11 @@ def getCommandLineParams():
 				elif argtarget == '-metric':
 					params['metric'] = argval
 
+				elif argtarget == '-hand' or argtarget == '-hands':
+					params['hand-coeff'] = float(argval)
+				elif argtarget == '-prop' or argtarget == '-props':
+					params['props-coeff'] = float(argval)
+
 				elif argtarget == '-joinfile':
 					fh = open(argval, 'r')
 					lines = fh.readlines()
@@ -1562,6 +1793,8 @@ def getCommandLineParams():
 					params['User'] = argval
 				elif argtarget == '-fontsize':
 					params['fontsize'] = float(argval)
+				elif argtarget == '-color' or argtarget == '-colors':
+					params['colors'] = argval
 
 	if len(params['divided']) > 0 and (params['t-portion'] != 1.0 - params['v-portion'] or params['t-portion'] == 1.0 \
 	                                                                                    or params['t-portion'] == 0.0 \
@@ -1636,6 +1869,12 @@ def usage():
 	print('                   Default is infinity, signifying no limit on the window and using whole sequences.')
 	print('        -Vs        Following integer > 0 sets the stride of the validation set subsequence window.')
 	print('                   Default is infinity, signifying that we only look at the window once.')
+	print('')
+	print('        -hand      Following argument is the coefficient for the hands subvectors.')
+	print('                   This affects LH_x, LH_y, LH_z, RH_x, RH_y, and RH_z; NOT the one-hot encoded hand states.')
+	print('                   The default is 1.0.')
+	print('        -prop      Following argument is the coefficient for the props subvector.')
+	print('                   The default is 1.0.')
 	print('')
 	print('        -th        Following argument in [0.0, 1.0) determines the threshold applied to predictions.')
 	print('                   Default is 0.0, meaning no threshold is applied; the best match wins.')
