@@ -437,7 +437,8 @@ class Frame():
 
 '''
 This is a "loose" sort of data type in that Actions are not really binding until their host Enactment calls apply_actions_to_frames().
-Actions delineate where things begin and end and contain a label. Beginnings are considered inclusive; endings are considered exclusive.
+Actions contain a label and delineate where things begin and end.
+Beginnings are considered inclusive; endings are considered exclusive, mimicking Pythonic slice notation.
 '''
 class Action():
 	def __init__(self, start_time, end_time, **kwargs):
@@ -679,14 +680,10 @@ class Enactment():
 
 		if self.verbose:
 			for i in range(0, len(fixes)):
-				print('    * Fixed label conflict between "' + self.actions[ fixes[i] ].label + '" and "' + self.actions[ fixes[i + 1] ].label + '"')
+				print('    * Fixed label conflict between "' + self.actions[ fixes[i] ].label + '" and "' + self.actions[ fixes[i] + 1 ].label + '"')
 			print('')
 
 		self.apply_actions_to_frames()
-
-	#################################################################
-	#                                                               #
-	#################################################################
 
 	#################################################################
 	#  Editing: make changes to actions, poses, detections.         #
