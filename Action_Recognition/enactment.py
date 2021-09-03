@@ -750,6 +750,81 @@ class Enactment():
 		self.apply_actions_to_frames()
 
 	#################################################################
+	#  Output: write an enactment file.                             #
+	#################################################################
+
+	#
+	def write_text_enactment_file(self, gaussian):
+		fh = open(self.enactment_name + '.enactment', 'w')
+		fh.write('#  Enactment vectors derived from FactualVR enactment materials.\n')
+		fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
+		fh.write('#  RECOGNIZABLE OBJECTS:\n')
+		fh.write('#    ' + '\t'.join(self.recognizable_objects) + '\n')
+		fh.write('#  ENCODING STRUCTURE:\n')
+		structure_string = '\t'.join(['timestamp', 'filename', 'label', \
+		                              'LHx', 'LHy', 'LHz', 'LH0', 'LH1', 'LH2', \
+		                              'RHx', 'RHy', 'RHz', 'RH0', 'RH1', 'RH2'] + self.recognizable_objects)
+		fh.write('#    ' + structure_string + '\n')
+
+		for time_stamp, frame in sorted(self.frames.items()):
+			fh.write(str(time_stamp) + '\t')
+			fh.write(frame.fullpath() + '\t')
+			fh.write(frame.ground_truth_label + '\t')
+			if frame.left_hand_pose is not None:					#  Write the LEFT-HAND subvector
+				fh.write(str(frame.left_hand_pose[0]) + '\t')
+				fh.write(str(frame.left_hand_pose[1]) + '\t')
+				fh.write(str(frame.left_hand_pose[2]) + '\t')
+				if frame.left_hand_pose[3] == 0:
+					fh.write('1.0\t0.0\t0.0\t')
+				elif frame.left_hand_pose[3] == 1:
+					fh.write('0.0\t1.0\t0.0\t')
+				elif frame.left_hand_pose[3] == 2:
+					fh.write('0.0\t0.0\t1.0\t')
+				else:												#  This case should never happen, but be prepared!
+					fh.write('0.0\t0.0\t0.0\t')
+			else:
+				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+			if frame.right_hand_pose is not None:					#  Write the RIGHT-HAND subvector
+				fh.write(str(frame.right_hand_pose[0]) + '\t')
+				fh.write(str(frame.right_hand_pose[1]) + '\t')
+				fh.write(str(frame.right_hand_pose[2]) + '\t')
+				if frame.right_hand_pose[3] == 0:
+					fh.write('1.0\t0.0\t0.0\t')
+				elif frame.right_hand_pose[3] == 1:
+					fh.write('0.0\t1.0\t0.0\t')
+				elif frame.right_hand_pose[3] == 2:
+					fh.write('0.0\t0.0\t1.0\t')
+				else:												#  This case should never happen, but be prepared!
+					fh.write('0.0\t0.0\t0.0\t')
+			else:
+				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+
+			props_subvector = [0.0 for i in range(0, len(self.recognizable_objects))]
+			for detection in frame.detections:
+				if detection.enabled:
+					if frame.left_hand_pose is not None:
+						lh = np.array(frame.left_hand_pose[:3])
+					else:
+						lh = None
+					if frame.right_hand_pose is not None:
+						rh = np.array(frame.right_hand_pose[:3])
+					else:
+						rh = None
+					g = gaussian.weigh(np.array(detection.centroid), lh, rh)
+					props_subvector[ self.recognizable_objects.index(detection.object_name) ] = max(g, props_subvector[ self.recognizable_objects.index(detection.object_name) ])
+
+			fh.write('\t'.join([str(x) for x in props_subvector]) + '\n')
+
+		fh.close()
+		return
+
+	#
+	def write_binary_enactment_file(self, gaussian):
+		fh = open(self.enactment_name + '.enactment', 'wb')
+		fh.close()
+		return
+
+	#################################################################
 	#  Editing: make changes to actions, poses, detections.         #
 	#################################################################
 
