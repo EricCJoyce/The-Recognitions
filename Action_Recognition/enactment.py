@@ -9,6 +9,70 @@ import shutil
 import sys
 import time
 
+class Gaussian():
+	def __init__(self, **kwargs):
+		self.mu = (0.0, 0.0, 0.0)									#  Centered on the head
+		self.sigma_gaze = (2.0, 1.5, 3.0)							#  In METERS
+																	#  No mus for hands: their centers are hand-centroids
+		self.sigma_hand = (0.5, 0.5, 0.5)							#  In METERS
+
+		if 'mu' in kwargs:
+			assert isinstance(kwargs['mu'], tuple) and len(kwargs['mu']) == 3 and \
+			       isinstance(kwargs['mu'][0], float) and isinstance(kwargs['mu'][1], float) and isinstance(kwargs['mu'][2], float), \
+			       'Argument \'mu\' passed to Gaussian must be a 3-tuple of floats.'
+			self.mu = kwargs['mu']
+
+		if 'sigma_gaze' in kwargs:
+			assert isinstance(kwargs['sigma_gaze'], tuple) and len(kwargs['sigma_gaze']) == 3 and \
+			       isinstance(kwargs['sigma_gaze'][0], float) and isinstance(kwargs['sigma_gaze'][1], float) and isinstance(kwargs['sigma_gaze'][2], float), \
+			       'Argument \'sigma_gaze\' passed to Gaussian must be a 3-tuple of floats.'
+			self.sigma_gaze = kwargs['sigma_gaze']
+
+		if 'sigma_hand' in kwargs:
+			assert isinstance(kwargs['sigma_hand'], tuple) and len(kwargs['sigma_hand']) == 3 and \
+			       isinstance(kwargs['sigma_hand'][0], float) and isinstance(kwargs['sigma_hand'][1], float) and isinstance(kwargs['sigma_hand'][2], float), \
+			       'Argument \'sigma_hand\' passed to Gaussian must be a 3-tuple of floats.'
+			self.sigma_hand = kwargs['sigma_hand']
+
+	#  'object_centroid' is a Numpy array.
+	#  'LH_centroid' is a Numpy array or None if the left hand is not visible.
+	#  'RH_centroid' is a Numpy array or None if the right hand is not visible.
+	def weigh(self, object_centroid, LH_centroid, RH_centroid):
+		x = np.array([object_centroid[0] - self.mu[0], \
+		              object_centroid[1] - self.mu[1], \
+		              object_centroid[2] - self.mu[2]])
+		C = np.array([[self.sigma_gaze[0] * self.sigma_gaze[0], 0.0,                                     0.0                                    ], \
+		              [0.0,                                     self.sigma_gaze[1] * self.sigma_gaze[1], 0.0                                    ], \
+		              [0.0,                                     0.0,                                     self.sigma_gaze[2] * self.sigma_gaze[2]]])
+		C_inv = np.linalg.inv(C)
+		f_head = np.exp(-0.5 * np.dot(np.dot(x.T, C_inv), x))
+
+		if LH_centroid is not None:
+			x = np.array([object_centroid[0] - LH_centroid[0], \
+			              object_centroid[1] - LH_centroid[1], \
+			              object_centroid[2] - LH_centroid[2]])
+			C = np.array([[self.sigma_hand[0] * self.sigma_hand[0], 0.0,                                     0.0                                    ], \
+			              [0.0,                                     self.sigma_hand[1] * self.sigma_hand[1], 0.0                                    ], \
+			              [0.0,                                     0.0,                                     self.sigma_hand[2] * self.sigma_hand[2]]])
+			C_inv = np.linalg.inv(C)
+			f_Lhand = np.exp(-0.5 * np.dot(np.dot(x.T, C_inv), x))
+		else:
+			f_Lhand = 0.0
+
+		if RH_centroid is not None:
+			x = np.array([object_centroid[0] - RH_centroid[0], \
+			              object_centroid[1] - RH_centroid[1], \
+			              object_centroid[2] - RH_centroid[2]])
+			C = np.array([[self.sigma_hand[0] * self.sigma_hand[0], 0.0,                                     0.0                                    ], \
+			              [0.0,                                     self.sigma_hand[1] * self.sigma_hand[1], 0.0                                    ], \
+			              [0.0,                                     0.0,                                     self.sigma_hand[2] * self.sigma_hand[2]]])
+			C_inv = np.linalg.inv(C)
+			f_Rhand = np.exp(-0.5 * np.dot(np.dot(x.T, C_inv), x))
+		else:
+			f_Rhand = 0.0
+
+		return max(f_head, f_Lhand, f_Rhand)
+
 '''
 Recognizable Object, whether determined by ground-truth or by deep network detection.
 '''
@@ -1935,6 +1999,276 @@ class Enactment():
 
 		return
 
+	#  This is time-consuming but informative.
+	#  If a specific index is not given, then each action will be rendered to video.
+	#  Include in the rendering as many details as have been prepared. If we computed masks, show the masks. If centroids, show centroids....
+	def render_gaussian_weighted_action(self, gaussian, index=None):
+		if index is None:
+			indices = [i for i in range(0, len(self.actions))]
+		else:
+			indices = [index]
+
+		K = self.K()												#  Build the camera matrix
+		K_inv = np.linalg.inv(K)									#  Build inverse K-matrix
+																	#  Build the flip matrix
+		flip = np.array([[-1.0,  0.0, 0.0], \
+		                 [ 0.0, -1.0, 0.0], \
+		                 [ 0.0,  0.0, 1.0]], dtype='float64')
+
+		sorted_frames = sorted(self.frames.items())
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		for index in indices:
+			if self.verbose:
+				print('>>> Rendering "' + self.enactment_name + '_Gaussian-weighted_' + str(index) + '.avi' + '"')
+
+			action_frames = self.action_frameset(index)				#  Retrieve a list of indices into self.frames for self.action[index]
+			num_frames = len(action_frames)
+			prev_ctr = 0
+
+			vid = cv2.VideoWriter( self.enactment_name + '_Gaussian-weighted_' + str(index) + '.avi', \
+			                       cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
+			                       self.fps, \
+			                      (self.width, self.height) )
+			i = 0
+			for f in action_frames:
+				frame = np.zeros((self.height, self.width, 3), dtype='uint8')
+																	#  Load the depth map.
+				depthmap = cv2.imread(sorted_frames[f][1].fullpath('depth'), cv2.IMREAD_UNCHANGED)
+				if sorted_frames[f][1].left_hand_pose is not None:
+					lh = sorted_frames[f][1].left_hand_pose[:3]		#  Leave off hand state.
+				else:
+					lh = None
+				if sorted_frames[f][1].right_hand_pose is not None:
+					rh = sorted_frames[f][1].right_hand_pose[:3]	#  Leave off hand state.
+				else:
+					rh = None
+																	#  Array of mask images: load everything, ONCE.
+				detection_masks = [cv2.imread(detection.mask_path, cv2.IMREAD_UNCHANGED) for detection in sorted_frames[f][1].detections if detection.enabled]
+
+				for y in range(0, self.height):						#  So sloooooooow... iterate over every pixel and project.
+					for x in range(0, self.width):
+						d = self.min_depth + (float(depthmap[y, x]) / 255.0) * (self.max_depth - self.min_depth)
+						centroid = np.dot(K_inv, np.array([x, y, 1.0]))
+						centroid *= d								#  Scale by known depth (meters from head).
+						pt = np.dot(flip, centroid)					#  Flip point.
+						g = gaussian.weigh(pt, lh, rh)				#  Weigh the pixel.
+
+						detection_ctr = 0
+						found = False
+						for detection in [det for det in sorted_frames[f][1].detections if det.enabled]:
+							if detection.enabled and detection.object_name in self.robject_colors and detection_masks[detection_ctr][y, x] > 0:
+								frame[y, x, 0] = int(round(self.robject_colors[detection.object_name][2] * g))
+								frame[y, x, 1] = int(round(self.robject_colors[detection.object_name][1] * g))
+								frame[y, x, 2] = int(round(self.robject_colors[detection.object_name][0] * g))
+								found = True
+								break
+							detection_ctr += 1
+
+						if not found:								#  No object: color gray.
+							frame[y, x, 0] = int(round(255.0 * g))
+							frame[y, x, 1] = int(round(255.0 * g))
+							frame[y, x, 2] = int(round(255.0 * g))
+
+				for detection in sorted_frames[f][1].detections:	#  Render bounding boxes and (bbox) centroids
+					if detection.object_name is not None and detection.enabled and detection.object_name in self.robject_colors:
+						object_name = detection.object_name
+						center_bbox = detection.center('bbox')
+						bbox = detection.bounding_box
+						cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (self.robject_colors[ object_name ][2], \
+						                                                              self.robject_colors[ object_name ][1], \
+						                                                              self.robject_colors[ object_name ][0]), 1)
+						cv2.circle(frame, (center_bbox[0], center_bbox[1]), 5, (self.robject_colors[ object_name ][2], \
+						                                                        self.robject_colors[ object_name ][1], \
+						                                                        self.robject_colors[ object_name ][0]), 3)
+
+				if sorted_frames[f][1].left_hand_pose is not None:	#  Does the left hand project into the camera?
+					x = np.array(sorted_frames[f][1].left_hand_pose[:3]).reshape(3, 1)
+					p = np.dot(K, x)
+					if p[2] != 0.0:
+						p /= p[2]
+						x = int(round(p[0][0]))						#  Round and discretize to pixels
+						y = int(round(p[1][0]))
+						if x >= 0 and x < self.width and y >= 0 and y < self.height:
+							cv2.line(frame, (self.width - x - 5, self.height - y - 5), \
+							                (self.width - x + 5, self.height - y + 5), (0, 255, 0, 255), 3)
+							cv2.line(frame, (self.width - x - 5, self.height - y + 5), \
+							                (self.width - x + 5, self.height - y - 5), (0, 255, 0, 255), 3)
+																	#  Write the hand subvector
+							cv2.putText(frame, "{:.2f}".format(sorted_frames[f][1].left_hand_pose[0]) + ', ' + \
+							                   "{:.2f}".format(sorted_frames[f][1].left_hand_pose[1]) + ', ' + \
+							                   "{:.2f}".format(sorted_frames[f][1].left_hand_pose[2]) + ': ' + str(sorted_frames[f][1].left_hand_pose[3]), \
+							            (self.LH_super['x'], self.LH_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.LH_super['fontsize'], (0, 255, 0, 255), 3)
+
+				if sorted_frames[f][1].right_hand_pose is not None:	#  Does the right hand project into the camera?
+					x = np.array(sorted_frames[f][1].right_hand_pose[:3]).reshape(3, 1)
+					p = np.dot(K, x)
+					if p[2] != 0.0:
+						p /= p[2]
+						x = int(round(p[0][0]))						#  Round and discretize to pixels
+						y = int(round(p[1][0]))
+						if x >= 0 and x < self.width and y >= 0 and y < self.height:
+							cv2.line(frame, (self.width - x - 5, self.height - y - 5), \
+							                (self.width - x + 5, self.height - y + 5), (0, 0, 255, 255), 3)
+							cv2.line(frame, (self.width - x - 5, self.height - y + 5), \
+							                (self.width - x + 5, self.height - y - 5), (0, 0, 255, 255), 3)
+																	#  Write the hand subvector
+							cv2.putText(frame, "{:.2f}".format(sorted_frames[f][1].right_hand_pose[0]) + ', ' + \
+							                   "{:.2f}".format(sorted_frames[f][1].right_hand_pose[1]) + ', ' + \
+							                   "{:.2f}".format(sorted_frames[f][1].right_hand_pose[2]) + ': ' + str(sorted_frames[f][1].right_hand_pose[3]), \
+							            (self.RH_super['x'], self.RH_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.RH_super['fontsize'], (0, 0, 255, 255), 3)
+
+																	#  Write the true action
+				if sorted_frames[f][1].ground_truth_label == '*':	#  White asterisk for nothing
+					cv2.putText(frame, sorted_frames[f][1].ground_truth_label, (self.gt_label_super['x'], self.gt_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.gt_label_super['fontsize'], (255, 255, 255, 255), 3)
+				else:												#  Bright green for truth!
+					cv2.putText(frame, sorted_frames[f][1].ground_truth_label, (self.gt_label_super['x'], self.gt_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.gt_label_super['fontsize'], (0, 255, 0, 255), 3)
+																	#  Write the frame file name
+				cv2.putText(frame, sorted_frames[f][1].file_name, (self.filename_super['x'], self.filename_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.filename_super['fontsize'], (0, 255, 0, 255), 3)
+
+				vid.write(frame)
+
+				if self.verbose:
+					if int(round(float(i) / float(num_frames - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+						prev_ctr = int(round(float(i) / float(num_frames - 1) * float(max_ctr)))
+						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames - 1) * 100.0))) + '%]')
+						sys.stdout.flush()
+				i += 1
+
+			vid.release()
+			if self.verbose:
+				print('')
+
+		return
+
+	#  This is time-consuming but informative.
+	#  Include in the rendering as many details as have been prepared. If we computed masks, show the masks. If centroids, show centroids....
+	def render_gaussian_weighted_video(self, gaussian):
+		K = self.K()												#  Build the camera matrix
+		sorted_frames = sorted(self.frames.items())
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		if self.verbose:
+			print('>>> Rendering "' + self.enactment_name + '_Gaussian-weighted.avi' + '"')
+
+		num_frames = len(sorted_frames)
+		prev_ctr = 0
+
+		vid = cv2.VideoWriter( self.enactment_name + '_Gaussian-weighted.avi', \
+		                       cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
+		                       self.fps, \
+		                      (self.width, self.height) )
+		i = 0
+		for time_stamp, frame in sorted_frames:
+			img = np.zeros((self.height, self.width, 3), dtype='uint8')
+																	#  Load the depth map.
+			depthmap = cv2.imread(frame.fullpath('depth'), cv2.IMREAD_UNCHANGED)
+			if frame.left_hand_pose is not None:
+				lh = frame.left_hand_pose[:3]						#  Leave off hand state.
+			else:
+				lh = None
+			if frame.right_hand_pose is not None:
+				rh = frame.right_hand_pose[:3]						#  Leave off hand state.
+			else:
+				rh = None
+																	#  Array of mask images: load everything, ONCE.
+			detection_masks = [cv2.imread(detection.mask_path, cv2.IMREAD_UNCHANGED) for detection in frame.detections if detection.enabled]
+
+			for y in range(0, self.height):							#  So sloooooooow... iterate over every pixel and project.
+				for x in range(0, self.width):
+					d = self.min_depth + (float(depthmap[y, x]) / 255.0) * (self.max_depth - self.min_depth)
+					centroid = np.dot(K_inv, np.array([x, y, 1.0]))
+					centroid *= d									#  Scale by known depth (meters from head).
+					pt = np.dot(flip, centroid)						#  Flip point.
+					g = gaussian.weigh(pt, lh, rh)					#  Weigh the pixel.
+
+					detection_ctr = 0
+					found = False
+					for detection in [det for det in frame.detections if det.enabled]:
+						if detection.enabled and detection.object_name in self.robject_colors and detection_masks[detection_ctr][y, x] > 0:
+							img[y, x, 0] = int(round(self.robject_colors[detection.object_name][2] * g))
+							img[y, x, 1] = int(round(self.robject_colors[detection.object_name][1] * g))
+							img[y, x, 2] = int(round(self.robject_colors[detection.object_name][0] * g))
+							found = True
+							break
+						detection_ctr += 1
+
+					if not found:									#  No object: color gray.
+						img[y, x, 0] = int(round(255.0 * g))
+						img[y, x, 1] = int(round(255.0 * g))
+						img[y, x, 2] = int(round(255.0 * g))
+
+			for detection in frame.detections:						#  Render bounding boxes and (bbox) centroids
+				if detection.object_name is not None and detection.enabled and detection.object_name in self.robject_colors:
+					object_name = detection.object_name
+					center_bbox = detection.center('bbox')
+					bbox = detection.bounding_box
+					cv2.rectangle(img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (self.robject_colors[ object_name ][2], \
+					                                                            self.robject_colors[ object_name ][1], \
+					                                                            self.robject_colors[ object_name ][0]), 1)
+					cv2.circle(img, (center_bbox[0], center_bbox[1]), 5, (self.robject_colors[ object_name ][2], \
+					                                                      self.robject_colors[ object_name ][1], \
+					                                                      self.robject_colors[ object_name ][0]), 3)
+
+			if frame.left_hand_pose is not None:					#  Does the left hand project into the camera?
+				x = np.array(frame.left_hand_pose[:3]).reshape(3, 1)
+				p = np.dot(K, x)
+				if p[2] != 0.0:
+					p /= p[2]
+					x = int(round(p[0][0]))							#  Round and discretize to pixels
+					y = int(round(p[1][0]))
+					if x >= 0 and x < self.width and y >= 0 and y < self.height:
+						cv2.line(img, (self.width - x - 5, self.height - y - 5), \
+						              (self.width - x + 5, self.height - y + 5), (0, 255, 0, 255), 3)
+						cv2.line(img, (self.width - x - 5, self.height - y + 5), \
+						              (self.width - x + 5, self.height - y - 5), (0, 255, 0, 255), 3)
+																	#  Write the hand subvector
+						cv2.putText(img, "{:.2f}".format(frame.left_hand_pose[0]) + ', ' + \
+						                 "{:.2f}".format(frame.left_hand_pose[1]) + ', ' + \
+						                 "{:.2f}".format(frame.left_hand_pose[2]) + ': ' + str(frame.left_hand_pose[3]), \
+						            (self.LH_super['x'], self.LH_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.LH_super['fontsize'], (0, 255, 0, 255), 3)
+
+			if frame.right_hand_pose is not None:					#  Does the right hand project into the camera?
+				x = np.array(frame.right_hand_pose[:3]).reshape(3, 1)
+				p = np.dot(K, x)
+				if p[2] != 0.0:
+					p /= p[2]
+					x = int(round(p[0][0]))							#  Round and discretize to pixels
+					y = int(round(p[1][0]))
+					if x >= 0 and x < self.width and y >= 0 and y < self.height:
+						cv2.line(img, (self.width - x - 5, self.height - y - 5), \
+						              (self.width - x + 5, self.height - y + 5), (0, 0, 255, 255), 3)
+						cv2.line(img, (self.width - x - 5, self.height - y + 5), \
+						              (self.width - x + 5, self.height - y - 5), (0, 0, 255, 255), 3)
+																	#  Write the hand subvector
+						cv2.putText(img, "{:.2f}".format(frame.right_hand_pose[0]) + ', ' + \
+						                 "{:.2f}".format(frame.right_hand_pose[1]) + ', ' + \
+						                 "{:.2f}".format(frame.right_hand_pose[2]) + ': ' + str(frame.right_hand_pose[3]), \
+						            (self.RH_super['x'], self.RH_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.RH_super['fontsize'], (0, 0, 255, 255), 3)
+
+																	#  Write the true action
+			if frame.ground_truth_label == '*':						#  White asterisk for nothing
+				cv2.putText(img, frame.ground_truth_label, (self.gt_label_super['x'], self.gt_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.gt_label_super['fontsize'], (255, 255, 255, 255), 3)
+			else:													#  Bright green for truth!
+				cv2.putText(img, frame.ground_truth_label, (self.gt_label_super['x'], self.gt_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.gt_label_super['fontsize'], (0, 255, 0, 255), 3)
+																	#  Write the frame file name
+			cv2.putText(img, frame.file_name, (self.filename_super['x'], self.filename_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.filename_super['fontsize'], (0, 255, 0, 255), 3)
+
+			vid.write(img)
+
+			if self.verbose:
+				if int(round(float(i) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			i += 1
+
+		vid.release()
+		if self.verbose:
+			print('')
+
+		return
+
 	#  Render a video that overlays color-segmentation and depth so that we can see if anything has been misfiled.
 	def render_composite_video(self):
 		vid = cv2.VideoWriter( self.enactment_name + '_composite.avi', \
@@ -2216,6 +2550,153 @@ class Enactment():
 		for line in lines:
 			fh.write(str(line[0]) + ' ' + str(line[1]) + '\n')
 		fh.close()
+
+		return
+
+	#  Render a single frame as a point cloud and save it to "<self.enactment_name>_<time_stamp>_<mode>.ply".
+	def render_point_cloud(self, frame_key, **kwargs):
+		if 'mode' in kwargs:
+			assert isinstance(kwargs['mode'], str) and \
+			       (kwargs['mode'] == 'video' or kwargs['mode'] == 'color' or kwargs['mode'] == 'depth'), \
+			       'Argument \'mode\' passed to Enactment.render_point_cloud() must be a string in {video, color, depth}.'
+			mode = kwargs['mode']
+		else:
+			mode = 'video'
+
+		if 'gaussian' in kwargs:
+			assert isinstance(kwargs['gaussian'], Gaussian), \
+			       'Argument \'gaussian\' passed to Enactment.render_point_cloud() must be a Gaussian object.'
+			gaussian = kwargs['gaussian']
+		else:
+			gaussian = None
+
+		if frame_key in self.frames:
+			K = self.K()											#  Build the camera matrix
+			K_inv = np.linalg.inv(K)								#  Build inverse K-matrix
+																	#  Build the flip matrix
+			flip = np.array([[-1.0,  0.0, 0.0], \
+			                 [ 0.0, -1.0, 0.0], \
+			                 [ 0.0,  0.0, 1.0]], dtype='float64')
+																	#  We will always need the depth map
+			depthmap = cv2.imread(self.frames[frame_key].fullpath('depth'), cv2.IMREAD_UNCHANGED)
+			colormap = cv2.imread(self.frames[frame_key].fullpath('color'), cv2.IMREAD_UNCHANGED)
+			videoframe = cv2.imread(self.frames[frame_key].fullpath('video'), cv2.IMREAD_UNCHANGED)
+			if videoframe.shape[2] > 3:
+				videoframe = cv2.cvtColors(videoframe, cv2.COLOR_RGBA2RGB)
+
+			if self.frames[frame_key].left_hand_pose is not None:
+				lh = self.frames[frame_key].left_hand_pose[:3]		#  Leave off hand state.
+			else:
+				lh = None
+			if self.frames[frame_key].right_hand_pose is not None:
+				rh = self.frames[frame_key].right_hand_pose[:3]		#  Leave off hand state.
+			else:
+				rh = None
+
+			ply_file_name = self.enactment_name + '_' + str(frame_key) + '_' + mode + '.ply'
+			fh = open(ply_file_name, 'w')
+			fh.write('ply' + '\n')
+			fh.write('format ascii 1.0' + '\n')
+			fh.write('comment Point cloud of frame ' + str(frame_key) + ', enactment "' + self.enactment_name + '".' + '\n')
+			if mode == 'video':
+				fh.write('comment Rendered from the video frame.' + '\n')
+			elif mode == 'color':
+				fh.write('comment Rendered from the color map.' + '\n')
+			elif mode == 'depth':
+				fh.write('comment Rendered from the depth map.' + '\n')
+			if gaussian is not None:
+				fh.write('comment Gaussian-weighting applied to points\' colors.' + '\n')
+			fh.write('element vertex ' + str(self.width * self.height) + '\n')
+			fh.write('property float x' + '\n')
+			fh.write('property float y' + '\n')
+			fh.write('property float z' + '\n')
+			fh.write('property uchar red' + '\n')
+			fh.write('property uchar green' + '\n')
+			fh.write('property uchar blue' + '\n')
+			fh.write('end_header' + '\n')
+
+			if self.verbose:
+				print('>>> Rendering frame ' + str(frame_key) + ' to point cloud "' + ply_file_name + '"')
+																	#  Array of mask images: load everything, ONCE.
+			detection_masks = [cv2.imread(detection.mask_path, cv2.IMREAD_UNCHANGED) for detection in self.frames[frame_key].detections if detection.enabled]
+
+			max_ctr = os.get_terminal_size().columns - 7			#  Leave enough space for the brackets, space, and percentage.
+			prev_ctr = 0
+			i = 0
+
+			for y in range(0, self.height):							#  So sloooooooow... iterate over every pixel and project.
+				for x in range(0, self.width):
+					d = self.min_depth + (float(depthmap[y, x]) / 255.0) * (self.max_depth - self.min_depth)
+					centroid = np.dot(K_inv, np.array([x, y, 1.0]))
+					centroid *= d									#  Scale by known depth (meters from head).
+					pt = np.dot(flip, centroid)						#  Flip point.
+					if gaussian is not None:
+						g = gaussian.weigh(pt, lh, rh)				#  Weigh the pixel.
+
+					detection_ctr = 0
+					found = False
+					for detection in [det for det in self.frames[frame_key].detections if det.enabled]:
+						if detection.object_name in self.robject_colors and detection_masks[detection_ctr][y, x] > 0:
+							if gaussian is not None:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(int(round(self.robject_colors[detection.object_name][0] * g))) + ' ' + \
+								         str(int(round(self.robject_colors[detection.object_name][1] * g))) + ' ' + \
+								         str(int(round(self.robject_colors[detection.object_name][2] * g))) + '\n')
+							else:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(self.robject_colors[detection.object_name][0]) + ' ' + \
+								         str(self.robject_colors[detection.object_name][1]) + ' ' + \
+								         str(self.robject_colors[detection.object_name][2]) + '\n')
+							found = True
+							break
+						detection_ctr += 1
+
+					if not found:									#  No object: color according to 'mode'.
+						if mode == 'video':
+							if gaussian is not None:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(int(round(videoframe[y, x, 2] * g))) + ' ' + \
+								         str(int(round(videoframe[y, x, 1] * g))) + ' ' + \
+								         str(int(round(videoframe[y, x, 0] * g))) + '\n')
+							else:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(videoframe[y, x, 2]) + ' ' + \
+								         str(videoframe[y, x, 1]) + ' ' + \
+								         str(videoframe[y, x, 0]) + '\n')
+						elif mode == 'color':
+							if gaussian is not None:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(int(round(colormap[y, x, 2] * g))) + ' ' + \
+								         str(int(round(colormap[y, x, 1] * g))) + ' ' + \
+								         str(int(round(colormap[y, x, 0] * g))) + '\n')
+							else:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(colormap[y, x, 2]) + ' ' + \
+								         str(colormap[y, x, 1]) + ' ' + \
+								         str(colormap[y, x, 0]) + '\n')
+						else:
+							if gaussian is not None:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(int(round(255.0 * g))) + ' ' + \
+								         str(int(round(255.0 * g))) + ' ' + \
+								         str(int(round(255.0 * g))) + '\n')
+							else:
+								fh.write(str(pt[0]) + ' ' + str(pt[1]) + ' ' + str(pt[2]) + ' ' + \
+								         str(depthmap[y, x]) + ' ' + \
+								         str(depthmap[y, x]) + ' ' + \
+								         str(depthmap[y, x]) + '\n')
+
+					if self.verbose:
+						if int(round(float(i) / float(self.width * self.height) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+							prev_ctr = int(round(float(i) / float(self.width * self.height) * float(max_ctr)))
+							sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(self.width * self.height) * 100.0))) + '%]')
+							sys.stdout.flush()
+					i += 1
+
+			fh.close()
+
+		elif self.verbose:
+			print('    Key ' + str(frame_key) + ' not found in frames table.')
 
 		return
 
