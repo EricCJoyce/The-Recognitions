@@ -9,6 +9,9 @@ import shutil
 import sys
 import time
 
+'''
+The "cone of attention" that boosts or lowers object signals in the props subvector according to their proximities to gaze and hands.
+'''
 class Gaussian():
 	def __init__(self, **kwargs):
 		self.mu = (0.0, 0.0, 0.0)									#  Centered on the head
@@ -570,7 +573,7 @@ class Action():
 		return
 
 '''
-
+Interface for the recorded VR session.
 '''
 class Enactment():
 	def __init__(self, name, **kwargs):
@@ -753,7 +756,7 @@ class Enactment():
 	#  Output: write an enactment file.                             #
 	#################################################################
 
-	#
+	#  Formatted representation of an enactment.
 	def write_text_enactment_file(self, gaussian):
 		fh = open(self.enactment_name + '.enactment', 'w')
 		fh.write('#  Enactment vectors derived from FactualVR enactment materials.\n')
@@ -815,12 +818,6 @@ class Enactment():
 
 			fh.write('\t'.join([str(x) for x in props_subvector]) + '\n')
 
-		fh.close()
-		return
-
-	#
-	def write_binary_enactment_file(self, gaussian):
-		fh = open(self.enactment_name + '.enactment', 'wb')
 		fh.close()
 		return
 
@@ -1837,6 +1834,24 @@ class Enactment():
 				                               label=buffer_labels[0]) )
 
 		return snippet_actions
+
+	#  Return a dictionary of all depths for all pixels of all frames in this enactment.
+	#  key:depth(in meters) ==> val:count.
+	def compute_depth_histogram(self):
+		histogram = {}												#  Prepare the histogram--IN METERS
+		for i in range(0, 256):
+			d = (float(i) / 255.0) * (self.max_depth - self.min_depth) + self.min_depth
+			histogram[d] = 0
+
+		for depth_frame in self.load_depth_sequence(True):
+			depth_map = cv2.imread(depth_frame, cv2.IMREAD_UNCHANGED)
+
+			histg = [int(x) for x in cv2.calcHist([depth_map], [0], None, [256], [0, 256])]
+			for i in range(0, 256):
+				d = (float(i) / 255.0) * (self.max_depth - self.min_depth) + self.min_depth
+				histogram[d] += histg[i]
+
+		return histogram
 
 	#################################################################
 	#  Rendering: see that what is computed is what you expect.     #
@@ -2939,27 +2954,3 @@ class Enactment():
 		if full_path:
 			return [ stem + x for x in sorted([x for x in os.listdir(stem) if x.endswith('.png')], key=lambda x: int(x.split('_')[0])) ]
 		return sorted(os.listdir(stem), key=lambda x: int(x.split('_')[0]))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	#  Run what used to be 22feb21's check.py script and what used to be 22feb21's histogram_z.py script:
-	#  Survey depth ranges of enactment. Find the lowest low and the highest high.
-	#  Make sure all depth maps are single-channel images. Plot a histogram of all depths used in given enactments.
-	#  Render composite videos of all given enactments so that we can see at a glance whether the depth or color maps have been mismatched. It's happened before.
-	#  SKIP ALL OF THIS IF A LOG FILE ALREADY EXISTS
-	def check(self):
-		return
-
-	def simulate_real_time(self):
-		return
