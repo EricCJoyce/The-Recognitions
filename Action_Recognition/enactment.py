@@ -76,6 +76,10 @@ class Gaussian():
 
 		return max(f_head, f_Lhand, f_Rhand)
 
+	#  Return a list of this object's parameters.
+	def parameter_list(self):
+		return list(self.mu) + list(self.sigma_gaze) + list(self.sigma_hand)
+
 '''
 Recognizable Object, whether determined by ground-truth or by deep network detection.
 '''
@@ -578,6 +582,8 @@ Interface for the recorded VR session.
 class Enactment():
 	def __init__(self, name, **kwargs):
 		self.enactment_name = name									#  Also the name of the directory
+		self.width = None
+		self.height = None
 		self.focal_length = None									#  Can be set explicitly or computed from metadata
 		self.verbose = False										#  False by default
 		self.epsilon = 0											#  Amount, per color channel, by which we allow colors to deviate.
@@ -599,6 +605,23 @@ class Enactment():
 		else:														#  Fetch maximum depth from metadata
 			self.user = 'vr1'
 
+		if 'enactment_file' in kwargs:								#  Were we given an enactment file? (Really only helpful here for getting W & H)
+																	#  There is no sense reading into self.recognizable_objects here because only
+																	#  partial information is contained in the *.enactment file anyway.
+			assert isinstance(kwargs['enactment_file'], str), 'Argument \'\' passed to Enactment must be a string.'
+			fh = open(kwargs['enactment_file'], 'r')
+			reading_dimensions = False
+			for line in fh.readlines():
+				if line[0] == '#':
+					if 'WIDTH & HEIGHT' in line:
+						reading_dimensions = True
+					elif reading_dimensions:
+						arr = line[1:].strip().split()
+						self.width = int(arr[0])
+						self.height = int(arr[1])
+						reading_dimensions = False
+			fh.close()
+
 		if 'wh' in kwargs:											#  Were we given a tuple (width, height)?
 			assert isinstance(kwargs['wh'], tuple) and \
 			       len(kwargs['wh']) == 2 and \
@@ -606,7 +629,7 @@ class Enactment():
 			       isinstance(kwargs['wh'][1], int) and kwargs['wh'][1] > 0, 'Argument \'wh\' passed to Enactment must be a tuple of integers > 0.'
 			self.width = kwargs['wh'][0]
 			self.height = kwargs['wh'][1]
-		else:														#  If not, check every file for bogies.
+		elif self.width is None or self.height is None:				#  If not, check every file for bogies.
 			discovered_w = {}
 			discovered_h = {}
 
@@ -753,7 +776,7 @@ class Enactment():
 		self.apply_actions_to_frames()
 
 	#################################################################
-	#  Output: write an enactment file.                             #
+	#  Enactment files: write and read.                             #
 	#################################################################
 
 	#  Formatted representation of an enactment.
@@ -761,6 +784,10 @@ class Enactment():
 		fh = open(self.enactment_name + '.enactment', 'w')
 		fh.write('#  Enactment vectors derived from FactualVR enactment materials.\n')
 		fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
+		fh.write('#  WIDTH & HEIGHT:\n')
+		fh.write('#    ' + str(self.width) + '\t' + str(self.height) + '\n')
+		fh.write('#  GAUSSIAN: (mu_x, mu_y, mu_z, sigma_gaze_x, sigma_gaze_y, sigma_gaze_z, sigma_hand_x, sigma_hand_y, sigma_hand_z)\n')
+		fh.write('#    ' + '\t'.join([str(x) for x in gaussian.parameter_list()]) + '\n')
 		fh.write('#  RECOGNIZABLE OBJECTS:\n')
 		fh.write('#    ' + '\t'.join(self.recognizable_objects) + '\n')
 		fh.write('#  ENCODING STRUCTURE:\n')
