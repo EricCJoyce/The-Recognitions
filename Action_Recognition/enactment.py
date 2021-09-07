@@ -496,16 +496,6 @@ class Frame():
 		plt.show()
 		return
 
-	'''
-	def write_text_ground_truth(self, fh):
-		#for detection in self.detections:
-		return
-
-	def write_binary_ground_truth(self, fh):
-		#fh.write()
-		return
-	'''
-
 '''
 This is a "loose" sort of data type in that Actions are not really binding until their host Enactment calls apply_actions_to_frames().
 Actions contain a label and delineate where things begin and end.
@@ -776,11 +766,18 @@ class Enactment():
 		self.apply_actions_to_frames()
 
 	#################################################################
-	#  Enactment files: write and read.                             #
+	#  Output: write an enactment file.                             #
 	#################################################################
 
 	#  Formatted representation of an enactment.
 	def write_text_enactment_file(self, gaussian):
+		if self.verbose:
+			print('>>> Writing enactment to file.')
+
+		num_frames = len(self.frames)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
 		fh = open(self.enactment_name + '.enactment', 'w')
 		fh.write('#  Enactment vectors derived from FactualVR enactment materials.\n')
 		fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
@@ -796,6 +793,7 @@ class Enactment():
 		                              'RHx', 'RHy', 'RHz', 'RH0', 'RH1', 'RH2'] + self.recognizable_objects)
 		fh.write('#    ' + structure_string + '\n')
 
+		ctr = 0
 		for time_stamp, frame in sorted(self.frames.items()):
 			fh.write(str(time_stamp) + '\t')
 			fh.write(frame.fullpath() + '\t')
@@ -845,7 +843,18 @@ class Enactment():
 
 			fh.write('\t'.join([str(x) for x in props_subvector]) + '\n')
 
+			if self.verbose:
+				if int(round(float(ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+
 		fh.close()
+
+		if self.verbose:
+			print('')
+
 		return
 
 	#################################################################
@@ -1774,6 +1783,23 @@ class Enactment():
 
 		return f
 
+	#  Return a list of tuples(time stamp, Frame) covering a given (as opposed to an indexed) Action.
+	def action_to_frames(self, action, full_tuple=True):
+		f = []
+
+		sorted_frames = sorted(self.frames.items())
+		sorted_frame_names = [x[1].file_name for x in sorted_frames]
+
+		for i in range(0, len(sorted_frames)):
+			if i >= sorted_frame_names.index(action.start_frame.split('/')[-1]) and \
+			   i <  sorted_frame_names.index(action.end_frame.split('/')[-1]):
+				if full_tuple:										#  Return the pair (time stamp, Frame object).
+					f.append(sorted_frames[i])
+				else:												#  Return the Frame object only.
+					f.append(sorted_frames[i][1])
+
+		return f
+
 	#  Print out a formatted list of this enactment's actions
 	def itemize_actions(self):
 		maxlen_label = 0
@@ -1870,13 +1896,32 @@ class Enactment():
 			d = (float(i) / 255.0) * (self.max_depth - self.min_depth) + self.min_depth
 			histogram[d] = 0
 
-		for depth_frame in self.load_depth_sequence(True):
+		if self.verbose:
+			print('>>> Computing depth histogram.')
+
+		depth_frames = self.load_depth_sequence(True)
+		num_frames = len(depth_frames)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		ctr = 0
+		for depth_frame in depth_frames:
 			depth_map = cv2.imread(depth_frame, cv2.IMREAD_UNCHANGED)
 
 			histg = [int(x) for x in cv2.calcHist([depth_map], [0], None, [256], [0, 256])]
 			for i in range(0, 256):
 				d = (float(i) / 255.0) * (self.max_depth - self.min_depth) + self.min_depth
 				histogram[d] += histg[i]
+
+			if self.verbose:
+				if int(round(float(ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+
+		if self.verbose:
+			print('')
 
 		return histogram
 
@@ -2894,6 +2939,56 @@ class Enactment():
 					prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
 					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
 					sys.stdout.flush()
+		if self.verbose:
+			print('')
+
+		return
+
+	#  As loaded from JSON, the sensor data for hands continue to be tracked even when the hands are not visible.
+	#  Call this function to iterate over all frames and test whether the hand projects into the camera.
+	#  If so, that pose for that hand remains. If not, that pose for that hand is set to None.
+	#  (You can always call load_sensor_poses() again to restore all sensor-based hand poses.)
+	def apply_camera_projection_shutoff(self):
+		if self.verbose:
+			print('>>> Applying projection cutoff to hand poses.')
+
+		num_frames = len(self.frames)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		K = self.K()												#  Retrieve the enactment's camera.
+
+		ctr = 0
+		for time_stamp, frame in sorted(self.frames.items()):
+			if frame.left_hand_pose is not None:
+				x = np.array(frame.left_hand_pose[:3]).reshape(3, 1)
+				p = np.dot(K, x)
+				if p[2] != 0.0:
+					p /= p[2]
+					x = int(round(p[0][0]))							#  Round and discretize to pixels.
+					y = int(round(p[1][0]))
+					if x < 0 or x >= self.width or y < 0 or y >= self.height:
+						frame.left_hand_pose = None					#  Zero out the local.
+						frame.left_hand_global_pose = None			#  Zero out the global.
+
+			if frame.right_hand_pose is not None:
+				x = np.array(frame.right_hand_pose[:3]).reshape(3, 1)
+				p = np.dot(K, x)
+				if p[2] != 0.0:
+					p /= p[2]
+					x = int(round(p[0][0]))							#  Round and discretize to pixels.
+					y = int(round(p[1][0]))
+					if x < 0 or x >= self.width or y < 0 or y >= self.height:
+						frame.right_hand_pose = None				#  Zero out the local.
+						frame.right_hand_global_pose = None			#  Zero out the global.
+
+			if self.verbose:
+				if int(round(float(ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+
 		if self.verbose:
 			print('')
 
