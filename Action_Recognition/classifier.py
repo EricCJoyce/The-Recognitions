@@ -796,6 +796,8 @@ class AtemporalClassifier(Classifier):
 
 		classification_stats = {}
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
+
 		for label in super(AtemporalClassifier, self).labels('both'):
 			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
 			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
@@ -821,6 +823,10 @@ class AtemporalClassifier(Classifier):
 				if v < least_cost:
 					least_cost = v
 					prediction = k
+																	#  Before consulting the threshold and possibly witholding judgment,
+																	#  save the confidence score for what *would* have been picked.
+																	#  We use these values downstream in the pipeline for isotonic regression.
+			classification_stats['_conf'].append( confidences[prediction] )
 
 			if probabilities[prediction] < self.threshold:			#  Is it above the threshold?
 				prediction = None
@@ -842,7 +848,7 @@ class AtemporalClassifier(Classifier):
 						mismatch_ctr += 1
 						vid_file_name = 'atemporal-mismatch_' + str(mismatch_ctr) + '.avi'
 
-					self.redner_side_by_side(vid_file_name, prediction, ground_truth_label, i, metadata)
+					self.render_side_by_side(vid_file_name, prediction, ground_truth_label, i, metadata)
 
 			if self.verbose:
 				if int(round(float(i) / float(num_labels - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
@@ -1059,13 +1065,6 @@ class AtemporalClassifier(Classifier):
 		if i < len(keys):
 			self.allocation[ keys[i] ] = dst_set
 		return
-
-	#
-	#def equalize_sets(self, method):
-
-	#
-	#def down_sample(self, ):
-	#	return
 
 	#  Replace all old labels with new labels in both training and test sets.
 	def relabel(self, old_label, new_label):
@@ -1307,8 +1306,9 @@ class AtemporalClassifier(Classifier):
 	#  Rendering                                                    #
 	#################################################################
 
-	#self.render_side_by_side(vid_file_name, metadata, i)
-	def redner_side_by_side(self, vid_file_name, prediction, ground_truth_label, query_number, metadata):
+	#  Create a video with the given 'vid_file_name'
+	#  illustrating the query snippet on the left and the best-matching template snippet on the right.
+	def render_side_by_side(self, vid_file_name, prediction, ground_truth_label, query_number, metadata):
 		half_width = int(round(float(self.width) * 0.5))
 		half_height = int(round(float(self.height) * 0.5))
 
@@ -1483,7 +1483,13 @@ class AtemporalClassifier(Classifier):
 		return
 
 '''
+Give this classifier a database file and enactment files.
+The database becomes the training set, self.X_train, and the enactments will be marched through in simulated real time.
+Buffers-full of vectors from the enactments are given to the classification engine.
+This constitutes "temporal" classification because sequence boundaries are not known a priori.
 
+In the interpreter:
+temporal = TemporalClassifier(rolling_buffer_length=10, rolling_buffer_stride=2, db_file=, inputs=['Enactment11', 'Enactment12'], verbose=True)
 '''
 class TemporalClassifier(Classifier):
 	def __init__(self, **kwargs):
@@ -1544,3 +1550,7 @@ class TemporalClassifier(Classifier):
 	#
 	def pop_temporal(self):
 		return
+
+	#################################################################
+	#  Rendering                                                    #
+	#################################################################
