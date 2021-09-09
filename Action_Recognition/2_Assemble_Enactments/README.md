@@ -11,7 +11,7 @@ To a degree, an `*.enactment` file is an interpretation of those facts. Objects 
 ./EnactmentName
     |
     |--- /mask_rcnn_some_epoch  <--- Present if you have a trained network and ran module 4
-    |--- /gt                    <--- Built by module 1
+    |--- /GT                    <--- Built by module 1
     |--- /Props
     |--- /Subprops
     |--- /Users
@@ -32,25 +32,14 @@ To a degree, an `*.enactment` file is an interpretation of those facts. Objects 
     `--- metadata.fvr
 ```
 
-### For each enactment, the files created by module 1...
+### For each enactment, the file created by module 1...
 ```
-*_groundtruth.txt
-*_IKposes.bbox.shutoff.txt
-*_IKposes.cntr.shutoff.txt
-*_poses.full.txt
-*_poses.head.txt
-*_poses.shutoff.txt
-*_subprops.txt
+*_props.txt
 ```
 
 ### ...or the files created by module 4:
 ```
 *_<network-name>_detections.txt
-*_IKposes.bbox.shutoff.txt
-*_IKposes.cntr.shutoff.txt
-*_poses.full.txt
-*_poses.head.txt
-*_poses.shutoff.txt
 ```
 
 ## Outputs
