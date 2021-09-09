@@ -571,11 +571,12 @@ Interface for the recorded VR session.
 '''
 class Enactment():
 	def __init__(self, name, **kwargs):
-		self.enactment_name = name									#  Also the name of the directory
+		self.enactment_name = name									#  Also the name of the directory.
 		self.width = None
 		self.height = None
-		self.focal_length = None									#  Can be set explicitly or computed from metadata
-		self.verbose = False										#  False by default
+		self.focal_length = None									#  Can be set explicitly or computed from metadata.
+		self.object_detection_source = None							#  Determined by how objects are parsed.
+		self.verbose = False										#  False by default.
 		self.epsilon = 0											#  Amount, per color channel, by which we allow colors to deviate.
 
 		if 'fps' in kwargs:											#  Were we given a frames-per-second rate?
@@ -598,7 +599,7 @@ class Enactment():
 		if 'enactment_file' in kwargs:								#  Were we given an enactment file? (Really only helpful here for getting W & H)
 																	#  There is no sense reading into self.recognizable_objects here because only
 																	#  partial information is contained in the *.enactment file anyway.
-			assert isinstance(kwargs['enactment_file'], str), 'Argument \'\' passed to Enactment must be a string.'
+			assert isinstance(kwargs['enactment_file'], str), 'Argument \'enactment_file\' passed to Enactment must be a string.'
 			fh = open(kwargs['enactment_file'], 'r')
 			reading_dimensions = False
 			for line in fh.readlines():
@@ -783,8 +784,12 @@ class Enactment():
 		fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
 		fh.write('#  WIDTH & HEIGHT:\n')
 		fh.write('#    ' + str(self.width) + '\t' + str(self.height) + '\n')
+		fh.write('#  FPS:\n')
+		fh.write('#    ' + str(self.fps) + '\n')
 		fh.write('#  GAUSSIAN: (mu_x, mu_y, mu_z, sigma_gaze_x, sigma_gaze_y, sigma_gaze_z, sigma_hand_x, sigma_hand_y, sigma_hand_z)\n')
 		fh.write('#    ' + '\t'.join([str(x) for x in gaussian.parameter_list()]) + '\n')
+		fh.write('#  OBJECT DETECTION SOURCE:\n')
+		fh.write('#    ' + self.object_detection_source + '\n')
 		fh.write('#  RECOGNIZABLE OBJECTS:\n')
 		fh.write('#    ' + '\t'.join(self.recognizable_objects) + '\n')
 		fh.write('#  ENCODING STRUCTURE:\n')
@@ -1171,6 +1176,7 @@ class Enactment():
 		self.robject_colors = {}									#  (Re)set color lookup
 
 		colormap = self.load_colormap()
+		self.object_detection_source = 'GT'							#  Using rules and color maps? Then you're using Ground Truth.
 
 		part_lookup_colorAndLink = {}								#  e.g. key:Target1_AuxiliaryFeederBox_Auxiliary.Jaw1
 																	#         ==>  val:{rgb:(255, 205, 0),
@@ -1488,11 +1494,11 @@ class Enactment():
 		return
 
 	#  Write all parsed RObjects to mask images and write a mask lookup-table, "<self.enactment_name>_props.txt".
-	def render_parsed(self, subdirectory_name='GT'):
+	def render_parsed(self):
 		if self.verbose:
 			print('>>> Rendering Recognizable-Object masks.')
 
-		directory_name = self.enactment_name + '/' + subdirectory_name
+		directory_name = self.enactment_name + '/' + self.object_detection_source
 		if os.path.isdir(directory_name):							#  If 'directory_name' exists, delete it
 			shutil.rmtree(directory_name)
 		os.mkdir(directory_name)									#  Create directory_name
@@ -1597,6 +1603,7 @@ class Enactment():
 		num_lines = len(lines)
 		line_ctr = 0
 		reading_robjects = False
+		reading_object_detection_source = False
 		for line in lines:
 			if line[0] == '#':										#  Comment/header
 				if 'RECOGNIZABLE OBJECTS' in line:					#  Flag meaning that the following line contains all recognizable objects.
@@ -1607,6 +1614,13 @@ class Enactment():
 					for robject in self.recognizable_objects:		#  Initialize with random colors, just so this attribute isn't vacant.
 						self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
 					reading_robjects = False
+
+				if 'OBJECT DETECTION SOURCE' in line:				#  Flag meaning that the following line contains the object detection source.
+					reading_object_detection_source = True
+				elif reading_object_detection_source:
+					arr = line[1:].strip().split('\t')
+					self.object_detection_source = arr[0]			#  Copy the object detection source.
+					reading_object_detection_source = False
 			else:
 				arr = line.strip().split('\t')
 				time_stamp = float(arr[0])							#  Retrieve time stamp
