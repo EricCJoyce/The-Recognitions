@@ -44,7 +44,7 @@ To a degree, an `*.enactment` file is an interpretation of those facts. Objects 
 
 ## Outputs
 
-From each target enactment, this script produces an `*.enactment` file.
+From each target enactment, this script produces an `*.enactment` file. If you called this script with the `-render` flag, then a Gaussian-weighted video `*_Gaussian-weighted.avi` of each enactment will be produced, too. These can be informative illustrations of how the Gaussian parameters affect object presence, but they are time-consuming to create.
 
 ## Requirements
 - Python
