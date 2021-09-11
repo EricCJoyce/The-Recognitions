@@ -312,18 +312,30 @@ class Classifier():
 			self.threshold = kwargs['threshold']
 		else:
 			self.threshold = 0.0
-
-		if 'isotonic_file' in kwargs:								#  Were we given an isotonic mapping file?
+																	#  Were we given an isotonic mapping file?
+		if 'isotonic_file' in kwargs and kwargs['isotonic_file'] is not None:
 			assert isinstance(kwargs['isotonic_file'], str), 'Argument \'isotonic_file\' passed to Classifier must be a string.'
 			self.load_isotonic_map(kwargs['isotonic_file'])
 		else:
 			self.isotonic_map = None
-
-		if 'conditions_file' in kwargs:								#  Were we given a cut-off conditions file?
+																	#  Were we given a cut-off conditions file?
+		if 'conditions_file' in kwargs and kwargs['conditions_file'] is not None:
 			assert isinstance(kwargs['conditions_file'], str), 'Argument \'conditions_file\' passed to Classifier must be a string.'
 			self.load_conditions(kwargs['conditions_file'])
 		else:
 			self.conditions = None
+
+		if 'hands_coeff' in kwargs:									#  Were we given a hands-subvector coefficient?
+			assert isinstance(kwargs['hands_coeff'], float), 'Argument \'hands_coeff\' passed to Classifier must be a float.'
+			self.hands_coeff = kwargs['hands_coeff']
+		else:
+			self.hands_coeff = 1.0
+
+		if 'props_coeff' in kwargs:									#  Were we given a props-subvector coefficient?
+			assert isinstance(kwargs['props_coeff'], float), 'Argument \'props_coeff\' passed to Classifier must be a float.'
+			self.props_coeff = kwargs['props_coeff']
+		else:
+			self.props_coeff = 1.0
 
 		if 'open_begin' in kwargs:									#  Were we told to permit or refuse an open beginning?
 			assert isinstance(kwargs['open_begin'], bool), \
@@ -392,6 +404,12 @@ class Classifier():
 	#  Return a list of unique action labels.
 	def num_labels(self):
 		return len(list(np.unique(self.y_train)))
+
+	#  Unify this object's outputs with a unique time stamp.
+	def time_stamp(self):
+		now = datetime.datetime.now()								#  Build a distinct substring so I don't accidentally overwrite results.
+		file_timestamp = now.strftime("%d") + now.strftime("%m") + now.strftime("%Y")[-2:] + 'T' + now.strftime("%H:%M:%S").replace(':', '')
+		return file_timestamp
 
 	#  Load an RGB 3-tuple for each string in self.recognizable_objects.
 	def load_color_map(self, color_file):
@@ -646,6 +664,165 @@ class Classifier():
 				M[i, j] += 1
 
 		return M
+
+	#  Write the confusion matrix to file.
+	def write_confusion_matrix(self, predictions_truths, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		num_classes = self.num_labels()
+		labels = self.labels('both')
+
+		M = self.confusion_matrix(predictions_truths)
+
+		fh = open('confusion-matrix-' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier confusion matrix made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('\t' + '\t'.join(labels) + '\n')					#  Write the column headers
+		for i in range(0, len(labels)):
+			fh.write(labels[i] + '\t' + '\t'.join([str(x) for x in M[i]]) + '\n')
+		fh.close()
+
+		return
+
+	#  Writes two files: "confidences-winners-<time stamp>.txt" and "confidences-all-<time stamp>.txt".
+	#  The former writes only the confidence scores for predictions.
+	#  The latter writes the confidence scores for all labels, even those that were not selected by nearest-neighbor.
+	def write_confidences(self, predictions_truths, confidences, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		fh = open('confidences-winners-' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  Winning labels only.\n')
+		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
+		fh.write('#  Confidence    Predicted-Label    Ground-Truth-Label\n')
+		for i in range(0, len(predictions_truths)):
+			c = confidences[i]
+			prediction = predictions_truths[i][0]
+			ground_truth_label = predictions_truths[i][1]
+
+			if prediction is not None:
+				fh.write(str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+			else:
+				fh.write(str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+		fh.close()
+																	#  Zip these up so we can sort them DESCENDING by confidence.
+		pred_gt_conf = sorted(list(zip(predictions_truths, confidences)), key=lambda x: x[1], reverse=True)
+		pred_gt = [x[0] for x in pred_gt_conf]						#  Now separate them again.
+		conf = [x[1] for x in pred_gt_conf]
+
+		fh = open('confidences-all-' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  All labels.\n')
+		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
+		fh.write('#  Confidence    Label    Ground-Truth-Label\n')
+		for i in range(0, len(predictions_truths)):
+			c = conf[i]
+			prediction = pred_gt[i][0]
+			ground_truth_label = pred_gt[i][1]
+
+			if prediction is not None:
+				fh.write(str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+			else:
+				fh.write(str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+		fh.close()
+
+		return
+
+	#  Avoid repeating time-consuming experiments. Save results to file.
+	#  'stats' is dictionary with key:'_tests' ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
+	#                             key:'_conf'  ==> val:[ confidence,                 confidence,                ... ]
+	#                             key:<label>  ==> val:{key:'tp'      ==> val: true positive count for <label>,
+	#                                                   key:'fp'      ==> val: false positive count for <label>,
+	#                                                   key:'fn'      ==> val: false negative count for <label>,
+	#                                                   key:'support' ==> val: samples for <label> in training set.}
+	def write_results(self, stats, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		fh = open('results-' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier results completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
+			fh.write('#  ' + ' '.join(sys.argv) + '\n')
+
+		conf_correct = []											#  Accumulate confidences when the classifier is correct.
+		conf_incorrect = []											#  Accumulate confidences when the classifier is incorrect.
+
+		decision_ctr = 0											#  Count times the classifier made a decision.
+		no_decision_ctr = 0											#  Count times the classifier abstained from making a decision.
+
+		for i in range(0, len(stats['_tests'])):					#  'i' also indexes into 'stats[_conf]'.
+			prediction = stats['_tests'][i][0]
+			true_label = stats['_tests'][i][1]
+			confidence = stats['_conf'][i]
+
+			if prediction is not None:
+				decision_ctr += 1
+				if prediction == true_label:
+					conf_correct.append(confidence)
+				else:
+					conf_incorrect.append(confidence)
+			else:
+				no_decision_ctr += 1
+				if type(self).__name__ == 'AtemporalClassifier':	#  We happen to know that for atemporal classification
+					conf_incorrect.append(confidence)				#  there is never a correct abstention.
+
+		avg_conf_correct = np.mean(conf_correct)					#  Compute average confidence when correct.
+		avg_conf_incorrect = np.mean(conf_incorrect)				#  Compute average confidence when incorrect.
+
+		stddev_conf_correct = np.std(conf_correct)					#  Compute standard deviation of confidence when correct.
+		stddev_conf_incorrect = np.std(conf_incorrect)				#  Compute standard deviation of confidence when incorrect.
+
+		fh.write('Classification:\n')
+		fh.write('===============\n')
+		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
+		meanAcc = []
+		for k, v in stats.items():
+			if k != '_tests' and k != '_conf':
+				if v['support'] > 0:								#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
+					if v['tp'] + v['fp'] + v['fn'] == 0:
+						acc    = 0.0
+					else:
+						acc    = float(v['tp']) / float(v['tp'] + v['fp'] + v['fn'])
+					meanAcc.append(acc)
+
+					if v['tp'] + v['fp'] == 0:
+						prec   = 0.0
+					else:
+						prec   = float(v['tp']) / float(v['tp'] + v['fp'])
+
+					if v['tp'] + v['fn'] == 0:
+						recall = 0.0
+					else:
+						recall = float(v['tp']) / float(v['tp'] + v['fn'])
+
+					if prec + recall == 0:
+						f1     = 0.0
+					else:
+						f1     = float(2 * prec * recall) / float(prec + recall)
+
+					support = v['support']
+					fh.write(k + '\t' + str(acc) + '\t' + str(prec) + '\t' + str(recall) + '\t' + str(f1) + '\t' + str(support) + '\n')
+		fh.write('\n')
+		fh.write('Mean Avg. Accuracy:\n')
+		fh.write('===================\n')
+		if len(meanAcc) > 0:
+			fh.write('\t' + str(np.mean(meanAcc)) + '\n')
+		else:
+			fh.write('N/A\n')
+
+		fh.write('Total decisions made = ' + str(decision_ctr) + '\n')
+		fh.write('Total non-decisions made = ' + str(no_decision_ctr) + '\n')
+		fh.write('\n')
+		fh.write('Avg. Confidence when correct = ' + str(avg_conf_correct) + '\n')
+		fh.write('Avg. Confidence when incorrect = ' + str(avg_conf_incorrect) + '\n')
+		fh.write('\n')
+		fh.write('Std.Dev. Confidence when correct = ' + str(stddev_conf_correct) + '\n')
+		fh.write('Std.Dev. Confidence when incorrect = ' + str(stddev_conf_incorrect) + '\n')
+
+		fh.close()
+
+		return
 
 '''
 Give this classifier enactment files, and it will divvy them up, trying to be fair, turn them into a dataset,
@@ -927,7 +1104,7 @@ class AtemporalClassifier(Classifier):
 					seq = []
 					src_seq = []
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
-						seq.append( enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'] )
+						seq.append( self.apply_vector_coefficients(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector']) )
 						src_seq.append( enactment_frames[video_frames.index(snippet[2]) + i][1]['file'] )
 					self.X_train.append( seq )						#  Append the snippet sequence.
 					self.y_train.append( action_label )				#  Append ground-truth-label.
@@ -973,7 +1150,7 @@ class AtemporalClassifier(Classifier):
 					seq = []
 					src_seq = []
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
-						seq.append( enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'] )
+						seq.append( self.apply_vector_coefficients(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector']) )
 						src_seq.append( enactment_frames[video_frames.index(snippet[2]) + i][1]['file'] )
 					self.X_test.append( seq )						#  Append the snippet sequence.
 					self.y_test.append( action_label )				#  Append ground-truth-label.
@@ -1037,8 +1214,10 @@ class AtemporalClassifier(Classifier):
 
 	#  Write the current data set allocation to file.
 	def load_data_split(self, file_name='data-split.txt'):
-		fh = open(file_name, 'r')
+		if self.verbose:
+			print('>>> Loading data split from "' + file_name + '".')
 
+		fh = open(file_name, 'r')
 		self.allocation = {}
 
 		for line in fh.readlines():
@@ -1153,6 +1332,27 @@ class AtemporalClassifier(Classifier):
 		for dead_man in dead_men:
 			del self.allocation[dead_man]
 		return
+
+	#  Return a clone of the given vector with the hands and props subvectors weighted by their respective coefficients.
+	def apply_vector_coefficients(self, vector):
+		vec = list(vector[:])										#  Convert to a list so we can manipulate it.
+
+		vec[0] *= self.hands_coeff									#  Weigh LH_x.
+		vec[1] *= self.hands_coeff									#  Weigh LH_y.
+		vec[2] *= self.hands_coeff									#  Weigh LH_z.
+																	#  Skip one-hot encoded LH_0.
+																	#  Skip one-hot encoded LH_1.
+																	#  Skip one-hot encoded LH_2.
+		vec[6] *= self.hands_coeff									#  Weigh RH_x.
+		vec[7] *= self.hands_coeff									#  Weigh RH_y.
+		vec[8] *= self.hands_coeff									#  Weigh RH_z.
+																	#  Skip one-hot encoded RH_0.
+																	#  Skip one-hot encoded RH_1.
+																	#  Skip one-hot encoded RH_2.
+		for i in range(12, len(vector)):							#  Weigh props_i.
+			vec[i] *= self.props_coeff
+
+		return tuple(vec)
 
 	#################################################################
 	#  Recap: relay information about the data sets.                #
@@ -1535,6 +1735,15 @@ class TemporalClassifier(Classifier):
 		else:
 			self.enactment_inputs = None
 
+		if self.database_file is not None:
+			self.load_db(self.database_file)
+
+	#
+	def load_db(self, db_file):
+		self.X_train = []											#  Reset.
+		self.y_train = []
+		return
+
 	#
 	def push_rolling(self):
 		return
@@ -1554,3 +1763,7 @@ class TemporalClassifier(Classifier):
 	#################################################################
 	#  Rendering                                                    #
 	#################################################################
+
+	#  Create a seismograph-like plot of the rolling buffer's components.
+	def render_rolling_buffer_seismograph():
+		return
