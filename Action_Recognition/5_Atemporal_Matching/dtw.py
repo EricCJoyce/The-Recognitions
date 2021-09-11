@@ -6,6 +6,7 @@ def main():
 	if params['helpme'] or (len(params['training']) == 0 and len(params['divide']) == 0) or \
 	                       (len(params['test']) == 0 and len(params['divide']) == 0):
 		usage()
+		return
 
 	atemporal = AtemporalClassifier(window_size=params['window'], stride=params['stride'], \
 	                                train=params['training'], divide=params['divide'], test=params['test'], \
