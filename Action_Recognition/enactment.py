@@ -575,9 +575,18 @@ class Enactment():
 		self.width = None
 		self.height = None
 		self.focal_length = None									#  Can be set explicitly or computed from metadata.
-		self.object_detection_source = None							#  Determined by how objects are parsed.
 		self.verbose = False										#  False by default.
 		self.epsilon = 0											#  Amount, per color channel, by which we allow colors to deviate.
+
+		#############################################################
+		#  The main attributes of this class.                       #
+		#############################################################
+
+		self.frames = {}											#  key:time_stamp ==> val:Frame object
+		self.actions = []											#  List of Action objects arranged in chronological order.
+		self.rules = None											#  Must be loaded from file (or not).
+		self.object_detection_source = None							#  Determined by how objects are parsed.
+		self.recognizable_objects = []								#  As determined by a rules file; not necessarily what can be seen in this Enactment.
 
 		if 'fps' in kwargs:											#  Were we given a frames-per-second rate?
 			assert isinstance(kwargs['fps'], int), 'Argument \'fps\' passed to Enactment must be an integer.'
@@ -596,21 +605,34 @@ class Enactment():
 		else:														#  Fetch maximum depth from metadata
 			self.user = 'vr1'
 
-		if 'enactment_file' in kwargs:								#  Were we given an enactment file? (Really only helpful here for getting W & H)
-																	#  There is no sense reading into self.recognizable_objects here because only
-																	#  partial information is contained in the *.enactment file anyway.
+		if 'enactment_file' in kwargs:								#  Were we given an enactment file? (Helpful for getting width, height,
+																	#  object_detection_source, and recognizable_objects.)
 			assert isinstance(kwargs['enactment_file'], str), 'Argument \'enactment_file\' passed to Enactment must be a string.'
 			fh = open(kwargs['enactment_file'], 'r')
 			reading_dimensions = False
+			reading_object_detection_source = False
+			reading_recognizable_objects = False
 			for line in fh.readlines():
 				if line[0] == '#':
-					if 'WIDTH & HEIGHT' in line:
+					if 'WIDTH & HEIGHT' in line:					#  Next line contains width and height.
 						reading_dimensions = True
 					elif reading_dimensions:
 						arr = line[1:].strip().split()
 						self.width = int(arr[0])
 						self.height = int(arr[1])
 						reading_dimensions = False
+
+					if 'OBJECT DETECTION SOURCE' in line:			#  Next line contains object-detection source.
+						reading_object_detection_source = True
+					elif reading_object_detection_source:
+						self.object_detection_source = line[1:].strip()
+						reading_object_detection_source = False
+
+					if 'RECOGNIZABLE OBJECTS' in line:				#  Next line contains recognizable objects.
+						reading_recognizable_objects = True
+					elif reading_recognizable_objects:
+						self.recognizable_objects = line[1:].strip().split('\t')
+						reading_recognizable_objects = False
 			fh.close()
 
 		if 'wh' in kwargs:											#  Were we given a tuple (width, height)?
@@ -709,15 +731,6 @@ class Enactment():
 
 		prev_ctr = 0
 		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
-
-		#############################################################
-		#  The main attributes of this class.                       #
-		#############################################################
-
-		self.frames = {}											#  key:time_stamp ==> val:Frame object
-		self.actions = []											#  List of Action objects arranged in chronological order.
-		self.rules = None											#  Must be loaded from file (or not).
-		self.recognizable_objects = []								#  As determined by a rules file; not necessarily what can be seen in this Enactment.
 
 		#############################################################
 		#  Load poses into the object.                              #
