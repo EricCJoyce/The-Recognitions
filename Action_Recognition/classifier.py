@@ -691,32 +691,33 @@ class Classifier():
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
+																	#  Zip these up so we can sort them DESCENDING by confidence.
+		pred_gt_conf = sorted(list(zip(predictions_truths, confidences)), key=lambda x: x[1], reverse=True)
+		pred_gt = [x[0] for x in pred_gt_conf]						#  Now separate them again.
+		conf = [x[1] for x in pred_gt_conf]
+
 		fh = open('confidences-winners-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  Winning labels only.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
 		fh.write('#  Confidence    Predicted-Label    Ground-Truth-Label\n')
-		for i in range(0, len(predictions_truths)):
-			c = confidences[i]
-			prediction = predictions_truths[i][0]
-			ground_truth_label = predictions_truths[i][1]
+		for i in range(0, len(pred_gt)):
+			c = conf[i]
+			prediction = pred_gt[i][0]
+			ground_truth_label = pred_gt[i][1]
 
 			if prediction is not None:
 				fh.write(str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
 			else:
 				fh.write(str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
 		fh.close()
-																	#  Zip these up so we can sort them DESCENDING by confidence.
-		pred_gt_conf = sorted(list(zip(predictions_truths, confidences)), key=lambda x: x[1], reverse=True)
-		pred_gt = [x[0] for x in pred_gt_conf]						#  Now separate them again.
-		conf = [x[1] for x in pred_gt_conf]
 
 		fh = open('confidences-all-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  All labels.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  Confidence    Label    Ground-Truth-Label\n')
-		for i in range(0, len(predictions_truths)):
+		fh.write('#  Confidence    Predicted-Label    Ground-Truth-Label\n')
+		for i in range(0, len(pred_gt)):
 			c = conf[i]
 			prediction = pred_gt[i][0]
 			ground_truth_label = pred_gt[i][1]
@@ -1742,6 +1743,10 @@ class TemporalClassifier(Classifier):
 	def load_db(self, db_file):
 		self.X_train = []											#  Reset.
 		self.y_train = []
+
+		fh = open(db_file, 'r')
+		fh.close()
+
 		return
 
 	#
