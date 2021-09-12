@@ -307,6 +307,13 @@ class Classifier():
 		else:
 			self.confidence_function = 'sum2'						#  Default to 'sum2'
 
+		if 'verbose' in kwargs:
+			assert isinstance(kwargs['verbose'], bool), \
+			       'Argument \'verbose\' passed to Classifier must be a boolean.'
+			self.verbose = kwargs['verbose']
+		else:
+			self.verbose = False									#  Default to False.
+
 		if 'threshold' in kwargs:									#  Were we given a threshold?
 			assert isinstance(kwargs['threshold'], float), 'Argument \'threshold\' passed to Classifier must be a float.'
 			self.threshold = kwargs['threshold']
@@ -357,13 +364,6 @@ class Classifier():
 			self.render = kwargs['render']
 		else:
 			self.render = False										#  Default to False.
-
-		if 'verbose' in kwargs:
-			assert isinstance(kwargs['verbose'], bool), \
-			       'Argument \'verbose\' passed to Classifier must be a boolean.'
-			self.verbose = kwargs['verbose']
-		else:
-			self.verbose = False									#  Default to False.
 
 		self.X_train = []											#  To become a list of lists of vectors (lists of floats).
 		self.y_train = []											#  To become a list of ground-truth labels (strings).
