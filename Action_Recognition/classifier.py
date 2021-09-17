@@ -344,6 +344,13 @@ class Classifier():
 		else:
 			self.props_coeff = 1.0
 
+		if 'presence_threshold' in kwargs:							#  Were we given an object presence threshold?
+			assert isinstance(kwargs['presence_threshold'], float) and kwargs['presence_threshold'] > 0.0 and kwargs['presence_threshold'] <= 1.0, \
+			       'Argument \'presence_threshold\' passed to Classifier must be a float in (0.0, 1.0].'
+			self.object_presence_threshold = kwargs['presence_threshold']
+		else:
+			self.object_presence_threshold = 0.8
+
 		if 'open_begin' in kwargs:									#  Were we told to permit or refuse an open beginning?
 			assert isinstance(kwargs['open_begin'], bool), \
 			       'Argument \'open_begin\' passed to Classifier must be a boolean.'
@@ -498,35 +505,56 @@ class Classifier():
 
 		return matching_costs, confidences, probabilities, metadata
 
-	#  Look up the 'candidate_label' in the cut-off conditions table.
-	#  Does the given 'query_seq' present enough for us to even consider attempting to match this query
-	#  with templates exemplifying this label?
+	#  Does the given 'query_seq' present enough support for us to even consider attempting to match this query
+	#  with templates exemplifying 'candidate_label'?
+	#  Return True if the classification routine should proceed with DTW matching.
+	#  Return False if the given sequence provides no reason to bother running DTW matching.
 	def test_cutoff_conditions(self, candidate_label, query_seq):
 		if candidate_label in self.conditions:						#  This action/label is subject to condition.
-																	#  If everything in the 'and' list is > 0.0 AND
-																	#  at least one thing in the 'or' list is > 0.0,
-																	#  then we can consider this action a possibility.
-			passed_and = True
-			i = 0
-			while i < len(self.conditions[candidate_label]['and']):
-				if self.conditions[candidate_label]['and'][i] in self.recognizable_objects:
-																	#  12 is the offset past the hand encodings, into the props sub-vector.
-					if target_frame[ self.recognizable_objects.index(self.conditions[candidate_label]['and'][i]) + 12 ] == 0.0:
-						passed_and = False
-						break
-				i += 1
-			if not passed_and:
-				return False
 
-			passed_or = False
-			i = 0
-			while i < len(self.conditions[candidate_label]['or']):
-				if self.conditions[candidate_label]['or'][i] in self.recognizable_objects:
-																	#  12 is the magic number.
-					if target_frame[ self.recognizable_objects.index(self.conditions[candidate_label]['or'][i]) + 12 ] > 0.0:
-						passed_or = True
-						break
-				i += 1
+			if len(self.conditions[candidate_label]['and']) > 0:	#  Do ANDs apply?
+				ctr = 0
+				for vector in query_seq:
+					i = 0
+					while i < len(self.conditions[candidate_label]['and']):
+																	#  12 is the offset past the hand encodings, into the props sub-vector.
+																	#  If anything required in the AND list has a zero signal, then this frame fails.
+						if vector[ self.recognizable_objects.index(self.conditions[candidate_label]['and'][i]) + 12 ] == 0.0:
+							break
+						i += 1
+																	#  Did we make it all the way through the list without zero-ing out?
+																	#  That means that, for this frame at least, all necessary objects are non-zero.
+					if i == len(self.conditions[candidate_label]['and']):
+						ctr += 1
+																	#  Were all necessary objects present enough?
+				if float(ctr) / float(len(query_seq)) >= self.object_presence_threshold:
+					passed_and = True
+				else:
+					passed_and = False
+			else:
+				passed_and = True
+
+			if len(self.conditions[candidate_label]['or']) > 0:		#  Do ORs apply?
+				ctr = 0
+				for vector in query_seq:
+					i = 0
+					while i < len(self.conditions[candidate_label]['or']):
+																	#  12 is the offset past the hand encodings, into the props sub-vector.
+																	#  If anything required in the AND list has a zero signal, then this frame fails.
+						if vector[ self.recognizable_objects.index(self.conditions[candidate_label]['or'][i]) + 12 ] > 0.0:
+							break
+						i += 1
+																	#  Did we bail early because we found something--anything that was > 0.0?
+																	#  That means that, for this frame at least, at least one necessary object is non-zero.
+					if i < len(self.conditions[candidate_label]['or']):
+						ctr += 1
+																	#  Were all necessary objects present enough?
+				if float(ctr) / float(len(query_seq)) >= self.object_presence_threshold:
+					passed_or = True
+				else:
+					passed_or = False
+			else:
+				passed_or = True
 
 			return passed_and or passed_or
 
@@ -629,23 +657,23 @@ class Classifier():
 			if line[0] != '#':
 				arr = line.strip().split('\t')
 				action = arr[0]
+				condition = arr[1]
 				self.conditions[action] = {}
 				self.conditions[action]['and'] = []
 				self.conditions[action]['or'] = []
-				for i in range(1, len(arr), 2):
-					if arr[i] == 'AND':
-						self.conditions[action]['and'].append( arr[i + 1] )
+				for i in range(2, len(arr)):
+					if condition == 'AND':
+						self.conditions[action]['and'].append( arr[i] )
 					else:
-						self.conditions[action]['or'].append( arr[i + 1] )
+						self.conditions[action]['or'].append( arr[i] )
 		fh.close()
 
 		if self.verbose:
-			for k, v in sorted(self.conditions.items()):
-				header_str = '    In order to consider "' + k + '": '
-				print(header_str + ' AND '.join(self.conditions[k]['and']))
-				if len(self.conditions[k]['or']) > 0:
-					print(' '*(len(header_str)) + ' OR '.join(self.conditions[k]['or']))
-
+			for key in sorted(self.conditions.keys()):
+				header_str = '    In order to consider "' + key + '": '
+				print(header_str + ' AND '.join(self.conditions[key]['and']))
+				if len(self.conditions[key]['or']) > 0:
+					print(' '*(len(header_str)) + ' OR '.join(self.conditions[key]['or']))
 		return
 
 	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label).
