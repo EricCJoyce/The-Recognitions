@@ -12,7 +12,7 @@ def main():
 	                                train=params['training'], divide=params['divide'], test=params['test'], \
 	                                conf_func=params['confidence-function'], threshold=params['threshold'], \
 	                                isotonic_file=params['isotonic-file'], conditions_file=params['conditions-file'], \
-	                                hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], \
+	                                hand_schema=params['hand-schema'], hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], \
 	                                train_portion=params['train-portion'], test_portion=params['test-portion'], \
 	                                minimum_length=params['minimum-length'], shuffle=params['shuffle'], \
 	                                render=params['render'], verbose=params['verbose'])
@@ -39,6 +39,7 @@ def main():
 	atemporal.write_confusion_matrix(stats['_tests'], time_stamp)	#  Write confidence files.
 	atemporal.write_confidences(stats['_tests'], stats['_conf'], time_stamp)
 	atemporal.write_results(stats, time_stamp)
+	atemporal.write_timing(time_stamp)
 
 	print('Accuracy: ' + str(acc))									#  Output results.
 	print('Correct:  ' + str(trace))
@@ -66,6 +67,7 @@ def get_command_line_params():
 	params['window'] = 10											#  Length of the sliding window.
 	params['stride'] = 2											#  Stride of the slide.
 
+	params['hand-schema'] = 'left-right'							#  Hand subvector encoding.
 	params['hands-coeff'] = 1.0										#  Coefficient for the hands subvector (excluding the one-hot components.)
 	params['props-coeff'] = 1.0										#  Coefficient for the props subvector.
 
@@ -87,7 +89,7 @@ def get_command_line_params():
 																	#  Permissible setting flags
 	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-split', '-splits', '-window', '-stride', \
 	         '-conf', '-th', '-iso', '-cond', '-minlen', '-shuffle', \
-	         '-hand', '-hands', '-prop', '-props', '-relabel', '-color', '-colors', \
+	         '-schema', '-hand', '-hands', '-prop', '-props', '-relabel', '-color', '-colors', \
 	         '-render', '-V', '-?', '-help', '--help', \
 	         '-User', '-imgw', '-imgh', '-fontsize']
 	for i in range(1, len(sys.argv)):
@@ -142,6 +144,8 @@ def get_command_line_params():
 				elif argtarget == '-th':
 					params['threshold'] = float(argval)
 
+				elif argtarget == '-schema':
+					params['hand-schema'] = argval
 				elif argtarget == '-hand' or argtarget == '-hands':
 					params['hands-coeff'] = float(argval)
 				elif argtarget == '-prop' or argtarget == '-props':
@@ -206,6 +210,7 @@ def usage():
 	print('')
 	print('        -V        Enable verbosity.')
 	print('        -?        Display this message.')
+	return
 
 if __name__ == '__main__':
 	main()
