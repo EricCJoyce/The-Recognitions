@@ -4,7 +4,6 @@
 
 import cv2
 import datetime
-from enactment import Action
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -418,6 +417,10 @@ class Classifier():
 		self.side_by_side_source_super['y'] = 130
 		self.side_by_side_source_super['fontsize'] = 1.0
 
+	#################################################################
+	#  Labels: enumerate, count, relabel.                           #
+	#################################################################
+
 	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or 'y_test.'
 	#  It is possible that the training and test sets contain different action labels.
 	def labels(self, sets='both'):
@@ -443,20 +446,74 @@ class Classifier():
 		file_timestamp = now.strftime("%d") + now.strftime("%m") + now.strftime("%Y")[-2:] + 'T' + now.strftime("%H:%M:%S").replace(':', '')
 		return file_timestamp
 
-	#  Load an RGB 3-tuple for each string in self.recognizable_objects.
-	def load_color_map(self, color_file):
-		self.robject_colors = {}									#  (Re)set
-		for robject in self.recognizable_objects:					#  What if the colors file is missing something? Initialize with randoms.
-			self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
+	#################################################################
+	#  Loading.                                                     #
+	#################################################################
 
-		fh = open(color_file, 'r')
+	def load_isotonic_map(self, isotonic_file):
+		if self.verbose:
+			print('>>> Loading isotonic map from "' + isotonic_file + '".')
+
+		self.isotonic_map = {}										#  key:(lower-bound, upper-bound) ==> val:probability
+
+		fh = open(isotonic_file, 'r')
 		for line in fh.readlines():
 			if line[0] != '#':
 				arr = line.strip().split('\t')
-				self.robject_colors[ arr[0] ] = (int(arr[1]), int(arr[2]), int(arr[3]))
+
+				if arr[0] == '*':
+					lb = float('-inf')
+				else:
+					lb = float(arr[0])
+
+				if arr[1] == '*':
+					ub = float('inf')
+				else:
+					ub = float(arr[1])
+
+				p = float(arr[2])
+				self.isotonic_map[ (lb, ub) ] = p
 		fh.close()
 
+		if self.verbose:
+			for k, v in sorted(self.isotonic_map.items()):
+				print('    [' + "{:.6f}".format(k[0]) + ', ' + "{:.6f}".format(k[1]) + '] ==> ' + "{:.6f}".format(v))
+
 		return
+
+	def load_conditions(self, conditions_file):
+		if self.verbose:
+			print('>>> Loading cut-off conditions from "' + conditions_file + '".')
+
+		self.conditions = {}
+
+		fh = open(conditions_file, 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				action = arr[0]
+				condition = arr[1]
+				self.conditions[action] = {}
+				self.conditions[action]['and'] = []
+				self.conditions[action]['or'] = []
+				for i in range(2, len(arr)):
+					if condition == 'AND':
+						self.conditions[action]['and'].append( arr[i] )
+					else:
+						self.conditions[action]['or'].append( arr[i] )
+		fh.close()
+
+		if self.verbose:
+			for key in sorted(self.conditions.keys()):
+				header_str = '    In order to consider "' + key + '": '
+				print(header_str + ' AND '.join(self.conditions[key]['and']))
+				if len(self.conditions[key]['or']) > 0:
+					print(' '*(len(header_str)) + ' OR '.join(self.conditions[key]['or']))
+		return
+
+	#################################################################
+	#  Shared classification engine.                                #
+	#################################################################
 
 	#  This is a core classification routine, usable by Atemporal and Temporal subclasses alike.
 	#  Given a single query sequence, return:
@@ -499,7 +556,7 @@ class Classifier():
 				t1_start = time.process_time()						#  Start timer.
 				conditions_passed = self.cutoff_conditions(template_label, query_seq)
 				t1_stop = time.process_time()						#  Stop timer.
-				self.timing['test-cutoff-conditions'].append(t1_stop - t1_start)
+				timing['test-cutoff-conditions'].append(t1_stop - t1_start)
 
 			if self.conditions is None or conditions_passed:		#  Either we have no conditions, or our conditions give us reason to run DTW.
 
@@ -512,7 +569,7 @@ class Classifier():
 																	#  What is the cost of aligning this template with this query?
 				alignment = self.R.dtw(template_R, query_R, open_begin=self.open_begin, open_end=self.open_end)
 				t1_stop = time.process_time()						#  Stop timer.
-				self.timing['dtw-R-call'].append(t1_stop - t1_start)
+				timing['dtw-R-call'].append(t1_stop - t1_start)
 
 				dist = alignment.rx('normalizedDistance')[0][0]		#  (Normalized) cost of matching this query to this template
 																	#  Save sequences of aligned frames (we might render them side by side)
@@ -536,7 +593,7 @@ class Classifier():
 																	#  Get a dictionary of key:label ==> val:confidence.
 		confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
 		t1_stop = time.process_time()								#  Stop timer.
-		self.timing['compute-confidence'].append(t1_stop - t1_start)
+		timing['compute-confidence'].append(t1_stop - t1_start)
 
 		probabilities = {}											#  If we apply isotonic mapping, then this is a different measure than confidence.
 		for label in self.labels('train'):
@@ -552,12 +609,12 @@ class Classifier():
 
 				probabilities[label] = self.isotonic_map[ brackets[i] ]
 			t1_stop = time.process_time()							#  Stop timer.
-			self.timing['isotonic-lookup'].append(t1_stop - t1_start)
+			timing['isotonic-lookup'].append(t1_stop - t1_start)
 		else:														#  No mapping; probability = confidence, which is sloppy, but... meh.
 			for label, confidence in confidences.items():
 				probabilities[label] = confidence
 		t0_stop = time.process_time()								#  Stop timer.
-		self.timing['dtw-classification'].append(t0_stop - t0_start)
+		timing['dtw-classification'].append(t0_stop - t0_start)
 
 		return matching_costs, confidences, probabilities, metadata, timing
 
@@ -671,66 +728,20 @@ class Classifier():
 
 		return conf
 
-	def load_isotonic_map(self, isotonic_file):
-		if self.verbose:
-			print('>>> Loading isotonic map from "' + isotonic_file + '".')
+	#################################################################
+	#  Vector encoding.                                             #
+	#################################################################
 
-		self.isotonic_map = {}										#  key:(lower-bound, upper-bound) ==> val:probability
-
-		fh = open(isotonic_file, 'r')
-		for line in fh.readlines():
-			if line[0] != '#':
-				arr = line.strip().split('\t')
-
-				if arr[0] == '*':
-					lb = float('-inf')
-				else:
-					lb = float(arr[0])
-
-				if arr[1] == '*':
-					ub = float('inf')
-				else:
-					ub = float(arr[1])
-
-				p = float(arr[2])
-				self.isotonic_map[ (lb, ub) ] = p
-		fh.close()
-
-		if self.verbose:
-			for k, v in sorted(self.isotonic_map.items()):
-				print('    [' + "{:.6f}".format(k[0]) + ', ' + "{:.6f}".format(k[1]) + '] ==> ' + "{:.6f}".format(v))
-
-		return
-
-	def load_conditions(self, conditions_file):
-		if self.verbose:
-			print('>>> Loading cut-off conditions from "' + conditions_file + '".')
-
-		self.conditions = {}
-
-		fh = open(conditions_file, 'r')
-		for line in fh.readlines():
-			if line[0] != '#':
-				arr = line.strip().split('\t')
-				action = arr[0]
-				condition = arr[1]
-				self.conditions[action] = {}
-				self.conditions[action]['and'] = []
-				self.conditions[action]['or'] = []
-				for i in range(2, len(arr)):
-					if condition == 'AND':
-						self.conditions[action]['and'].append( arr[i] )
-					else:
-						self.conditions[action]['or'].append( arr[i] )
-		fh.close()
-
-		if self.verbose:
-			for key in sorted(self.conditions.keys()):
-				header_str = '    In order to consider "' + key + '": '
-				print(header_str + ' AND '.join(self.conditions[key]['and']))
-				if len(self.conditions[key]['or']) > 0:
-					print(' '*(len(header_str)) + ' OR '.join(self.conditions[key]['or']))
-		return
+	def strong_hand_encode(self, vector):
+		lh_norm = np.linalg.norm(vector[:3])
+		rh_norm = np.linalg.norm(vector[6:9])
+		if lh_norm > rh_norm:										#  Left hand is the strong hand; leave everything in place.
+			vec = [x for x in vector]
+		else:														#  Right hand is the strong hand; swap [:6] and [6:12].
+			vec = [x for x in vector[6:12]] + \
+			      [x for x in vector[:6]]   + \
+			      [x for x in vector[12:]]
+		return tuple(vec)
 
 	#  Return a clone of the given vector with the hands and props subvectors weighted by their respective coefficients.
 	def apply_vector_coefficients(self, vector):
@@ -752,6 +763,29 @@ class Classifier():
 			vec[i] *= self.props_coeff
 
 		return tuple(vec)
+
+	#################################################################
+	#  Rendering: (common to both derived classes.)                 #
+	#################################################################
+
+	#  Load an RGB 3-tuple for each string in self.recognizable_objects.
+	def load_color_map(self, color_file):
+		self.robject_colors = {}									#  (Re)set
+		for robject in self.recognizable_objects:					#  What if the colors file is missing something? Initialize with randoms.
+			self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
+
+		fh = open(color_file, 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				self.robject_colors[ arr[0] ] = (int(arr[1]), int(arr[2]), int(arr[3]))
+		fh.close()
+
+		return
+
+	#################################################################
+	#  Reporting.                                                   #
+	#################################################################
 
 	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label).
 	def confusion_matrix(self, predictions_truths):
@@ -1169,19 +1203,14 @@ class AtemporalClassifier(Classifier):
 		self.X_test = []											#  To become a list of lists of vectors
 		self.y_test = []											#  To become a list of lables (strings)
 
-		self.train_src_filepaths = []								#  To become a list of lists of file paths (strings)
-		self.test_src_filepaths = []								#  To become a list of lists of file paths (strings)
+		self.allocation = {}										#  key: (enactment, action index, action label) ==> val: string in {test, train}
 
-		self.train_src_enactments = []								#  To become a list of enactment names (strings)
-		self.test_src_enactments = []								#  To become a list of enactment names (strings)
-
-		self.allocation = {}										#  key:(enactment-name, action-index, action-label) ==> val:string in {train, test}
-		self.db_sample_lookup = {}									#  If we load the training set from a database (just like the TemporalClassifier does)
-																	#  then allow ourselves the possibility of looking up which snippets were matched.
+		self.train_sample_lookup = {}								#  Allow ourselves the possibility of looking up which snippets were matched.
+		self.test_sample_lookup = {}								#  key: index into X_train ==> val: (enactment, start time, start frame,
+																	#                                               end time,   end frame)
 		#############################################################
 		#  Load ProcessedEnactments from the given enactment names. #
 		#############################################################
-
 		if self.verbose and len(train_list) > 0:
 			print('>>> Loading atemporal training set.')
 		for enactment in train_list:
@@ -1189,6 +1218,8 @@ class AtemporalClassifier(Classifier):
 			for i in range(0, pe.num_actions()):
 																	#  Mark this action in this enactment for the training set.
 				self.allocation[ (enactment, i, pe.actions[i][0]) ] = 'train'
+		if self.verbose and len(train_list) > 0:
+			print('')
 
 		if self.verbose and len(test_list) > 0:
 			print('>>> Loading atemporal test set.')
@@ -1197,6 +1228,8 @@ class AtemporalClassifier(Classifier):
 			for i in range(0, pe.num_actions()):
 																	#  Mark this action in this enactment for the test set.
 				self.allocation[ (enactment, i, pe.actions[i][0]) ] = 'test'
+		if self.verbose and len(test_list) > 0:
+			print('')
 
 		if len(divide_list) > 0:
 			if self.verbose:
@@ -1221,6 +1254,12 @@ class AtemporalClassifier(Classifier):
 					self.allocation[ (actions[i][0], actions[i][1], label) ] = 'train'
 				for i in range(lim, len(actions)):					#  Mark this action in this enactment for the test set.
 					self.allocation[ (actions[i][0], actions[i][1], label) ] = 'test'
+			if self.verbose:
+				print('')
+
+		if 'db_file' in kwargs:										#  Were we given a database file?
+			assert isinstance(kwargs['db_file'], str), 'Argument \'db_file\' passed to AtemporalClassifier must be a string.'
+			self.load_db(kwargs['db_file'])
 
 	#################################################################
 	#  Atemporal classification.                                    #
@@ -1252,8 +1291,9 @@ class AtemporalClassifier(Classifier):
 		mismatch_ctr = 0
 
 		self.timing = {}											#  (Re)set.
+		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
 		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
-		self.timing['dtw'] = []										#  Prepare to collect times for running R's DTW.
+		self.timing['dtw-R-call'] = []								#  Prepare to collect times for running R's DTW.
 		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
 		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
 		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
@@ -1266,8 +1306,9 @@ class AtemporalClassifier(Classifier):
 			ground_truth_label = self.y_test[i]
 																	#  Call the parent class's core matching engine.
 			matching_costs, confidences, probabilities, metadata, timing = super(AtemporalClassifier, self).classify(query)
+			self.timing['dtw-classification'] += timing['dtw-classification']
 			self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-			self.timing['dtw'] += timing['dtw']
+			self.timing['dtw-R-call'] += timing['dtw-R-call']
 			self.timing['compute-confidence'] += timing['compute-confidence']
 			self.timing['isotonic-lookup'] += timing['isotonic-lookup']
 
@@ -1325,26 +1366,23 @@ class AtemporalClassifier(Classifier):
 		return classification_stats
 
 	#################################################################
-	#  Editing: reallocate and manipulate the data sets.            #
+	#  Lock settings down; get ready to classify.                   #
 	#################################################################
 
-	#  Take the present allocation of ProcessedEnactments and turn them into snippets that fill the training and the test sets.
+	#  Take the present allocation of ProcessedEnactments and turn them into snippets that fill the training and/or the test sets.
 	def commit(self, sets='both'):
 		#############################################################
 		#  (Re)set the data set attributes.                         #
 		#############################################################
-
 		if sets == 'train' or sets == 'both':
 			self.X_train = []										#  To become a list of lists of vectors
 			self.y_train = []										#  To become a list of lables (strings)
-			self.train_src_filepaths = []							#  To become a list of lists of file paths (strings)
-			self.train_src_enactments = []							#  To become a list of enactment names (strings)
+			self.train_sample_lookup = {}
 
 		if sets == 'test' or sets == 'both':
 			self.X_test = []										#  To become a list of lists of vectors
 			self.y_test = []										#  To become a list of lables (strings)
-			self.test_src_filepaths = []							#  To become a list of lists of file paths (strings)
-			self.test_src_enactments = []							#  To become a list of enactment names (strings)
+			self.test_sample_lookup = {}
 
 		#############################################################
 		#  Make sure that all ProcessedEnactments align.            #
@@ -1364,9 +1402,9 @@ class AtemporalClassifier(Classifier):
 			rev_allocation['train'] = []							#                                                              ...
 		if sets == 'test' or sets == 'both':						#                                        (enactment-name, action-index, action-label) ]
 			rev_allocation['test'] = []
-
 		for enactment_action, set_name in self.allocation.items():
-			rev_allocation[set_name].append(enactment_action)
+			if set_name in rev_allocation:
+				rev_allocation[set_name].append(enactment_action)
 
 		if 'train' in rev_allocation and len(rev_allocation['train']) > 0:
 			if self.verbose:
@@ -1374,7 +1412,8 @@ class AtemporalClassifier(Classifier):
 			num = len(rev_allocation['train'])
 			prev_ctr = 0
 			max_ctr = os.get_terminal_size().columns - 7			#  Leave enough space for the brackets, space, and percentage.
-			ctr = 0
+			ctr = 0													#  Count through allocations.
+			sample_ctr = 0											#  Count through snippets.
 
 			for enactment_action in rev_allocation['train']:
 				enactment_name = enactment_action[0]
@@ -1390,25 +1429,15 @@ class AtemporalClassifier(Classifier):
 				snippets = pe.snippets_from_action(self.window_size, self.stride, action_index)
 				for snippet in snippets:							#  Each 'snippet' = (label, start time, start frame, end time, end frame).
 					seq = []
-					src_seq = []
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
-						if self.hand_schema == 'strong-hand':
-							lh_norm = np.linalg.norm(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:3])
-							rh_norm = np.linalg.norm(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][6:9])
-							if lh_norm > rh_norm:					#  Left hand is the strong hand; leave everything in place.
-								vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
-							else:									#  Right hand is the strong hand; swap [:6] and [6:12].
-								vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][6:12] + \
-								      enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:6] + \
-								      enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][12:]
-							seq.append( self.apply_vector_coefficients(vec) )
-						else:
-							seq.append( self.apply_vector_coefficients(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector']) )
-						src_seq.append( enactment_frames[video_frames.index(snippet[2]) + i][1]['file'] )
+						vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
+						if self.hand_schema == 'strong-hand':		#  Re-arrange for "strong-hand-first" encoding?
+							vec = strong_hand_encode(vec)
+						seq.append( self.apply_vector_coefficients(vec) )
 					self.X_train.append( seq )						#  Append the snippet sequence.
 					self.y_train.append( action_label )				#  Append ground-truth-label.
-					self.train_src_filepaths.append( src_seq )		#  Append the lookups.
-					self.train_src_enactments.append(pe.enactment_name)
+					self.train_sample_lookup[sample_ctr] = (enactment_name, snippet[1], snippet[2], snippet[3], snippet[4])
+					sample_ctr += 1
 
 				recognizable_object_alignment[ tuple(pe.recognizable_objects) ] = True
 				image_dimension_alignment[ (pe.width, pe.height) ] = True
@@ -1431,9 +1460,10 @@ class AtemporalClassifier(Classifier):
 			num = len(rev_allocation['test'])
 			prev_ctr = 0
 			max_ctr = os.get_terminal_size().columns - 7			#  Leave enough space for the brackets, space, and percentage.
-			ctr = 0
+			ctr = 0													#  Count through allocations.
+			sample_ctr = 0											#  Count through snippets.
 
-			for enactment_action in rev_allocation['test']:
+			for enactment_action in sorted(rev_allocation['test']):
 				enactment_name = enactment_action[0]
 				action_index = enactment_action[1]
 				action_label = enactment_action[2]
@@ -1447,25 +1477,15 @@ class AtemporalClassifier(Classifier):
 				snippets = pe.snippets_from_action(self.window_size, self.stride, action_index)
 				for snippet in snippets:							#  Each 'snippet' = (label, start time, start frame, end time, end frame).
 					seq = []
-					src_seq = []
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
-						if self.hand_schema == 'strong-hand':
-							lh_norm = np.linalg.norm(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:3])
-							rh_norm = np.linalg.norm(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][6:9])
-							if lh_norm > rh_norm:					#  Left hand is the strong hand; leave everything in place.
-								vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
-							else:									#  Right hand is the strong hand; swap [:6] and [6:12].
-								vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][6:12] + \
-								      enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:6] + \
-								      enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][12:]
-							seq.append( self.apply_vector_coefficients(vec) )
-						else:
-							seq.append( self.apply_vector_coefficients(enactment_frames[video_frames.index(snippet[2]) + i][1]['vector']) )
-						src_seq.append( enactment_frames[video_frames.index(snippet[2]) + i][1]['file'] )
+						vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
+						if self.hand_schema == 'strong-hand':		#  Re-arrange for "strong-hand-first" encoding?
+							vec = strong_hand_encode(vec)
+						seq.append( self.apply_vector_coefficients(vec) )
 					self.X_test.append( seq )						#  Append the snippet sequence.
 					self.y_test.append( action_label )				#  Append ground-truth-label.
-					self.test_src_filepaths.append( src_seq )		#  Append the lookups.
-					self.test_src_enactments.append(pe.enactment_name)
+					self.test_sample_lookup[sample_ctr] = (enactment_name, snippet[1], snippet[2], snippet[3], snippet[4])
+					sample_ctr += 1
 
 				recognizable_object_alignment[ tuple(pe.recognizable_objects) ] = True
 				image_dimension_alignment[ (pe.width, pe.height) ] = True
@@ -1509,7 +1529,7 @@ class AtemporalClassifier(Classifier):
 
 		return
 
-	#  Load a database from file.
+	#  Load a database from file. This loads directly into X_train and y_train. No "allocations."
 	#  Rearrange according to schems and apply subvector coefficients before saving internally to the "training set."
 	def load_db(self, db_file):
 		self.X_train = []											#  Reset.
@@ -1582,59 +1602,41 @@ class AtemporalClassifier(Classifier):
 					self.y_train.append( label )
 					self.X_train.append( [] )
 																	#  Be able to lookup the frames of a matched database sample.
-					self.db_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
-					                                                                db_entry_end_time,   db_entry_end_frame)
+					self.train_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
+					                                                                   db_entry_end_time,   db_entry_end_frame)
 					sample_ctr += 1
 		return
 
-	#  Write the current data set allocation to file.
-	def export_data_split(self, file_name='data-split.txt'):
-		fh = open(file_name, 'w')
-		fh.write('#  Data split export from AtemporalClassifier.export_data_split(), run at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
-		fh.write('#  Enactment name  <tab>  Action number  <tab>  Action label  <tab>  Set\n')
-		for enactment_action, set_name in sorted(self.allocation.items()):
-			enactment_name = enactment_action[0]
-			action_index = enactment_action[1]
-			action_label = enactment_action[2]
-			fh.write(enactment_name + '\t' + str(action_index) + '\t' + action_label + '\t' + set_name + '\n')
-		fh.close()
+	#################################################################
+	#  Relabeling.                                                  #
+	#################################################################
+
+	#  "Snippets" are already in X_train and/or X_test.
+	def relabel_snippets(self, old_label, new_label):
+		for i in range(0, len(self.y_train)):
+			if self.y_train[i] == old_label:
+				self.y_train[i] = new_label
+		for i in range(0, len(self.y_test)):
+			if self.y_test[i] == old_label:
+				self.y_test[i] = new_label
 		return
 
-	#  Write the current data set allocation to file.
-	def load_data_split(self, file_name='data-split.txt'):
-		if self.verbose:
-			print('>>> Loading data split from "' + file_name + '".')
-
-		fh = open(file_name, 'r')
-		self.allocation = {}
-
+	#  The expected format for this file is that it has ignored comment lines beginning with #
+	#  and each live line has the format: old_label <tab> new_label <carriage return>
+	def relabel_snippets_from_file(self, relabel_file):
+		fh = open(relabel_file, 'r')
 		for line in fh.readlines():
 			if line[0] != '#':
 				arr = line.strip().split('\t')
-				enactment_name = arr[0]
-				action_index = int(arr[1])
-				action_label = arr[2]
-				set_name = arr[3]
-
-				self.allocation[ (enactment_name, action_index, action_label) ] = set_name
-
+				old_label = arr[0]
+				new_label = arr[1]
+				self.relabel_snippets(old_label, new_label)
 		fh.close()
 		return
 
-	#  Reassign the 'src_index'-th action in 'src_enactment' to the set ('train' or 'test') 'dst_set'.
-	def reassign(self, src_enactment, src_index, dst_set):
-		assert isinstance(dst_set, str) and dst_set in ['train', 'test'], \
-		       'Argument \'dst_set\' passed to AtemporalClassifier.reassign() must be a string in {train, test}.'
-		i = 0
-		keys = [x for x in self.allocation.keys()]
-		while i < len(keys) and not (keys[i][0] == src_enactment and keys[i][1] == src_index):
-			i += 1
-		if i < len(keys):
-			self.allocation[ keys[i] ] = dst_set
-		return
-
+	#  This applies to allocations--NOT to snippets.
 	#  Replace all old labels with new labels in both training and test sets.
-	def relabel(self, old_label, new_label):
+	def relabel_allocations(self, old_label, new_label):
 		reverse_allocation = {}										#  key:string in {train, test} ==> [ (enactment-name, action-index, action-label),
 		reverse_allocation['train'] = []							#                                    (enactment-name, action-index, action-label),
 		reverse_allocation['test'] = []								#                                                          ...
@@ -1663,22 +1665,184 @@ class AtemporalClassifier(Classifier):
 
 		return
 
-	#  Use a text file to replace all old labels with new labels in both training and test sets.
+	#  Use a text file to replace all old labels with new labels in allocations (NOT snippets) for both training and test sets.
 	#  The expected format for this file is that it has ignored comment lines beginning with #
 	#  and each live line has the format: old_label <tab> new_label <carriage return>
-	def relabel_from_file(self, relabel_file):
+	def relabel_allocations_from_file(self, relabel_file):
 		fh = open(relabel_file, 'r')
 		for line in fh.readlines():
 			if line[0] != '#':
 				arr = line.strip().split('\t')
 				old_label = arr[0]
 				new_label = arr[1]
-				self.relabel(old_label, new_label)
+				self.relabel_allocations(old_label, new_label)
 		fh.close()
 		return
 
+	#################################################################
+	#  Itemize set samples.                                         #
+	#################################################################
+
+	#  How many snippets will we encounter as we march through time with the current rolling buffer size and stride?
+	def itemize(self):
+		maxindexlen = 0
+		maxlabellen = 0
+		for i in range(0, len(self.X_test)):
+			label = self.y_test[i]
+			if len(label) > maxlabellen:
+				maxlabellen = len(label)
+		maxindexlen = len(str(len(self.X_test)))
+
+		for i in range(0, len(self.X_test)):
+			label = self.y_test[i]
+			print_str = '    [' + str(i) + ']:' + ' '*(maxindexlen - len(str(i))) + \
+			                 label + ' '*(maxlabellen - len(label)) + '\t' + \
+			                 str(self.test_sample_lookup[i][1]) + '\t-->\t' + str(self.test_sample_lookup[i][3])
+			print(print_str)
+		print('')
+		print('>>> Total snippets in test set: ' + str(len(self.X_test)))
+		return
+
+	#################################################################
+	#  Editing: snippets.                                           #
+	#################################################################
+
+	#  Identify labels that are in y_test but not in y_train.
+	def bogie_snippets(self):
+		training_labels = {}
+		test_labels = {}
+		for label in self.y_train:
+			training_labels[ label ] = True
+		for label in self.y_test:
+			test_labels[ label ] = True
+		return sorted([x for x in test_labels.keys() if x not in training_labels])
+
+	#  Drop from the test set snippets that have no representation in the training set.
+	def drop_bogie_snippets(self):
+		bogies = self.bogie_snippets()
+		for bogie in bogies:
+			self.drop_snippets_from_test(bogie)
+		return
+
+	#  Drop snippets with the given 'label' from both sets.
+	def drop_snippets(self, label):
+		self.drop_snippets_from_train(label)
+		self.drop_snippets_from_test(label)
+		return
+
+	#  Drop snippets with the given 'label' from the training set.
+	def drop_snippets_from_train(self, label):
+		X_tmp = []
+		y_tmp = []
+		lookup_tmp = {}
+		ctr = 0
+		for i in range(0, len(self.y_train)):
+			if self.y_train[i] != label:
+				X_tmp.append( self.X_train[i] )
+				y_tmp.append( self.y_train[i] )
+				lookup_tmp[ctr] = self.train_sample_lookup[i]
+				ctr += 1
+		self.X_train = X_tmp
+		self.y_train = y_tmp
+		self.train_sample_lookup = lookup_tmp
+		return
+
+	#  Drop snippets with the given 'label' from the test set.
+	def drop_snippets_from_test(self, label):
+		X_tmp = []
+		y_tmp = []
+		lookup_tmp = {}
+		ctr = 0
+		for i in range(0, len(self.y_test)):
+			if self.y_test[i] != label:
+				X_tmp.append( self.X_test[i] )
+				y_tmp.append( self.y_test[i] )
+				lookup_tmp[ctr] = self.test_sample_lookup[i]
+				ctr += 1
+		self.X_test = X_tmp
+		self.y_test = y_tmp
+		self.test_sample_lookup = lookup_tmp
+		return
+
+	#  Print information about the snippets in the training and/or test sets.
+	def itemize_snippets(self, sets='both'):
+		maxlabellen = 0
+		maxcountlen = 0
+		training_counts = {}
+		testing_counts = {}
+		for label in list(np.unique(self.y_train)):
+			if len(label) > maxlabellen:
+				maxlabellen = len(label)
+			training_counts[label] = len([x for x in self.y_train if x == label])
+			if len(str(training_counts[label])) > maxcountlen:
+				maxcountlen = len(str(training_counts[label]))
+		for label in list(np.unique(self.y_test)):
+			if len(label) > maxlabellen:
+				maxlabellen = len(label)
+			testing_counts[label] = len([x for x in self.y_test if x == label])
+			if len(str(testing_counts[label])) > maxcountlen:
+				maxcountlen = len(str(testing_counts[label]))
+
+		if (sets == 'train' or sets == 'both') and len(self.X_train) > 0:
+			print('    Training set: ' + str(len(super(AtemporalClassifier, self).labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.window_size) + '-frame snippets: ' + \
+			           "{:.2f}".format(float(len(self.X_train)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
+
+			for label in super(AtemporalClassifier, self).labels('train'):
+				print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+				                   str(training_counts[label]) + ' '*(maxcountlen - len(str(training_counts[label]))) + \
+				   ' snippets, ' + "{:.3f}".format(float(training_counts[label]) / float(len(self.y_train)) * 100.0) + ' % of train.')
+
+		if (sets == 'test' or sets == 'both') and len(self.X_test) > 0:
+			print('    Test set:     ' + str(len(super(AtemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
+			           "{:.2f}".format(float(len(self.X_test)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
+
+			for label in super(AtemporalClassifier, self).labels('test'):
+				if label not in list(np.unique(self.y_train)):			#  Let users know that a label in the test set is not in the training set.
+					print('     !! ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
+					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(self.y_test)) * 100.0) + ' % of test.')
+				else:
+					print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
+					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(self.y_test)) * 100.0) + ' % of test.')
+		return
+
+	#  Print information about the snippets in the test set which have no representation in the training set.
+	def itemize_bogie_snippets(self):
+		maxlabellen = 0
+		maxcountlen = 0
+		training_counts = {}
+		testing_counts = {}
+		for label in list(np.unique(self.y_train)):
+			if len(label) > maxlabellen:
+				maxlabellen = len(label)
+			training_counts[label] = len([x for x in self.y_train if x == label])
+			if len(str(training_counts[label])) > maxcountlen:
+				maxcountlen = len(str(training_counts[label]))
+		for label in list(np.unique(self.y_test)):
+			if len(label) > maxlabellen:
+				maxlabellen = len(label)
+			testing_counts[label] = len([x for x in self.y_test if x == label])
+			if len(str(testing_counts[label])) > maxcountlen:
+				maxcountlen = len(str(testing_counts[label]))
+
+		if len(self.X_test) > 0:
+			print('    Test set:     ' + str(len(super(AtemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
+			           "{:.2f}".format(float(len(self.X_test)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
+
+			for label in super(AtemporalClassifier, self).labels('test'):
+				if label not in list(np.unique(self.y_train)):			#  Let users know that a label in the test set is not in the training set.
+					print('     !! ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
+					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(self.y_test)) * 100.0) + ' % of test.')
+		return
+
+	#################################################################
+	#  Editing: allocations.                                        #
+	#################################################################
+
 	#  Return a list of all labels that are in allocations belonging to the test set, but which are not represented in the training set.
-	def bogies(self):
+	def bogie_allocations(self):
 		training_labels = {}
 		test_labels = {}
 		for enactment_action, set_name in self.allocation.items():
@@ -1688,45 +1852,41 @@ class AtemporalClassifier(Classifier):
 				test_labels[ enactment_action[2] ] = True
 		return sorted([x for x in test_labels.keys() if x not in training_labels])
 
-	#  Drop all instances of the given label from both the training and the test sets.
-	def drop(self, label):
-		self.drop_from_train(label)
-		self.drop_from_test(label)
+	#  Drop all bogies (instances that are slated for the test set, but which have no representation in the training set.)
+	def drop_bogie_allocations(self):
+		bogies = self.bogie_allocations()
+		for bogie in bogies:
+			self.drop_allocation_from_test(bogie)
 		return
 
-	#  Drop all bogies (instances that are slated for the test set, but which have no representation in the training set.)
-	def drop_bogies(self):
-		bogies = self.bogies()
-		for bogie in bogies:
-			self.drop_from_test(bogie)
+	#  Drop all instances of the given label from both the training and the test sets.
+	def drop_allocations(self, label):
+		self.drop_allocations_from_train(label)
+		self.drop_allocation_from_test(label)
 		return
 
 	#  Drop all instances of the given label from allocations to the training set.
-	def drop_from_train(self, label):
-		dead_men = []
+	def drop_allocations_from_train(self, label):
+		marked_for_death = []
 		for enactment_action, set_name in self.allocation.items():
 			if set_name == 'train' and enactment_action[2] == label:
-				dead_men.append(enactment_action)
-		for dead_man in dead_men:
+				marked_for_death.append(enactment_action)
+		for dead_man in marked_for_death:
 			del self.allocation[dead_man]
 		return
 
 	#  Drop all instances of the given label from allocations to the test set.
-	def drop_from_test(self, label):
-		dead_men = []
+	def drop_allocation_from_test(self, label):
+		marked_for_death = []
 		for enactment_action, set_name in self.allocation.items():
 			if set_name == 'test' and enactment_action[2] == label:
-				dead_men.append(enactment_action)
-		for dead_man in dead_men:
+				marked_for_death.append(enactment_action)
+		for dead_man in marked_for_death:
 			del self.allocation[dead_man]
 		return
 
-	#################################################################
-	#  Recap: relay information about the data sets.                #
-	#################################################################
-
-	#  Print information about the actions slated for the training and test sets.
-	def itemize_set_actions(self, sets='both'):
+	#  Print information about the allocations for the training and test sets.
+	def itemize_allocations(self, sets='both'):
 		train_labels_combos = {}									#  key:label ==> [ (enactment-name, action-index),
 		test_labels_combos = {}										#                  (enactment-name, action-index),
 																	#                                ...
@@ -1783,8 +1943,8 @@ class AtemporalClassifier(Classifier):
 
 		return
 
-	#  Print information about actions in the test set that are not in the training set.
-	def itemize_bogies(self):
+	#  Print information about allocations for the test set that are not in the training set.
+	def itemize_bogie_allocations(self):
 		train_labels_combos = {}									#  key:label ==> [ (enactment-name, action-index),
 		test_labels_combos = {}										#                  (enactment-name, action-index),
 																	#                                ...
@@ -1826,55 +1986,63 @@ class AtemporalClassifier(Classifier):
 
 		return
 
-	#  Print information about the contents of the training and test sets.
-	def itemize_set_contents(self):
-		maxlabellen = 0
-		maxcountlen = 0
-		training_counts = {}
-		testing_counts = {}
-		for label in list(np.unique(self.y_train)):
-			if len(label) > maxlabellen:
-				maxlabellen = len(label)
-			training_counts[label] = len([x for x in self.y_train if x == label])
-			if len(str(training_counts[label])) > maxcountlen:
-				maxcountlen = len(str(training_counts[label]))
-		for label in list(np.unique(self.y_test)):
-			if len(label) > maxlabellen:
-				maxlabellen = len(label)
-			testing_counts[label] = len([x for x in self.y_test if x == label])
-			if len(str(testing_counts[label])) > maxcountlen:
-				maxcountlen = len(str(testing_counts[label]))
+	#################################################################
+	#  Editing: reallocate and manipulate the data sets.            #
+	#################################################################
 
-		if len(self.X_train) > 0:
-			print('    Training set: ' + str(len(super(AtemporalClassifier, self).labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.window_size) + '-frame snippets: ' + \
-			           "{:.2f}".format(float(len(self.X_train)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
+	#  Write the current data set allocation to file.
+	def export_data_split(self, file_name='data-split.txt'):
+		fh = open(file_name, 'w')
+		fh.write('#  Data split export from AtemporalClassifier.export_data_split(), run at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  Enactment name  <tab>  Action number  <tab>  Action label  <tab>  Set\n')
+		for enactment_action, set_name in sorted(self.allocation.items()):
+			enactment_name = enactment_action[0]
+			action_index = enactment_action[1]
+			action_label = enactment_action[2]
+			fh.write(enactment_name + '\t' + str(action_index) + '\t' + action_label + '\t' + set_name + '\n')
+		fh.close()
+		return
 
-			for label in super(AtemporalClassifier, self).labels('train'):
-				print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
-				                   str(training_counts[label]) + ' '*(maxcountlen - len(str(training_counts[label]))) + \
-				   ' snippets, ' + "{:.3f}".format(float(training_counts[label]) / float(len(self.y_train)) * 100.0) + ' % of train.')
+	#  Write the current data set allocation to file.
+	def load_data_split(self, file_name='data-split.txt'):
+		if self.verbose:
+			print('>>> Loading data split from "' + file_name + '".')
 
-		if len(self.X_test) > 0:
-			print('    Test set:     ' + str(len(super(AtemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
-			           "{:.2f}".format(float(len(self.X_test)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
+		fh = open(file_name, 'r')
+		self.allocation = {}
 
-			for label in super(AtemporalClassifier, self).labels('test'):
-				if label not in list(np.unique(self.y_train)):			#  Let users know that a label in the test set is not in the training set.
-					print('     !! ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
-					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
-					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(self.y_test)) * 100.0) + ' % of test.')
-				else:
-					print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
-					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
-					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(self.y_test)) * 100.0) + ' % of test.')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				enactment_name = arr[0]
+				action_index = int(arr[1])
+				action_label = arr[2]
+				set_name = arr[3]
+
+				self.allocation[ (enactment_name, action_index, action_label) ] = set_name
+
+		fh.close()
+		return
+
+	#  Reassign the 'src_index'-th action in 'src_enactment' to the set ('train' or 'test') 'dst_set'.
+	def reassign(self, src_enactment, src_index, dst_set):
+		assert isinstance(dst_set, str) and dst_set in ['train', 'test'], \
+		       'Argument \'dst_set\' passed to AtemporalClassifier.reassign() must be a string in {train, test}.'
+		i = 0
+		keys = [x for x in self.allocation.keys()]
+		while i < len(keys) and not (keys[i][0] == src_enactment and keys[i][1] == src_index):
+			i += 1
+		if i < len(keys):
+			self.allocation[ keys[i] ] = dst_set
 		return
 
 	#################################################################
 	#  Rendering                                                    #
 	#################################################################
 
-	#  Create a video with the given 'vid_file_name'
-	#  illustrating the query snippet on the left and the best-matching template snippet on the right.
+	#  Create a video with the given 'vid_file_name' illustrating the query snippet on the left and the best-matching template snippet on the right.
+	#  'query_number' is an index into 'self.X_test.'
+	#  Find the matched snippet in 'self.X_train' through metadata[prediction]['db-index'].
 	def render_side_by_side(self, vid_file_name, prediction, ground_truth_label, query_number, metadata):
 		half_width = int(round(float(self.width) * 0.5))
 		half_height = int(round(float(self.height) * 0.5))
@@ -1884,8 +2052,19 @@ class AtemporalClassifier(Classifier):
 		                       self.fps, \
 		                      (self.width, self.height) )
 
+		q_enactment = self.test_sample_lookup[ query_number ][0]	#  Enactment names.
+		t_enactment = self.train_sample_lookup[ metadata[prediction]['db-index'] ][0]
+
+		q_pe = ProcessedEnactment(q_enactment, verbose=False)		#  Enactments cited (query and template).
+		t_pe = ProcessedEnactment(t_enactment, verbose=False)
+																	#  Indices into frames.
 		q_alignment_length = len(metadata[prediction]['query-indices'])
 		t_alignment_length = len(metadata[prediction]['template-indices'])
+																	#  Frames of snippets cited.
+		q_frames = [x[1]['file'] for x in q_pe.get_frames() if x[0] >= self.test_sample_lookup[query_number][1] and \
+		                                                       x[0] < self.test_sample_lookup[query_number][3]]
+		t_frames = [x[1]['file'] for x in t_pe.get_frames() if x[0] >= self.train_sample_lookup[metadata[prediction]['db-index']][1] and \
+		                                                       x[0] < self.train_sample_lookup[metadata[prediction]['db-index']][3]]
 																	#  Iterate over the two alignments.
 		for j in range(0, max(q_alignment_length, t_alignment_length)):
 			if j < q_alignment_length:
@@ -1902,11 +2081,11 @@ class AtemporalClassifier(Classifier):
 			canvas = np.zeros((self.height, self.width, 3), dtype='uint8')
 																	#  Open source images.
 			if q_index is not None:
-				q_img = cv2.imread(self.test_src_filepaths[query_number][q_index], cv2.IMREAD_UNCHANGED)
+				q_img = cv2.imread(q_frames[q_index], cv2.IMREAD_UNCHANGED)
 			else:
 				q_img = np.zeros((self.height, self.width, 3), dtype='uint8')
 			if t_index is not None:
-				t_img = cv2.imread(self.train_src_filepaths[ metadata[prediction]['db-index'] ][t_index], cv2.IMREAD_UNCHANGED)
+				t_img = cv2.imread(t_frames[t_index], cv2.IMREAD_UNCHANGED)
 			else:
 				t_img = np.zeros((self.height, self.width, 3), dtype='uint8')
 																	#  Mask overlay accumulators
@@ -1914,15 +2093,14 @@ class AtemporalClassifier(Classifier):
 			t_mask_canvas = np.zeros((self.height, self.width, 3), dtype='uint8')
 
 			if self.object_detection_source == 'GT':
-				fh = open(self.test_src_enactments[query_number] + '_props.txt', 'r')
+				fh = open(q_enactment + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
-
 				for line in lines:									#  Find all lines itemizing masks for the current query frame.
 					if line[0] != '#':
 						arr = line.strip().split('\t')				#  In this pass, we are only interested in the masks;
 																	#  which are affected by transparency.
-						if q_index is not None and arr[1] == self.test_src_filepaths[query_number][q_index]:
+						if q_index is not None and arr[1] == q_frames[q_index]:
 							object_name = arr[3]
 							if object_name not in ['LeftHand', 'RightHand']:
 								mask_path = arr[7]
@@ -1937,15 +2115,14 @@ class AtemporalClassifier(Classifier):
 								q_mask_canvas += mask				#  Add mask to mask accumulator.
 								q_mask_canvas[q_mask_canvas > 255] = 255
 
-				fh = open(self.train_src_enactments[metadata[prediction]['db-index']] + '_props.txt', 'r')
+				fh = open(t_enactment + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
-
 				for line in lines:									#  Find all lines itemizing masks for the current template frame.
 					if line[0] != '#':
 						arr = line.strip().split('\t')				#  In this pass, we are only interested in the masks;
 																	#  which are affected by transparency.
-						if t_index is not None and arr[1] == self.train_src_filepaths[metadata[prediction]['db-index']][t_index]:
+						if t_index is not None and arr[1] == t_frames[t_index]:
 							object_name = arr[3]
 							if object_name not in ['LeftHand', 'RightHand']:
 								mask_path = arr[7]
@@ -1968,14 +2145,13 @@ class AtemporalClassifier(Classifier):
 			t_img = cv2.cvtColor(t_img, cv2.COLOR_RGBA2RGB)			#  Flatten alpha
 
 			if self.object_detection_source == 'GT':
-				fh = open(self.test_src_enactments[query_number] + '_props.txt', 'r')
+				fh = open(q_enactment + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
-
 				for line in lines:									#  Find those same lines again for the query frame.
 					if line[0] != '#':
 						arr = line.strip().split('\t')				#  In this pass, we are interested in the bounding boxes and centroids.
-						if q_index is not None and arr[1] == self.test_src_filepaths[query_number][q_index]:
+						if q_index is not None and arr[1] == q_frames[q_index]:
 							object_name = arr[3]
 							if object_name not in ['LeftHand', 'RightHand']:
 								bbox_arr = arr[6].split(';')
@@ -1989,14 +2165,13 @@ class AtemporalClassifier(Classifier):
 								                                                        self.robject_colors[ object_name ][1], \
 								                                                        self.robject_colors[ object_name ][0]), 3)
 
-				fh = open(self.train_src_enactments[metadata[prediction]['db-index']] + '_props.txt', 'r')
+				fh = open(t_enactment + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
-
 				for line in lines:									#  Find those same lines again for the template frame.
 					if line[0] != '#':
 						arr = line.strip().split('\t')				#  In this pass, we are interested in the bounding boxes and centroids.
-						if t_index is not None and arr[1] == self.train_src_filepaths[metadata[prediction]['db-index']][t_index]:
+						if t_index is not None and arr[1] == t_frames[t_index]:
 							object_name = arr[3]
 							if object_name not in ['LeftHand', 'RightHand']:
 								bbox_arr = arr[6].split(';')
@@ -2025,7 +2200,7 @@ class AtemporalClassifier(Classifier):
 			                    (self.side_by_side_label_super['x'], self.side_by_side_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 			                    self.side_by_side_label_super['fontsize'], (0, 255, 0), 2)
 			if q_index is not None:									#  Superimpose enactment source and frame file name.
-				cv2.putText(canvas, 'From ' + self.test_src_enactments[query_number] + ', ' + self.test_src_filepaths[query_number][q_index].split('/')[-1], \
+				cv2.putText(canvas, 'From ' + q_enactment + ', ' + q_frames[q_index].split('/')[-1], \
 				                    (self.side_by_side_source_super['x'], self.side_by_side_source_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 				                    self.side_by_side_source_super['fontsize'], (255, 255, 255), 2)
 
@@ -2042,7 +2217,7 @@ class AtemporalClassifier(Classifier):
 				                    (self.side_by_side_label_super['x'] + half_width, self.side_by_side_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 				                    self.side_by_side_label_super['fontsize'], (0, 0, 255), 2)
 			if t_index is not None:									#  Superimpose enactment source and frame file name.
-				cv2.putText(canvas, 'From ' + self.train_src_enactments[metadata[prediction]['db-index']] + ', ' + self.train_src_filepaths[metadata[prediction]['db-index']][t_index].split('/')[-1], \
+				cv2.putText(canvas, 'From ' + t_enactment + ', ' + t_frames[t_index].split('/')[-1], \
 				                    (self.side_by_side_source_super['x'] + half_width, self.side_by_side_source_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 				                    self.side_by_side_source_super['fontsize'], (255, 255, 255), 2)
 			vid.write(canvas)
@@ -2219,10 +2394,7 @@ class TemporalClassifier(Classifier):
 				if line[0] == '\t':
 					vector = [float(x) for x in line.strip().split('\t')]
 					if self.hand_schema == 'strong-hand':
-						lh_norm = np.linalg.norm(vector[:3])
-						rh_norm = np.linalg.norm(vector[6:9])
-						if lh_norm < rh_norm:						#  Right hand is the strong hand; swap [:6] and [6:12].
-							vector = vector[6:12] + vector[:6] + vector[12:]
+						vector = strong_hand_encode(vector)
 					self.X_train[-1].append( self.apply_vector_coefficients(vector) )
 				else:
 					action_arr = line.strip().split('\t')
@@ -2239,6 +2411,23 @@ class TemporalClassifier(Classifier):
 					                                                                db_entry_end_time,   db_entry_end_frame)
 					sample_ctr += 1
 		return
+
+	def all_labels(self):
+		labels = {}													#  Used for its set-like properties.
+		for x in self.labels():										#  Include all known labels from the database.
+			labels[x] = True
+		for enactment_inputs in self.enactment_inputs:				#  Include all (potentially unknown) labels from the input.
+			pe = ProcessedEnactment(enactment_inputs, verbose=False)
+			for x in pe.labels():
+				if x in self.relabelings:							#  Allow that we may have asked to relabel some or all of these.
+					labels[ self.relabelings[x] ] = True
+				else:
+					labels[x] = True
+		return sorted([x for x in labels.keys()])					#  Return a sorted list of unique labels.
+
+	#################################################################
+	#  Classify.                                                    #
+	#################################################################
 
 	#  March through each vector/frame in input enactments as if they were received in real time.
 	#  Note that this is not our best approximation of a deployed system, since it avoids all the work
@@ -2308,10 +2497,7 @@ class TemporalClassifier(Classifier):
 					vector = [float(x) for x in arr[3:]]
 
 					if self.hand_schema == 'strong-hand':			#  Apply hand-schema (if applicable.)
-						lh_norm = np.linalg.norm(vector[:3])
-						rh_norm = np.linalg.norm(vector[6:9])
-						if lh_norm < rh_norm:						#  Right hand is the strong hand; swap [:6] and [6:12].
-							vector = vector[6:12] + vector[:6] + vector[12:]
+						vector = strong_hand_encode(vector)
 																	#  Apply coefficients (if applicable.)
 					vector_buffer.append( self.apply_vector_coefficients(vector) )
 					if ground_truth_label in self.relabelings:
@@ -2532,21 +2718,8 @@ class TemporalClassifier(Classifier):
 				print('')
 		return classification_stats
 
-	def all_labels(self):
-		labels = {}													#  Used for its set-like properties.
-		for x in self.labels():										#  Include all known labels from the database.
-			labels[x] = True
-		for enactment_inputs in self.enactment_inputs:				#  Include all (potentially unknown) labels from the input.
-			pe = ProcessedEnactment(enactment_inputs, verbose=False)
-			for x in pe.labels():
-				if x in self.relabelings:							#  Allow that we may have asked to relabel some or all of these.
-					labels[ self.relabelings[x] ] = True
-				else:
-					labels[x] = True
-		return sorted([x for x in labels.keys()])					#  Return a sorted list of unique labels.
-
 	#################################################################
-	#  Buffer update & buffer test                                  #
+	#  Buffer update.                                               #
 	#################################################################
 
 	#  Add the given vector to the rolling buffer, kicking out old vectors if necessary.
@@ -2579,6 +2752,10 @@ class TemporalClassifier(Classifier):
 		buffer.append( vector )										#  Append the latest.
 		return buffer
 
+	#################################################################
+	#  Buffer testing.                                              #
+	#################################################################
+
 	#  Is self.buffer_labels currently full?
 	def full(self):
 		return len(self.buffer_labels) == self.rolling_buffer_length
@@ -2593,7 +2770,126 @@ class TemporalClassifier(Classifier):
 		return all([x in valid_labels for x in self.buffer_labels])
 
 	#################################################################
-	#  Rendering & display                                          #
+	#  Profiling.                                                   #
+	#################################################################
+
+	#  How many snippets will we encounter as we march through time with the current rolling buffer size and stride?
+	def itemize(self):
+		maxindexlen = 0
+		maxlabellen = 0
+		total_snippets = 0											#  Across all enactments.
+		for enactment_input in self.enactment_inputs:
+			pe = ProcessedEnactment(enactment_input, verbose=False)
+			snippets = pe.snippets_from_frames(self.rolling_buffer_length, self.rolling_buffer_stride)
+			total_snippets += len(snippets)
+			for snippet in snippets:
+				label = snippet[0]
+				if label in self.relabelings:
+					label = self.relabelings[label]
+				if len(label) > maxlabellen:
+					maxlabellen = len(label)
+		maxindexlen = len(str(total_snippets))
+
+		for enactment_input in self.enactment_inputs:
+			pe = ProcessedEnactment(enactment_input, verbose=False)
+			print('>>> "' + enactment_input + '" in simulated real-time:')
+			ctr = 0
+			for snippet in pe.snippets_from_frames(self.rolling_buffer_length, self.rolling_buffer_stride):
+				label = snippet[0]
+				if label in self.relabelings:
+					label = self.relabelings[label]
+				print_str = '    [' + str(ctr) + ']:' + ' '*(maxindexlen - len(str(ctr))) + \
+				                 label + ' '*(maxlabellen - len(label)) + '\t' + \
+				                 str(snippet[1]) + '\t-->\t' + str(snippet[3])
+				print(print_str)
+				ctr += 1;
+			print('')
+		print('>>> Total snippets in test set: ' + str(total_snippets))
+		return
+
+	def itemize_snippets(self):
+		maxlabellen = 0
+		maxcountlen = 0
+		training_counts = {}
+		testing_counts = {}
+
+		X_test = []													#  These are perishable, local variables.
+		y_test = []													#  We hold snippets and labels here *as if* they did not exist in time.
+
+		for label in list(np.unique(self.y_train)):
+			if len(label) > maxlabellen:
+				maxlabellen = len(label)
+			training_counts[label] = len([x for x in self.y_train if x == label])
+			if len(str(training_counts[label])) > maxcountlen:
+				maxcountlen = len(str(training_counts[label]))
+
+		for enactment in self.enactment_inputs:
+			pe = ProcessedEnactment(enactment, verbose=False)
+			snippets = pe.snippets_from_frames(self.rolling_buffer_length, self.rolling_buffer_stride)
+			for snippet in snippets:
+				label = snippet[0]
+				if label in self.relabelings:
+					label = self.relabelings[label]
+				X_test.append( (snippet[1], snippet[2], snippet[3], snippet[4]) )
+				y_test.append( label )
+
+				if label not in testing_counts:
+					testing_counts[label] = 0
+				testing_counts[label] += 1
+				if len(label) > maxlabellen:
+					maxlabellen = len(label)
+				if len(str(testing_counts[label])) > maxcountlen:
+					maxcountlen = len(str(testing_counts[label]))
+
+		num_fair_labels = len([x for x in testing_counts.keys() if x in training_counts])
+		num_fair_snippets = len([x for x in y_test if x in training_counts])
+
+		if len(self.X_train) > 0:
+			print('    Training set: ' + str(len(super(TemporalClassifier, self).labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
+			           "{:.2f}".format(float(len(self.X_train)) / float(len(self.X_train) + len(X_test)) * 100.0) + ' %.')
+
+			for label in super(TemporalClassifier, self).labels('train'):
+				print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+				                   str(training_counts[label]) + ' '*(maxcountlen - len(str(training_counts[label]))) + \
+				   ' snippets, ' + "{:.3f}".format(float(training_counts[label]) / float(len(self.y_train)) * 100.0) + ' % of train.')
+
+		if len(X_test) > 0:
+			print('    Test set:     ' + str(len(super(TemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(X_test))  + ' total ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
+			           "{:.2f}".format(float(len(X_test)) / float(len(self.X_train) + len(X_test)) * 100.0) + ' %.')
+			print('                  ' + str(num_fair_labels) + ' unique fair labels, ' + str(num_fair_snippets) + ' total fair ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
+			           "{:.2f}".format(float(num_fair_snippets) / float(len(self.X_train) + len(X_test)) * 100.0) + ' %.')
+
+			for label in sorted(list(np.unique(y_test))):
+				if label not in list(np.unique(self.y_train)):			#  Let users know that a label in the test set is not in the training set.
+					print('     !! ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
+					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(y_test)) * 100.0) + ' % of test.')
+				else:
+					print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
+					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
+					   ' snippets, ' + "{:.3f}".format(float(testing_counts[label]) / float(len(y_test)) * 100.0) + ' % of test.')
+		return
+
+	#  Print out every input-enactment's timestamps and labels, just to check what is currently on hand.
+	def preview(self):
+		for enactment_input in self.enactment_inputs:
+			fh = open(enactment_input + '.enactment', 'r')			#  Read in the input-enactment.
+			lines = fh.readlines()
+			fh.close()
+
+			for line in lines:
+				if line[0] != '#':
+					arr = line.strip().split('\t')
+					timestamp = float(arr[0])						#  Save the time stamp.
+					ground_truth_label = arr[2]						#  Save the true label (these include the nothing-labels.)
+					if ground_truth_label in self.relabelings:
+						ground_truth_label = self.relabelings[ground_truth_label]
+
+					print(enactment_input + ':\t' + str(timestamp) + '\t' + ground_truth_label)
+		return
+
+	#################################################################
+	#  Rendering.                                                   #
 	#################################################################
 
 	#  Take the given frame name, superimpose object masks, centroids, other data.
@@ -2903,55 +3199,3 @@ class TemporalClassifier(Classifier):
 					masks.append( (mask_path, r_object, bbox) )
 		fh.close()
 		return masks
-
-	#  How many snippets will we encounter as we march through time with the current rolling buffer size and stride?
-	def itemize_test_set(self):
-		maxindexlen = 0
-		maxlabellen = 0
-		total_snippets = 0											#  Across all enactments.
-		for enactment_input in self.enactment_inputs:
-			pe = ProcessedEnactment(enactment_input, verbose=False)
-			snippets = pe.snippets_from_frames(self.rolling_buffer_length, self.rolling_buffer_stride)
-			total_snippets += len(snippets)
-			for snippet in snippets:
-				label = snippet[0]
-				if label in self.relabelings:
-					label = self.relabelings[label]
-				if len(label) > maxlabellen:
-					maxlabellen = len(label)
-		maxindexlen = len(str(total_snippets))
-
-		for enactment_input in self.enactment_inputs:
-			pe = ProcessedEnactment(enactment_input, verbose=False)
-			print('>>> "' + enactment_input + '" in simulated real-time:')
-			ctr = 0
-			for snippet in pe.snippets_from_frames(self.rolling_buffer_length, self.rolling_buffer_stride):
-				label = snippet[0]
-				if label in self.relabelings:
-					label = self.relabelings[label]
-				print_str = '    [' + str(ctr) + ']:' + ' '*(maxindexlen - len(str(ctr))) + \
-				                 label + ' '*(maxlabellen - len(label)) + '\t' + \
-				                 str(snippet[1]) + '\t-->\t' + str(snippet[3])
-				print(print_str)
-				ctr += 1;
-			print('')
-		print('>>> Total snippets in test set: ' + str(total_snippets))
-		return
-
-	#  Print out every input-enactment's timestamps and labels, just to check what is currently on hand.
-	def preview(self):
-		for enactment_input in self.enactment_inputs:
-			fh = open(enactment_input + '.enactment', 'r')			#  Read in the input-enactment.
-			lines = fh.readlines()
-			fh.close()
-
-			for line in lines:
-				if line[0] != '#':
-					arr = line.strip().split('\t')
-					timestamp = float(arr[0])						#  Save the time stamp.
-					ground_truth_label = arr[2]						#  Save the true label (these include the nothing-labels.)
-					if ground_truth_label in self.relabelings:
-						ground_truth_label = self.relabelings[ground_truth_label]
-
-					print(enactment_input + ':\t' + str(timestamp) + '\t' + ground_truth_label)
-		return
