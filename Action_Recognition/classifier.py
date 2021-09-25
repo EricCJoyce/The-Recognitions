@@ -417,29 +417,6 @@ class Classifier():
 		self.side_by_side_source_super['y'] = 130
 		self.side_by_side_source_super['fontsize'] = 1.0
 
-	#################################################################
-	#  Labels: enumerate, count, relabel.                           #
-	#################################################################
-
-	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or 'y_test.'
-	#  It is possible that the training and test sets contain different action labels.
-	def labels(self, sets='both'):
-		if type(self).__name__ == 'TemporalClassifier':				#  Temporal classifiers have no "test set," so force this decision.
-			sets = 'train'
-
-		if sets == 'train':
-			return list(np.unique(self.y_train))
-		if sets == 'test':
-			return list(np.unique(self.y_test))
-
-		return list(np.unique(self.y_train + self.y_test))
-
-	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or 'y_test.'
-	#  It is possible that the training and test sets contain different action labels.
-	def num_labels(self, sets='both'):
-		labels = self.labels(sets)
-		return len(labels)
-
 	#  Unify this object's outputs with a unique time stamp.
 	def time_stamp(self):
 		now = datetime.datetime.now()								#  Build a distinct substring so I don't accidentally overwrite results.
@@ -449,6 +426,104 @@ class Classifier():
 	#################################################################
 	#  Loading.                                                     #
 	#################################################################
+
+	#  Load a database from file. This loads directly into X_train and y_train. No "allocations."
+	#  Rearrange according to schems and apply subvector coefficients before saving internally to the "training set."
+	def load_db(self, db_file):
+		self.X_train = []											#  Reset.
+		self.y_train = []
+
+		reading_recognizable_objects = False
+		reading_vector_length = False
+		reading_snippet_size = False
+		reading_stride = False
+
+		fh = open(db_file, 'r')
+		lines = fh.readlines()
+		fh.close()
+
+		sample_ctr = 0
+		for line in lines:
+			if line[0] == '#':
+				if 'RECOGNIZABLE OBJECTS:' in line:
+					reading_recognizable_objects = True
+				elif reading_recognizable_objects:
+					self.recognizable_objects = line[1:].strip().split('\t')
+					self.robject_colors = {}						#  (Re)set
+					for robject in self.recognizable_objects:		#  Initialize with random colors as soon as we know our objects.
+						self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
+					reading_recognizable_objects = False
+
+				elif 'VECTOR LENGTH:' in line:
+					reading_vector_length = True
+				elif reading_vector_length:
+					self.vector_length = int(line[1:].strip())
+					reading_vector_length = False
+
+				elif 'SNIPPET SIZE:' in line:
+					reading_snippet_size = True
+				elif reading_snippet_size:
+					db_snippet_size = int(line[1:].strip())
+																	#  Atemporal: mind the self.window_size.
+					if type(self).__name__ == 'AtemporalClassifier':
+						if db_snippet_size != self.window_size:
+							if self.verbose:
+								print('>>> WARNING: the previous window size of ' + str(self.window_size) + \
+								                  ' will be reset to ' + str(db_snippet_size) + \
+								                  ' to use the database "' + db_file + '".')
+							self.window_size = db_snippet_size
+																	#  Temporal: mind the self.rolling_buffer_length.
+					elif type(self).__name__ == 'TemporalClassifier':
+						if db_snippet_size != self.rolling_buffer_length:
+							if self.verbose:
+								print('>>> WARNING: the previous rolling-buffer size of ' + str(self.rolling_buffer_length) + \
+								                  ' will be reset to ' + str(db_snippet_size) + \
+								                  ' to use the database "' + db_file + '".')
+							self.rolling_buffer_length = db_snippet_size
+					reading_snippet_size = False
+
+				elif 'STRIDE:' in line:
+					reading_stride = True
+				elif reading_stride:
+					db_stride = int(line[1:].strip())
+																	#  Atemporal: mind the self.stride.
+					if type(self).__name__ == 'AtemporalClassifier':
+						if db_stride != self.stride:
+							if self.verbose:
+								print('>>> WARNING: the previous stride of ' + str(self.stride) + \
+								                  ' will be reset to ' + str(db_stride) + \
+								                  ' to use the database "' + db_file + '".')
+							self.stride = db_stride
+																	#  Temporal: mind the self.rolling_buffer_stride.
+					elif type(self).__name__ == 'TemporalClassifier':
+						if db_stride != self.rolling_buffer_stride:
+							if self.verbose:
+								print('>>> WARNING: the previous rolling-buffer stride of ' + str(self.rolling_buffer_stride) + \
+								                  ' will be reset to ' + str(db_stride) + \
+								                  ' to use the database "' + db_file + '".')
+							self.rolling_buffer_stride = db_stride
+					reading_stride = False
+			else:
+				if line[0] == '\t':
+					vector = [float(x) for x in line.strip().split('\t')]
+					if self.hand_schema == 'strong-hand':
+						vector = self.strong_hand_encode(vector)
+					self.X_train[-1].append( self.apply_vector_coefficients(vector) )
+				else:
+					action_arr = line.strip().split('\t')
+					label                     = action_arr[0]
+					db_entry_enactment_source = action_arr[1]
+					db_entry_start_time       = float(action_arr[2])
+					db_entry_start_frame      = action_arr[3]
+					db_entry_end_time         = float(action_arr[4])
+					db_entry_end_frame        = action_arr[5]
+					self.y_train.append( label )
+					self.X_train.append( [] )
+																	#  Be able to lookup the frames of a matched database sample.
+					self.train_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
+					                                                                   db_entry_end_time,   db_entry_end_frame)
+					sample_ctr += 1
+		return
 
 	def load_isotonic_map(self, isotonic_file):
 		if self.verbose:
@@ -536,7 +611,7 @@ class Classifier():
 			matching_costs[label] = float('inf')
 
 		metadata = {}												#  Track information about the best match per class.
-		for label in self.labels('both'):							#  Initialize everything to infinitely far away.
+		for label in self.labels('both'):							#  Include labels the classifier may not know; these will simply be empty.
 			metadata[label] = {}
 
 		timing = {}
@@ -1277,7 +1352,7 @@ class AtemporalClassifier(Classifier):
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
 		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
 
-		for label in super(AtemporalClassifier, self).labels('both'):
+		for label in self.labels('both'):
 			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
 			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
 			classification_stats[label]['fp']      = 0				#                     key:fn      ==> val:false negative count
@@ -1529,87 +1604,24 @@ class AtemporalClassifier(Classifier):
 
 		return
 
-	#  Load a database from file. This loads directly into X_train and y_train. No "allocations."
-	#  Rearrange according to schems and apply subvector coefficients before saving internally to the "training set."
-	def load_db(self, db_file):
-		self.X_train = []											#  Reset.
-		self.y_train = []
-
-		reading_recognizable_objects = False
-		reading_vector_length = False
-		reading_snippet_size = False
-		reading_stride = False
-
-		fh = open(db_file, 'r')
-		lines = fh.readlines()
-		fh.close()
-
-		sample_ctr = 0
-		for line in lines:
-			if line[0] == '#':
-				if 'RECOGNIZABLE OBJECTS:' in line:
-					reading_recognizable_objects = True
-				elif reading_recognizable_objects:
-					self.recognizable_objects = line[1:].strip().split('\t')
-					self.robject_colors = {}						#  (Re)set
-					for robject in self.recognizable_objects:		#  Initialize with random colors as soon as we know our objects.
-						self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
-					reading_recognizable_objects = False
-				elif 'VECTOR LENGTH:' in line:
-					reading_vector_length = True
-				elif reading_vector_length:
-					self.vector_length = int(line[1:].strip())
-					reading_vector_length = False
-				elif 'SNIPPET SIZE:' in line:
-					reading_snippet_size = True
-				elif reading_snippet_size:
-					db_snippet_size = int(line[1:].strip())
-					if db_snippet_size != self.window_size:
-						if self.verbose:
-							print('>>> WARNING: the previous window size of ' + str(self.window_size) + \
-							                  ' will be reset to ' + str(db_snippet_size) + \
-							                  ' to use the database "' + db_file + '".')
-						self.window_size = db_snippet_size
-					reading_snippet_size = False
-				elif 'STRIDE:' in line:
-					reading_stride = True
-				elif reading_stride:
-					db_stride = int(line[1:].strip())
-					if db_stride != self.stride:
-						if self.verbose:
-							print('>>> WARNING: the previous stride of ' + str(self.stride) + \
-							                  ' will be reset to ' + str(db_stride) + \
-							                  ' to use the database "' + db_file + '".')
-						self.stride = db_stride
-					reading_stride = False
-			else:
-				if line[0] == '\t':
-					vector = [float(x) for x in line.strip().split('\t')]
-					if self.hand_schema == 'strong-hand':
-						lh_norm = np.linalg.norm(vector[:3])
-						rh_norm = np.linalg.norm(vector[6:9])
-						if lh_norm < rh_norm:						#  Right hand is the strong hand; swap [:6] and [6:12].
-							vector = vector[6:12] + vector[:6] + vector[12:]
-					self.X_train[-1].append( self.apply_vector_coefficients(vector) )
-				else:
-					action_arr = line.strip().split('\t')
-					label                     = action_arr[0]
-					db_entry_enactment_source = action_arr[1]
-					db_entry_start_time       = float(action_arr[2])
-					db_entry_start_frame      = action_arr[3]
-					db_entry_end_time         = float(action_arr[4])
-					db_entry_end_frame        = action_arr[5]
-					self.y_train.append( label )
-					self.X_train.append( [] )
-																	#  Be able to lookup the frames of a matched database sample.
-					self.train_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
-					                                                                   db_entry_end_time,   db_entry_end_frame)
-					sample_ctr += 1
-		return
-
 	#################################################################
-	#  Relabeling.                                                  #
+	#  (Re)labeling.                                                #
 	#################################################################
+
+	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or 'y_test.'
+	#  It is possible that the training and test sets contain different action labels.
+	def labels(self, sets='both'):
+		if sets == 'train':
+			return list(np.unique(self.y_train))
+		if sets == 'test':
+			return list(np.unique(self.y_test))
+		return list(np.unique(self.y_train + self.y_test))
+
+	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or 'y_test.'
+	#  It is possible that the training and test sets contain different action labels.
+	def num_labels(self, sets='both'):
+		labels = self.labels(sets)
+		return len(labels)
 
 	#  "Snippets" are already in X_train and/or X_test.
 	def relabel_snippets(self, old_label, new_label):
@@ -1784,19 +1796,19 @@ class AtemporalClassifier(Classifier):
 				maxcountlen = len(str(testing_counts[label]))
 
 		if (sets == 'train' or sets == 'both') and len(self.X_train) > 0:
-			print('    Training set: ' + str(len(super(AtemporalClassifier, self).labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.window_size) + '-frame snippets: ' + \
+			print('    Training set: ' + str(len(self.labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.window_size) + '-frame snippets: ' + \
 			           "{:.2f}".format(float(len(self.X_train)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
 
-			for label in super(AtemporalClassifier, self).labels('train'):
+			for label in self.labels('train'):
 				print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
 				                   str(training_counts[label]) + ' '*(maxcountlen - len(str(training_counts[label]))) + \
 				   ' snippets, ' + "{:.3f}".format(float(training_counts[label]) / float(len(self.y_train)) * 100.0) + ' % of train.')
 
 		if (sets == 'test' or sets == 'both') and len(self.X_test) > 0:
-			print('    Test set:     ' + str(len(super(AtemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
+			print('    Test set:     ' + str(len(self.labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
 			           "{:.2f}".format(float(len(self.X_test)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
 
-			for label in super(AtemporalClassifier, self).labels('test'):
+			for label in self.labels('test'):
 				if label not in list(np.unique(self.y_train)):			#  Let users know that a label in the test set is not in the training set.
 					print('     !! ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
 					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
@@ -1827,10 +1839,10 @@ class AtemporalClassifier(Classifier):
 				maxcountlen = len(str(testing_counts[label]))
 
 		if len(self.X_test) > 0:
-			print('    Test set:     ' + str(len(super(AtemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
+			print('    Test set:     ' + str(len(self.labels('test'))) + ' unique labels, ' + str(len(self.X_test))  + ' total ' + str(self.window_size) + '-frame snippets: ' + \
 			           "{:.2f}".format(float(len(self.X_test)) / float(len(self.X_train) + len(self.X_test)) * 100.0) + ' %.')
 
-			for label in super(AtemporalClassifier, self).labels('test'):
+			for label in self.labels('test'):
 				if label not in list(np.unique(self.y_train)):			#  Let users know that a label in the test set is not in the training set.
 					print('     !! ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
 					                   str(testing_counts[label]) + ' '*(maxcountlen - len(str(testing_counts[label]))) + \
@@ -2308,7 +2320,7 @@ class TemporalClassifier(Classifier):
 		self.buffer_labels = []										#  Holds buffer-fulls of ground-truth labels.
 																	#  Used to determine whether a evaluation is "fair."
 
-		self.db_sample_lookup = {}									#  key: index into X_train ==> val: (source enactment, start time, start frame,
+		self.train_sample_lookup = {}								#  key: index into X_train ==> val: (source enactment, start time, start frame,
 		self.vector_length = None									#                                                      end time,   end frame)
 		self.width = None
 		self.height = None
@@ -2337,85 +2349,27 @@ class TemporalClassifier(Classifier):
 		if self.database_file is not None:
 			self.load_db(self.database_file)
 
-	#  Load a database from file.
-	#  Rearrange according to schems and apply subvector coefficients before saving internally to the "training set."
-	def load_db(self, db_file):
-		self.X_train = []											#  Reset.
-		self.y_train = []
+	#################################################################
+	#  Labels.                                                      #
+	#################################################################
 
-		reading_recognizable_objects = False
-		reading_vector_length = False
-		reading_snippet_size = False
-		reading_stride = False
+	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or the test enactments.
+	#  It is possible that the training set and test enactments contain different action labels.
+	def labels(self, sets='both'):
+		if sets == 'train':
+			return list(np.unique(self.y_train))
+		if sets == 'test':
+			labels = {}												#  Used for its set-like properties.
+			for enactment_inputs in self.enactment_inputs:			#  Include all (potentially unknown) labels from the input.
+				pe = ProcessedEnactment(enactment_inputs, verbose=False)
+				for x in pe.labels():
+					if x in self.relabelings:						#  Allow that we may have asked to relabel some or all of these.
+						labels[ self.relabelings[x] ] = True
+					else:
+						labels[x] = True
+			return sorted([x for x in labels.keys()])				#  Return a sorted list of unique labels.
 
-		fh = open(db_file, 'r')
-		lines = fh.readlines()
-		fh.close()
-
-		sample_ctr = 0
-		for line in lines:
-			if line[0] == '#':
-				if 'RECOGNIZABLE OBJECTS:' in line:
-					reading_recognizable_objects = True
-				elif reading_recognizable_objects:
-					self.recognizable_objects = line[1:].strip().split('\t')
-					self.robject_colors = {}						#  (Re)set
-					for robject in self.recognizable_objects:		#  Initialize with random colors as soon as we know our objects.
-						self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
-					reading_recognizable_objects = False
-				elif 'VECTOR LENGTH:' in line:
-					reading_vector_length = True
-				elif reading_vector_length:
-					self.vector_length = int(line[1:].strip())
-					reading_vector_length = False
-				elif 'SNIPPET SIZE:' in line:
-					reading_snippet_size = True
-				elif reading_snippet_size:
-					db_snippet_size = int(line[1:].strip())
-					if db_snippet_size != self.rolling_buffer_length:
-						if self.verbose:
-							print('>>> WARNING: the previous rolling buffer size of ' + str(self.rolling_buffer_length) + \
-							                  ' will be reset to ' + str(db_snippet_size) + \
-							                  ' to use the database "' + db_file + '".')
-						self.rolling_buffer_length = db_snippet_size
-					reading_snippet_size = False
-				elif 'STRIDE:' in line:
-					reading_stride = True
-				elif reading_stride:
-					db_stride = int(line[1:].strip())
-					if db_stride != self.rolling_buffer_stride:
-						if self.verbose:
-							print('>>> WARNING: the previous rolling buffer stride of ' + str(self.rolling_buffer_stride) + \
-							                  ' will be reset to ' + str(db_stride) + \
-							                  ' to use the database "' + db_file + '".')
-						self.rolling_buffer_stride = db_stride
-					reading_stride = False
-			else:
-				if line[0] == '\t':
-					vector = [float(x) for x in line.strip().split('\t')]
-					if self.hand_schema == 'strong-hand':
-						vector = strong_hand_encode(vector)
-					self.X_train[-1].append( self.apply_vector_coefficients(vector) )
-				else:
-					action_arr = line.strip().split('\t')
-					label                     = action_arr[0]
-					db_entry_enactment_source = action_arr[1]
-					db_entry_start_time       = float(action_arr[2])
-					db_entry_start_frame      = action_arr[3]
-					db_entry_end_time         = float(action_arr[4])
-					db_entry_end_frame        = action_arr[5]
-					self.y_train.append( label )
-					self.X_train.append( [] )
-																	#  Be able to lookup the frames of a matched database sample.
-					self.db_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
-					                                                                db_entry_end_time,   db_entry_end_frame)
-					sample_ctr += 1
-		return
-
-	def all_labels(self):
 		labels = {}													#  Used for its set-like properties.
-		for x in self.labels():										#  Include all known labels from the database.
-			labels[x] = True
 		for enactment_inputs in self.enactment_inputs:				#  Include all (potentially unknown) labels from the input.
 			pe = ProcessedEnactment(enactment_inputs, verbose=False)
 			for x in pe.labels():
@@ -2423,7 +2377,15 @@ class TemporalClassifier(Classifier):
 					labels[ self.relabelings[x] ] = True
 				else:
 					labels[x] = True
+		for label in list(np.unique(self.y_train)):					#  Also include the training set labels.
+			labels[label] = True
 		return sorted([x for x in labels.keys()])					#  Return a sorted list of unique labels.
+
+	#  Return a list of unique action labels as evidences by the snippet labels in 'y_train' and/or the test enactments.
+	#  It is possible that the training set and test enactments contain different action labels.
+	def num_labels(self, sets='both'):
+		labels = self.labels(sets)
+		return len(labels)
 
 	#################################################################
 	#  Classify.                                                    #
@@ -2443,7 +2405,7 @@ class TemporalClassifier(Classifier):
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
 		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
 
-		for label in self.all_labels():								#  May include "unfair" labels, but will not include the "*" nothing-label.
+		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
 			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
 			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
 			classification_stats[label]['fp']      = 0				#                     key:fn      ==> val:false negative count
@@ -2500,10 +2462,12 @@ class TemporalClassifier(Classifier):
 						vector = strong_hand_encode(vector)
 																	#  Apply coefficients (if applicable.)
 					vector_buffer.append( self.apply_vector_coefficients(vector) )
+
 					if ground_truth_label in self.relabelings:
 						ground_truth_buffer.append( self.relabelings[ground_truth_label] )
 					else:
 						ground_truth_buffer.append( ground_truth_label )
+
 					time_stamp_buffer.append( timestamp )
 					frame_path_buffer.append( frame_filename )
 
@@ -2544,7 +2508,7 @@ class TemporalClassifier(Classifier):
 																	#  Push G.T. label to rolling G.T. buffer.
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
 																	#  Are the contents of the ground-truth buffer "fair"?
-				fair = self.full() and self.uniform() and self.fair()
+				#fair = self.full() and self.uniform() and self.fair()
 
 				#####################################################
 				#  If the rolling buffer is full, then classify.    #
@@ -2557,14 +2521,15 @@ class TemporalClassifier(Classifier):
 					tentative_prediction = None						#  (Re)set.
 					prediction = None
 
-					if fair or not skip_unfair:
+					#if fair or not skip_unfair:
+					#if True:
 																	#  Call the parent class's core matching engine.
-						matching_costs, confidences, probabilities, metadata, timing = super(TemporalClassifier, self).classify(self.rolling_buffer)
-						self.timing['dtw-classification'] += timing['dtw-classification']
-						self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-						self.timing['dtw-R-call'] += timing['dtw-R-call']
-						self.timing['compute-confidence'] += timing['compute-confidence']
-						self.timing['isotonic-lookup'] += timing['isotonic-lookup']
+					matching_costs, confidences, probabilities, metadata, timing = super(TemporalClassifier, self).classify(self.rolling_buffer)
+					self.timing['dtw-classification'] += timing['dtw-classification']
+					self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
+					self.timing['dtw-R-call'] += timing['dtw-R-call']
+					self.timing['compute-confidence'] += timing['compute-confidence']
+					self.timing['isotonic-lookup'] += timing['isotonic-lookup']
 
 					#################################################
 					#  matching_costs: key: label ==> val: cost     #
@@ -2575,73 +2540,76 @@ class TemporalClassifier(Classifier):
 					#                          template-indices,    #
 					#                          db-index}            #
 					#################################################
-					if fair or not skip_unfair:
-						t1_start = time.process_time()				#  Start timer.
-						least_cost = float('inf')					#  Tentative prediction always determined by least matching cost.
-						for k, v in matching_costs.items():
-							if v < least_cost:
-								tentative_prediction = k
-								tentative_confidence = confidences[k]
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
+					#if fair or not skip_unfair:
+					#if True:
+					t1_start = time.process_time()					#  Start timer.
+					least_cost = float('inf')						#  Tentative prediction always determined by least matching cost.
+					for k, v in matching_costs.items():
+						if v < least_cost:
+							least_cost = v
+							tentative_prediction = k
+							tentative_confidence = confidences[k]
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
 
-						t1_start = time.process_time()				#  Start timer.
-						sorted_confidences = []
-						for label in self.labels():					#  Maintain the order of label scores.
-							sorted_confidences.append( confidences[label] )
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['sort-confidences'].append(t1_stop - t1_start)
+					t1_start = time.process_time()					#  Start timer.
+					sorted_confidences = []
+					for label in self.labels('train'):				#  Maintain the order of label scores.
+						sorted_confidences.append( confidences[label] )
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['sort-confidences'].append(t1_stop - t1_start)
 
-						t1_start = time.process_time()				#  Start timer.
-						sorted_probabilities = []
-						for label in self.labels():					#  Maintain the order of label scores.
-							sorted_probabilities.append( probabilities[label] )
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['sort-probabilities'].append(t1_stop - t1_start)
+					t1_start = time.process_time()					#  Start timer.
+					sorted_probabilities = []
+					for label in self.labels('train'):				#  Maintain the order of label scores.
+						sorted_probabilities.append( probabilities[label] )
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['sort-probabilities'].append(t1_stop - t1_start)
 
-						t1_start = time.process_time()				#  Start timer.
-						self.push_temporal( sorted_probabilities )	#  Add this probability distribution to the temporal buffer.
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
+					t1_start = time.process_time()					#  Start timer.
+					self.push_temporal( sorted_probabilities )		#  Add this probability distribution to the temporal buffer.
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
 
-						if self.render and 'confidence' in self.render_modes:
-							confidence_store = self.push_buffer(sorted_confidences, confidence_store)
+					if self.render and 'confidence' in self.render_modes:
+						confidence_store = self.push_buffer(sorted_confidences, confidence_store)
 
-						if self.render and 'probabilities' in self.render_modes:
-							probability_store = self.push_buffer(sorted_probabilities, probability_store)
+					if self.render and 'probabilities' in self.render_modes:
+						probability_store = self.push_buffer(sorted_probabilities, probability_store)
 
 				#####################################################
 				#  If the temporal buffer is full,                  #
 				#  then smooth and predict (or abstain).            #
 				#####################################################
 				if len(self.temporal_buffer) == self.temporal_buffer_length:
-					if fair or not skip_unfair:
-						t1_start = time.process_time()				#  Start timer.
-						smoothed_probabilities = list(np.mean(np.array(self.temporal_buffer), axis=0))
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
+					#if fair or not skip_unfair:
+					#if True:
+					t1_start = time.process_time()					#  Start timer.
+					smoothed_probabilities = list(np.mean(np.array(self.temporal_buffer), axis=0))
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
-						if self.render and 'smooth' in self.render_modes:
-							smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
+					if self.render and 'smooth' in self.render_modes:
+						smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
-						t1_start = time.process_time()				#  Start timer.
-						if smoothed_probabilities[ self.labels().index(tentative_prediction) ] > self.threshold:
-							prediction = tentative_prediction
-						else:
-							prediction = None
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
+					t1_start = time.process_time()					#  Start timer.
+					if smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] > self.threshold:
+						prediction = tentative_prediction
+					else:
+						prediction = None
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
 																	#  Only measure performance when conditions are fair.
-					if self.full() and self.uniform() and self.fair():
-						ground_truth_label = self.buffer_labels[0]
-						if prediction == ground_truth_label:
-							classification_stats[ground_truth_label]['tp'] += 1
-						elif prediction is not None:
-							classification_stats[prediction]['fp']  += 1
-							classification_stats[ground_truth_label]['fn'] += 1
+				if self.full() and self.uniform() and self.fair():
+					ground_truth_label = self.buffer_labels[0]
+					if prediction == ground_truth_label:
+						classification_stats[ground_truth_label]['tp'] += 1
+					elif prediction is not None:
+						classification_stats[prediction]['fp']  += 1
+						classification_stats[ground_truth_label]['fn'] += 1
 
-						classification_stats['_tests'].append( (prediction, ground_truth_label) )
-						classification_stats['_conf'].append( tentative_confidence )
+					classification_stats['_tests'].append( (prediction, ground_truth_label) )
+					classification_stats['_conf'].append( tentative_confidence )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -2654,6 +2622,7 @@ class TemporalClassifier(Classifier):
 					else:
 						annotated_prediction = ''
 					annotated_source_frame = self.render_annotated_source_frame(enactment_input, frame_path_buffer[frame_ctr],     \
+					                                                            time_stamp=time_stamp_buffer[frame_ctr],           \
 					                                                            ground_truth_label=ground_truth_buffer[frame_ctr], \
 					                                                            prediction=annotated_prediction)
 					t1_stop = time.process_time()					#  Stop timer.
@@ -2845,16 +2814,16 @@ class TemporalClassifier(Classifier):
 		num_fair_snippets = len([x for x in y_test if x in training_counts])
 
 		if len(self.X_train) > 0:
-			print('    Training set: ' + str(len(super(TemporalClassifier, self).labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
+			print('    Training set: ' + str(len(self.labels('train'))) + ' unique labels, ' + str(len(self.X_train)) + ' total ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
 			           "{:.2f}".format(float(len(self.X_train)) / float(len(self.X_train) + len(X_test)) * 100.0) + ' %.')
 
-			for label in super(TemporalClassifier, self).labels('train'):
+			for label in self.labels('train'):
 				print('        ' + label + ': ' + ' '*(maxlabellen - len(label)) + \
 				                   str(training_counts[label]) + ' '*(maxcountlen - len(str(training_counts[label]))) + \
 				   ' snippets, ' + "{:.3f}".format(float(training_counts[label]) / float(len(self.y_train)) * 100.0) + ' % of train.')
 
 		if len(X_test) > 0:
-			print('    Test set:     ' + str(len(super(TemporalClassifier, self).labels('test'))) + ' unique labels, ' + str(len(X_test))  + ' total ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
+			print('    Test set:     ' + str(len(self.labels('test'))) + ' unique labels, ' + str(len(X_test))  + ' total ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
 			           "{:.2f}".format(float(len(X_test)) / float(len(self.X_train) + len(X_test)) * 100.0) + ' %.')
 			print('                  ' + str(num_fair_labels) + ' unique fair labels, ' + str(num_fair_snippets) + ' total fair ' + str(self.rolling_buffer_length) + '-frame snippets: ' + \
 			           "{:.2f}".format(float(num_fair_snippets) / float(len(self.X_train) + len(X_test)) * 100.0) + ' %.')
@@ -2926,7 +2895,14 @@ class TemporalClassifier(Classifier):
 				               self.robject_colors[ mask[1] ][1], \
 				               self.robject_colors[ mask[1] ][0]), 3)
 
-		cv2.putText(vid_frame, enactment, (self.seismograph_enactment_name_super['x'], self.seismograph_enactment_name_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.seismograph_enactment_name_super['fontsize'], (255, 255, 255, 255), 3)
+		if 'time_stamp' in kwargs:
+			assert isinstance(kwargs['time_stamp'], float), \
+			       'Argument \'time_stamp\' passed to TemporalClassifier.render_annotated_source_frame() must be a float.'
+			time_stamp_str = str(kwargs['time_stamp'])
+		else:
+			time_stamp_str = ''
+
+		cv2.putText(vid_frame, enactment + ', ' + time_stamp_str, (self.seismograph_enactment_name_super['x'], self.seismograph_enactment_name_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.seismograph_enactment_name_super['fontsize'], (255, 255, 255, 255), 3)
 
 		if 'ground_truth_label' in kwargs:
 			assert isinstance(kwargs['ground_truth_label'], str), \
