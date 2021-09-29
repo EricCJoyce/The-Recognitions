@@ -604,8 +604,10 @@ class Classifier():
 
 		least_cost = float('inf')
 		nearest_neighbor_label = None
-
-		###  LEFT OFF HERE !!! *** TODO: make fixed-len arr of +inf (index of labels is known)
+																	#  In defense of hashing versus building a flat list:
+																	#  a database is likely to have many more samples than there are labels.
+																	#  As a hash table, updating takes O(1) * |X_train| rather than
+																	#  O(n) * |X_train| to find matching_costs[ matching_costs.index(template_label) ].
 		matching_costs = {}											#  Matching cost for the nearest neighbor per class.
 		for label in self.labels('train'):							#  Initialize everything to infinitely far away.
 			matching_costs[label] = float('inf')
@@ -839,6 +841,27 @@ class Classifier():
 
 		return tuple(vec)
 
+	#  We would want to do this when rendering seismographs: prevent them from being HUGE.
+	def undo_vector_coefficients(self, vector):
+		vec = [x for x in vector]									#  Convert to a list so we can manipulate it.
+
+		vec[0] /= self.hands_coeff									#  Weigh LH_x.
+		vec[1] /= self.hands_coeff									#  Weigh LH_y.
+		vec[2] /= self.hands_coeff									#  Weigh LH_z.
+																	#  Skip one-hot encoded LH_0.
+																	#  Skip one-hot encoded LH_1.
+																	#  Skip one-hot encoded LH_2.
+		vec[6] /= self.hands_coeff									#  Weigh RH_x.
+		vec[7] /= self.hands_coeff									#  Weigh RH_y.
+		vec[8] /= self.hands_coeff									#  Weigh RH_z.
+																	#  Skip one-hot encoded RH_0.
+																	#  Skip one-hot encoded RH_1.
+																	#  Skip one-hot encoded RH_2.
+		for i in range(12, len(vector)):							#  Weigh props_i.
+			vec[i] /= self.props_coeff
+
+		return tuple(vec)
+
 	#################################################################
 	#  Rendering: (common to both derived classes.)                 #
 	#################################################################
@@ -864,7 +887,7 @@ class Classifier():
 
 	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label).
 	def confusion_matrix(self, predictions_truths):
-		labels = self.labels('both')
+		labels = self.labels('train')								#  Only count the labels the classifier is equipped to recognize!
 		num_classes = len(labels)
 
 		M = np.zeros((num_classes, num_classes), dtype='uint16')
@@ -874,8 +897,9 @@ class Classifier():
 			ground_truth_label = pred_gt[1]
 			if prediction is not None:
 				i = labels.index(prediction)
-				j = labels.index(ground_truth_label)
-				M[i, j] += 1
+				if ground_truth_label in labels:
+					j = labels.index(ground_truth_label)
+					M[i, j] += 1
 
 		return M
 
@@ -1040,6 +1064,8 @@ class Classifier():
 		return
 
 	#  Look for:
+	#    - total													Total time taken.
+	#    - load-enactment											Times taken to load enactments.
 	#    - dtw-classification										This is a coarser grain: time each classification process.
 	#    - test-cutoff-conditions									Times taken to test cutoff conditions.
 	#    - dtw-R-call												Times taken to run R's DTW.
@@ -1065,121 +1091,130 @@ class Classifier():
 		fh.write('#  Times for classifier tasks, completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
 			fh.write('#  ' + ' '.join(sys.argv) + '\n')
+																	#  'total' MUST be in the table.
+		fh.write('TOTAL TIME\t' + str(self.timing['total']) + '\n\n')
+																	#  Report enactment-loading times.
+		if 'load-enactment' in self.timing and len(self.timing['load-enactment']) > 0:
+			fh.write('Avg. enactment-loading time\t' + str(np.mean(self.timing['load-enactment'])) + '\t' + str(np.mean(self.timing['load-enactment']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev enactment-loading time\t' + str(np.std(self.timing['load-enactment'])) + '\n\n')
+		else:
+			fh.write('Avg. enactment-loading time\tN/A\n')
+			fh.write('Std.dev enactment-loading time\tN/A\n\n')
 																	#  Report DTW-classification times.
 		if 'dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0:
-			fh.write('Avg. DTW time (per query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\n')
+			fh.write('Avg. DTW time (per query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.mean(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev DTW time (per query pair)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
 		else:
 			fh.write('Avg. DTW time (per query pair)\tN/A\n')
 			fh.write('Std.dev DTW time (per query pair)\tN/A\n\n')
 																	#  Report cutoff-condition testing times.
 		if 'test-cutoff-conditions' in self.timing and len(self.timing['test-cutoff-conditions']) > 0:
-			fh.write('Avg. cutoff-condition testing time\t' + str(np.mean(self.timing['test-cutoff-conditions'])) + '\n')
+			fh.write('Avg. cutoff-condition testing time\t' + str(np.mean(self.timing['test-cutoff-conditions'])) + '\t' + str(np.mean(self.timing['test-cutoff-conditions']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev cutoff-condition testing time\t' + str(np.std(self.timing['test-cutoff-conditions'])) + '\n\n')
 		else:
 			fh.write('Avg. cutoff-condition testing time\tN/A\n')
 			fh.write('Std.dev cutoff-condition testing time\tN/A\n\n')
 																	#  Report DTW times.
 		if 'dtw-R-call' in self.timing and len(self.timing['dtw-R-call']) > 0:
-			fh.write('Avg. DTW time (per template-query pair)\t' + str(np.mean(self.timing['dtw-R-call'])) + '\n')
+			fh.write('Avg. DTW time (per template-query pair)\t' + str(np.mean(self.timing['dtw-R-call'])) + '\t' + str(np.mean(self.timing['dtw-R-call']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev DTW time (per template-query pair)\t' + str(np.std(self.timing['dtw-R-call'])) + '\n\n')
 		else:
 			fh.write('Avg. DTW time (per template-query pair)\tN/A\n')
 			fh.write('Std.dev DTW time (per template-query pair)\tN/A\n\n')
 																	#  Report cutoff-condition testing times.
 		if 'compute-confidence' in self.timing and len(self.timing['compute-confidence']) > 0:
-			fh.write('Avg. confidence computation time\t' + str(np.mean(self.timing['compute-confidence'])) + '\n')
+			fh.write('Avg. confidence computation time\t' + str(np.mean(self.timing['compute-confidence'])) + '\t' + str(np.mean(self.timing['compute-confidence']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev confidence computation time\t' + str(np.std(self.timing['compute-confidence'])) + '\n\n')
 		else:
 			fh.write('Avg. confidence computation time\tN/A\n')
 			fh.write('Std.dev confidence computation time\tN/A\n\n')
 																	#  Report isotonic lookup times.
 		if 'isotonic-lookup' in self.timing and len(self.timing['isotonic-lookup']) > 0:
-			fh.write('Avg. probability lookup time\t' + str(np.mean(self.timing['isotonic-lookup'])) + '\n')
+			fh.write('Avg. probability lookup time\t' + str(np.mean(self.timing['isotonic-lookup'])) + '\t' + str(np.mean(self.timing['isotonic-lookup']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev probability lookup time\t' + str(np.std(self.timing['isotonic-lookup'])) + '\n\n')
 		else:
 			fh.write('Avg. probability lookup time\tN/A\n')
 			fh.write('Std.dev probability lookup time\tN/A\n\n')
 																	#  Report least-distance-finding times.
 		if 'make-tentative-prediction' in self.timing and len(self.timing['make-tentative-prediction']) > 0:
-			fh.write('Avg. tentative decision-making time\t' + str(np.mean(self.timing['make-tentative-prediction'])) + '\n')
+			fh.write('Avg. tentative decision-making time\t' + str(np.mean(self.timing['make-tentative-prediction'])) + '\t' + str(np.mean(self.timing['make-tentative-prediction']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev tentative decision-making time\t' + str(np.std(self.timing['make-tentative-prediction'])) + '\n\n')
 		else:
 			fh.write('Avg. tentative decision-making time\tN/A\n')
 			fh.write('Std.dev tentative decision-making time\tN/A\n\n')
 																	#  Report confidence score-sorting times.
 		if 'sort-confidences' in self.timing and len(self.timing['sort-confidences']) > 0:
-			fh.write('Avg. confidence sorting time\t' + str(np.mean(self.timing['sort-confidences'])) + '\n')
+			fh.write('Avg. confidence sorting time\t' + str(np.mean(self.timing['sort-confidences'])) + '\t' + str(np.mean(self.timing['sort-confidences']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev confidence sorting time\t' + str(np.std(self.timing['sort-confidences'])) + '\n\n')
 		else:
 			fh.write('Avg. confidence sorting time\tN/A\n')
 			fh.write('Std.dev confidence sorting time\tN/A\n\n')
 																	#  Report probability-sorting times.
 		if 'sort-probabilities' in self.timing and len(self.timing['sort-probabilities']) > 0:
-			fh.write('Avg. probability sorting time\t' + str(np.mean(self.timing['sort-probabilities'])) + '\n')
+			fh.write('Avg. probability sorting time\t' + str(np.mean(self.timing['sort-probabilities'])) + '\t' + str(np.mean(self.timing['sort-probabilities']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev probability sorting time\t' + str(np.std(self.timing['sort-probabilities'])) + '\n\n')
 		else:
 			fh.write('Avg. probability sorting time\tN/A\n')
 			fh.write('Std.dev probability sorting time\tN/A\n\n')
 																	#  Report temporal-buffer update times.
 		if 'push-temporal-buffer' in self.timing and len(self.timing['push-temporal-buffer']) > 0:
-			fh.write('Avg. temporal-buffer update time\t' + str(np.mean(self.timing['push-temporal-buffer'])) + '\n')
+			fh.write('Avg. temporal-buffer update time\t' + str(np.mean(self.timing['push-temporal-buffer'])) + '\t' + str(np.mean(self.timing['push-temporal-buffer']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev temporal-buffer update time\t' + str(np.std(self.timing['push-temporal-buffer'])) + '\n\n')
 		else:
 			fh.write('Avg. temporal-buffer update time\tN/A\n')
 			fh.write('Std.dev temporal-buffer update time\tN/A\n\n')
 																	#  Report temporal-smoothing times.
 		if 'temporal-smoothing' in self.timing and len(self.timing['temporal-smoothing']) > 0:
-			fh.write('Avg. temporal-smoothing time\t' + str(np.mean(self.timing['temporal-smoothing'])) + '\n')
+			fh.write('Avg. temporal-smoothing time\t' + str(np.mean(self.timing['temporal-smoothing'])) + '\t' + str(np.mean(self.timing['temporal-smoothing']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev temporal-smoothing time\t' + str(np.std(self.timing['temporal-smoothing'])) + '\n\n')
 		else:
 			fh.write('Avg. temporal-smoothing time\tN/A\n')
 			fh.write('Std.dev temporal-smoothing time\tN/A\n\n')
 																	#  Report final decision-making times.
 		if 'make-temporally-smooth-decision' in self.timing and len(self.timing['make-temporally-smooth-decision']) > 0:
-			fh.write('Avg. temporally-smoothed classification time\t' + str(np.mean(self.timing['make-temporally-smooth-decision'])) + '\n')
+			fh.write('Avg. temporally-smoothed classification time\t' + str(np.mean(self.timing['make-temporally-smooth-decision'])) + '\t' + str(np.mean(self.timing['make-temporally-smooth-decision']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev temporally-smoothed classification time\t' + str(np.std(self.timing['make-temporally-smooth-decision'])) + '\n\n')
 		else:
 			fh.write('Avg. temporally-smoothed classification time\tN/A\n')
 			fh.write('Std.dev temporally-smoothed classification time\tN/A\n\n')
 																	#  Report side-by-side rendering times.
 		if 'render-side-by-side' in self.timing and len(self.timing['render-side-by-side']) > 0:
-			fh.write('Avg. side-by-side video rendering time\t' + str(np.mean(self.timing['render-side-by-side'])) + '\n')
+			fh.write('Avg. side-by-side video rendering time\t' + str(np.mean(self.timing['render-side-by-side'])) + '\t' + str(np.mean(self.timing['render-side-by-side']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev side-by-side video rendering time\t' + str(np.std(self.timing['render-side-by-side'])) + '\n\n')
 		else:
 			fh.write('Avg. side-by-side video rendering time\tN/A\n')
 			fh.write('Std.dev side-by-side video rendering time\tN/A\n\n')
 																	#  Report annotation times.
 		if 'render-annotated-source' in self.timing and len(self.timing['render-annotated-source']) > 0:
-			fh.write('Avg. video annotation time\t' + str(np.mean(self.timing['render-annotated-source'])) + '\n')
+			fh.write('Avg. video annotation time\t' + str(np.mean(self.timing['render-annotated-source'])) + '\t' + str(np.mean(self.timing['render-annotated-source']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev video annotation time\t' + str(np.std(self.timing['render-annotated-source'])) + '\n\n')
 		else:
 			fh.write('Avg. video annotation time\tN/A\n')
 			fh.write('Std.dev video annotation time\tN/A\n\n')
 																	#  Report rolling-buffer seismograph rendering times.
 		if 'render-rolling-buffer' in self.timing and len(self.timing['render-rolling-buffer']) > 0:
-			fh.write('Avg. rolling buffer rendering time\t' + str(np.mean(self.timing['render-rolling-buffer'])) + '\n')
+			fh.write('Avg. rolling buffer rendering time\t' + str(np.mean(self.timing['render-rolling-buffer'])) + '\t' + str(np.mean(self.timing['render-rolling-buffer']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev rolling buffer rendering time\t' + str(np.std(self.timing['render-rolling-buffer'])) + '\n\n')
 		else:
 			fh.write('Avg. rolling buffer rendering time\tN/A\n')
 			fh.write('Std.dev rolling buffer rendering time\tN/A\n\n')
 																	#  Report confidence seismograph rendering times.
 		if 'render-confidence' in self.timing and len(self.timing['render-confidence']) > 0:
-			fh.write('Avg. confidence rendering time\t' + str(np.mean(self.timing['render-confidence'])) + '\n')
+			fh.write('Avg. confidence rendering time\t' + str(np.mean(self.timing['render-confidence'])) + '\t' + str(np.mean(self.timing['render-confidence']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev confidence rendering time\t' + str(np.std(self.timing['render-confidence'])) + '\n\n')
 		else:
 			fh.write('Avg. confidence rendering time\tN/A\n')
 			fh.write('Std.dev confidence rendering time\tN/A\n\n')
 																	#  Report probabilities seismograph rendering times.
 		if 'render-probabilities' in self.timing and len(self.timing['render-probabilities']) > 0:
-			fh.write('Avg. probabilities rendering time\t' + str(np.mean(self.timing['render-probabilities'])) + '\n')
+			fh.write('Avg. probabilities rendering time\t' + str(np.mean(self.timing['render-probabilities'])) + '\t' + str(np.mean(self.timing['render-probabilities']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev probabilities rendering time\t' + str(np.std(self.timing['render-probabilities'])) + '\n\n')
 		else:
 			fh.write('Avg. probabilities rendering time\tN/A\n')
 			fh.write('Std.dev probabilities rendering time\tN/A\n\n')
 																	#  Report smoothed-probabilities seismograph rendering times.
 		if 'render-smoothed-probabilities' in self.timing and len(self.timing['render-smoothed-probabilities']) > 0:
-			fh.write('Avg. smoothed-probabilities rendering time\t' + str(np.mean(self.timing['render-smoothed-probabilities'])) + '\n')
+			fh.write('Avg. smoothed-probabilities rendering time\t' + str(np.mean(self.timing['render-smoothed-probabilities'])) + '\t' + str(np.mean(self.timing['render-smoothed-probabilities']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev smoothed-probabilities rendering time\t' + str(np.std(self.timing['render-smoothed-probabilities'])) + '\n\n')
 		else:
 			fh.write('Avg. smoothed-probabilities rendering time\tN/A\n')
@@ -1366,6 +1401,7 @@ class AtemporalClassifier(Classifier):
 		mismatch_ctr = 0
 
 		self.timing = {}											#  (Re)set.
+		self.timing['total'] = 0
 		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
 		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
 		self.timing['dtw-R-call'] = []								#  Prepare to collect times for running R's DTW.
@@ -1376,6 +1412,7 @@ class AtemporalClassifier(Classifier):
 		if self.render:
 			self.timing['render-side-by-side'] = []					#  Prepare to collect rendering times.
 
+		t0_start = time.process_time()								#  Start timer.
 		for i in range(0, len(self.y_test)):
 			query = self.X_test[i]									#  Bookmark the query and ground-truth label
 			ground_truth_label = self.y_test[i]
@@ -1437,6 +1474,8 @@ class AtemporalClassifier(Classifier):
 					sys.stdout.flush()
 		if self.verbose:
 			print('')
+		t0_stop = time.process_time()								#  Stop timer.
+		self.timing['total'] = t0_stop - t0_start
 
 		return classification_stats
 
@@ -1555,7 +1594,7 @@ class AtemporalClassifier(Classifier):
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
 						vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
 						if self.hand_schema == 'strong-hand':		#  Re-arrange for "strong-hand-first" encoding?
-							vec = strong_hand_encode(vec)
+							vec = self.strong_hand_encode(vec)
 						seq.append( self.apply_vector_coefficients(vec) )
 					self.X_test.append( seq )						#  Append the snippet sequence.
 					self.y_test.append( action_label )				#  Append ground-truth-label.
@@ -1695,24 +1734,32 @@ class AtemporalClassifier(Classifier):
 	#  Itemize set samples.                                         #
 	#################################################################
 
-	#  How many snippets will we encounter as we march through time with the current rolling buffer size and stride?
-	def itemize(self):
+	#  How many snippets are in the test set?
+	def itemize(self, skip_unfair=True):
+		labels = self.labels('train')
 		maxindexlen = 0
 		maxlabellen = 0
 		for i in range(0, len(self.X_test)):
 			label = self.y_test[i]
-			if len(label) > maxlabellen:
-				maxlabellen = len(label)
+			if (skip_unfair and label in labels) or not skip_unfair:
+				if len(label) > maxlabellen:
+					maxlabellen = len(label)
 		maxindexlen = len(str(len(self.X_test)))
 
+		ctr = 0
 		for i in range(0, len(self.X_test)):
 			label = self.y_test[i]
-			print_str = '    [' + str(i) + ']:' + ' '*(maxindexlen - len(str(i))) + \
-			                 label + ' '*(maxlabellen - len(label)) + '\t' + \
-			                 str(self.test_sample_lookup[i][1]) + '\t-->\t' + str(self.test_sample_lookup[i][3])
-			print(print_str)
+			if (skip_unfair and label in labels) or not skip_unfair:
+				print_str = '    [' + str(i) + ']:' + ' '*(maxindexlen - len(str(i))) + \
+				                 label + ' '*(maxlabellen - len(label)) + '\t' + \
+				                 str(self.test_sample_lookup[i][1]) + '\t-->\t' + str(self.test_sample_lookup[i][3])
+				print(print_str)
+				ctr += 1
 		print('')
-		print('>>> Total snippets in test set: ' + str(len(self.X_test)))
+		if skip_unfair:
+			print('>>> Total (fair) snippets in test set: ' + str(ctr))
+		else:
+			print('>>> Total snippets in test set: ' + str(ctr))
 		return
 
 	#################################################################
@@ -2314,11 +2361,15 @@ class TemporalClassifier(Classifier):
 		#############################################################
 		self.X_train = []											#  Contains lists of tuples (sequences of vectors).
 		self.y_train = []											#  Contains strings (labels).
-
-		self.rolling_buffer = []									#  Becomes 'query'.
-		self.temporal_buffer = []									#  Holds probability distributions.
-		self.buffer_labels = []										#  Holds buffer-fulls of ground-truth labels.
+																	#  Becomes 'query'.
+		self.rolling_buffer = [None for i in range(0, self.rolling_buffer_length)]
+		self.rolling_buffer_filling = True							#  Buffer has yet to reach capacity
+																	#  Holds probability distributions.
+		self.temporal_buffer = [None for i in range(0, self.temporal_buffer_length)]
+		self.temporal_buffer_filling = True							#  Buffer has yet to reach capacity
+																	#  Holds buffer-fulls of ground-truth labels.
 																	#  Used to determine whether a evaluation is "fair."
+		self.buffer_labels = [None for i in range(0, self.rolling_buffer_length)]
 
 		self.train_sample_lookup = {}								#  key: index into X_train ==> val: (source enactment, start time, start frame,
 		self.vector_length = None									#                                                      end time,   end frame)
@@ -2412,6 +2463,8 @@ class TemporalClassifier(Classifier):
 			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instance in training set}
 			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
 
+		self.timing['total'] = 0									#  Prepare to capture time taken by the entire classification run.
+		self.timing['load-enactment'] = []							#  Prepare to capture enactment loading times.
 		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
 		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
 		self.timing['dtw-R-call'] = []								#  Prepare to collect times for running R's DTW.
@@ -2430,10 +2483,16 @@ class TemporalClassifier(Classifier):
 			self.timing['render-probabilities'] = []
 			self.timing['render-smoothed-probabilities'] = []
 
+		t0_start = time.process_time()								#  Start timer.
 		for enactment_input in self.enactment_inputs:				#  Treat each input enactment as a separate slice of time.
-			self.rolling_buffer = []								#  (Re)initialize the rolling buffer.
-			self.temporal_buffer = []								#  (Re)initialize the temporal buffer.
-			self.buffer_labels = []									#  (Re)initialize the ground-truth labels buffer.
+																	#  (Re)initialize the rolling buffer.
+			self.rolling_buffer = [None for i in range(0, self.rolling_buffer_length)]
+			self.rolling_buffer_filling = True						#  Buffer has yet to reach capacity
+																	#  (Re)initialize the temporal buffer.
+			self.temporal_buffer = [None for i in range(0, self.temporal_buffer_length)]
+			self.temporal_buffer_filling = True						#  Buffer has yet to reach capacity
+																	#  (Re)initialize the ground-truth labels buffer.
+			self.buffer_labels = [None for i in range(0, self.rolling_buffer_length)]
 
 			if self.render:											#  If we're rendering, we may need to cache some things
 				if 'confidence' in self.render_modes:				#  we do not need when simply making predictions.
@@ -2447,6 +2506,7 @@ class TemporalClassifier(Classifier):
 			ground_truth_buffer = []								#  Can include "*" or "nothing" labels.
 			time_stamp_buffer = []
 			frame_path_buffer = []
+			t1_start = time.process_time()							#  Start timer.
 			fh = open(enactment_input + '.enactment', 'r')			#  Read in the input-enactment.
 			lines = fh.readlines()
 			fh.close()
@@ -2459,7 +2519,7 @@ class TemporalClassifier(Classifier):
 					vector = [float(x) for x in arr[3:]]
 
 					if self.hand_schema == 'strong-hand':			#  Apply hand-schema (if applicable.)
-						vector = strong_hand_encode(vector)
+						vector = self.strong_hand_encode(vector)
 																	#  Apply coefficients (if applicable.)
 					vector_buffer.append( self.apply_vector_coefficients(vector) )
 
@@ -2470,6 +2530,8 @@ class TemporalClassifier(Classifier):
 
 					time_stamp_buffer.append( timestamp )
 					frame_path_buffer.append( frame_filename )
+			t1_stop = time.process_time()							#  Stop timer.
+			self.timing['load-enactment'].append(t1_stop - t1_start)
 
 			num = len(vector_buffer)
 			prev_ctr = 0
@@ -2508,7 +2570,7 @@ class TemporalClassifier(Classifier):
 																	#  Push G.T. label to rolling G.T. buffer.
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
 																	#  Are the contents of the ground-truth buffer "fair"?
-				#fair = self.full() and self.uniform() and self.fair()
+				fair = self.full() and self.uniform() and self.fair()
 
 				#####################################################
 				#  If the rolling buffer is full, then classify.    #
@@ -2516,20 +2578,21 @@ class TemporalClassifier(Classifier):
 				#  based on nearest-neighbor. Actual predictions are#
 				#  subject to threshold and smoothed probabilities. #
 				#####################################################
-				if len(self.rolling_buffer) == self.rolling_buffer_length:
+				#if len(self.rolling_buffer) == self.rolling_buffer_length:
+				if self.is_rolling_buffer_full():
 
 					tentative_prediction = None						#  (Re)set.
 					prediction = None
 
-					#if fair or not skip_unfair:
 					#if True:
+					if fair or not skip_unfair:
 																	#  Call the parent class's core matching engine.
-					matching_costs, confidences, probabilities, metadata, timing = super(TemporalClassifier, self).classify(self.rolling_buffer)
-					self.timing['dtw-classification'] += timing['dtw-classification']
-					self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-					self.timing['dtw-R-call'] += timing['dtw-R-call']
-					self.timing['compute-confidence'] += timing['compute-confidence']
-					self.timing['isotonic-lookup'] += timing['isotonic-lookup']
+						matching_costs, confidences, probabilities, metadata, timing = super(TemporalClassifier, self).classify(self.rolling_buffer)
+						self.timing['dtw-classification'] += timing['dtw-classification']
+						self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
+						self.timing['dtw-R-call'] += timing['dtw-R-call']
+						self.timing['compute-confidence'] += timing['compute-confidence']
+						self.timing['isotonic-lookup'] += timing['isotonic-lookup']
 
 					#################################################
 					#  matching_costs: key: label ==> val: cost     #
@@ -2540,52 +2603,52 @@ class TemporalClassifier(Classifier):
 					#                          template-indices,    #
 					#                          db-index}            #
 					#################################################
-					#if fair or not skip_unfair:
 					#if True:
-					t1_start = time.process_time()					#  Start timer.
-					least_cost = float('inf')						#  Tentative prediction always determined by least matching cost.
-					for k, v in matching_costs.items():
-						if v < least_cost:
-							least_cost = v
-							tentative_prediction = k
-							tentative_confidence = confidences[k]
-					t1_stop = time.process_time()					#  Stop timer.
-					self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
+					if fair or not skip_unfair:
+						t1_start = time.process_time()				#  Start timer.
+						least_cost = float('inf')					#  Tentative prediction always determined by least matching cost.
+						for k, v in matching_costs.items():
+							if v < least_cost:
+								least_cost = v
+								tentative_prediction = k
+								tentative_confidence = confidences[k]
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
 
-					t1_start = time.process_time()					#  Start timer.
-					sorted_confidences = []
-					for label in self.labels('train'):				#  Maintain the order of label scores.
-						sorted_confidences.append( confidences[label] )
-					t1_stop = time.process_time()					#  Stop timer.
-					self.timing['sort-confidences'].append(t1_stop - t1_start)
+						t1_start = time.process_time()				#  Start timer.
+						sorted_confidences = []
+						for label in self.labels('train'):			#  Maintain the order of label scores.
+							sorted_confidences.append( confidences[label] )
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['sort-confidences'].append(t1_stop - t1_start)
 
-					t1_start = time.process_time()					#  Start timer.
-					sorted_probabilities = []
-					for label in self.labels('train'):				#  Maintain the order of label scores.
-						sorted_probabilities.append( probabilities[label] )
-					t1_stop = time.process_time()					#  Stop timer.
-					self.timing['sort-probabilities'].append(t1_stop - t1_start)
+						t1_start = time.process_time()				#  Start timer.
+						sorted_probabilities = []
+						for label in self.labels('train'):			#  Maintain the order of label scores.
+							sorted_probabilities.append( probabilities[label] )
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['sort-probabilities'].append(t1_stop - t1_start)
 
-					t1_start = time.process_time()					#  Start timer.
-					self.push_temporal( sorted_probabilities )		#  Add this probability distribution to the temporal buffer.
-					t1_stop = time.process_time()					#  Stop timer.
-					self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
+						t1_start = time.process_time()				#  Start timer.
+						self.push_temporal( sorted_probabilities )	#  Add this probability distribution to the temporal buffer.
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
 
-					if self.render and 'confidence' in self.render_modes:
-						confidence_store = self.push_buffer(sorted_confidences, confidence_store)
+						if self.render and 'confidence' in self.render_modes:
+							confidence_store = self.push_buffer(sorted_confidences, confidence_store)
 
-					if self.render and 'probabilities' in self.render_modes:
-						probability_store = self.push_buffer(sorted_probabilities, probability_store)
+						if self.render and 'probabilities' in self.render_modes:
+							probability_store = self.push_buffer(sorted_probabilities, probability_store)
 
 				#####################################################
-				#  If the temporal buffer is full,                  #
-				#  then smooth and predict (or abstain).            #
+				#  Smooth the contents of the temporal buffer and   #
+				#  make a prediction (or abstain from predicting).  #
 				#####################################################
-				if len(self.temporal_buffer) == self.temporal_buffer_length:
-					#if fair or not skip_unfair:
-					#if True:
+				#if len(self.temporal_buffer) == self.temporal_buffer_length:
+				#if True:
+				if fair or not skip_unfair:
 					t1_start = time.process_time()					#  Start timer.
-					smoothed_probabilities = list(np.mean(np.array(self.temporal_buffer), axis=0))
+					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
@@ -2685,6 +2748,8 @@ class TemporalClassifier(Classifier):
 					vid_smoothed_probabilities.release()
 			if self.verbose:
 				print('')
+		t0_stop = time.process_time()
+		self.timing['total'] = t0_stop - t0_start
 		return classification_stats
 
 	#################################################################
@@ -2693,24 +2758,52 @@ class TemporalClassifier(Classifier):
 
 	#  Add the given vector to the rolling buffer, kicking out old vectors if necessary.
 	def push_rolling(self, vector):
-		if len(self.rolling_buffer) == self.rolling_buffer_length:	#  If the buffer is at its maximum length, then shift 'stride' elements out.
-			self.rolling_buffer = self.rolling_buffer[self.rolling_buffer_stride:]
-		self.rolling_buffer.append( vector )						#  Append the latest.
+		if self.rolling_buffer_filling:
+			i = 0
+			while i < self.rolling_buffer_length and self.rolling_buffer[i] is not None:
+				i += 1
+			self.rolling_buffer[i] = vector[:]
+			if self.is_rolling_buffer_full():
+				self.rolling_buffer_filling = False
+		else:
+			if None not in self.rolling_buffer:
+				self.rolling_buffer = self.rolling_buffer[self.rolling_buffer_stride:] + [None for i in range(0, self.rolling_buffer_stride)]
+			self.rolling_buffer[ self.rolling_buffer.index(None) ] = vector[:]
 		return
 
 	#  Add the given ground-truth label to the ground-truth buffer, kicking out old labels if necessary.
 	def push_ground_truth_buffer(self, label):
-		if len(self.buffer_labels) == self.rolling_buffer_length:	#  If the buffer is at its maximum length, then shift 'stride' elements out.
-			self.buffer_labels = self.buffer_labels[self.rolling_buffer_stride:]
-		self.buffer_labels.append( label )							#  Append the latest.
+		if self.rolling_buffer_filling:
+			i = 0
+			while i < self.rolling_buffer_length and self.buffer_labels[i] is not None:
+				i += 1
+			self.buffer_labels[i] = label[:]
+		else:
+			if None not in self.buffer_labels:
+				self.buffer_labels = self.buffer_labels[self.rolling_buffer_stride:] + [None for i in range(0, self.rolling_buffer_stride)]
+			self.buffer_labels[ self.buffer_labels.index(None) ] = label[:]
 		return
 
 	#  Add the given probability distribution to the temporal buffer, kicking out old distributions if necessary.
 	def push_temporal(self, distribution):
-		if len(self.temporal_buffer) == self.temporal_buffer_length:#  If the buffer is at its maximum length, then shift 'stride' elements out.
-			self.temporal_buffer = self.temporal_buffer[self.temporal_buffer_stride:]
-		self.temporal_buffer.append( distribution )					#  Append the latest.
+		if self.temporal_buffer_filling:
+			i = 0
+			while i < self.temporal_buffer_length and self.temporal_buffer[i] is not None:
+				i += 1
+			self.temporal_buffer[i] = distribution[:]
+			if self.is_temporal_buffer_full():
+				self.temporal_buffer_filling = False
+		else:
+			if None not in self.temporal_buffer:
+				self.temporal_buffer = self.temporal_buffer[self.temporal_buffer_stride:] + [None for i in range(0, self.temporal_buffer_stride)]
+			self.temporal_buffer[ self.temporal_buffer.index(None) ] = distribution[:]
 		return
+
+	def is_rolling_buffer_full(self):
+		return None not in self.rolling_buffer
+
+	def is_temporal_buffer_full(self):
+		return None not in self.temporal_buffer
 
 	#  A more generic function used by the caches for rendering.
 	#  (This assumes the rendering caches use a stride of 1.)
@@ -2727,15 +2820,15 @@ class TemporalClassifier(Classifier):
 
 	#  Is self.buffer_labels currently full?
 	def full(self):
-		return len(self.buffer_labels) == self.rolling_buffer_length
+		return None not in self.buffer_labels
 
 	#  Does self.buffer_labels currently the same label?
 	def uniform(self):
-		return self.buffer_labels.count(self.buffer_labels[0]) == len(self.buffer_labels)
+		return self.buffer_labels.count(self.buffer_labels[0]) == self.rolling_buffer_length
 
 	#  Is self.buffer_labels free of any labels that are not in the database?
 	def fair(self):
-		valid_labels = self.labels()
+		valid_labels = self.labels('train')
 		return all([x in valid_labels for x in self.buffer_labels])
 
 	#################################################################
@@ -2743,20 +2836,24 @@ class TemporalClassifier(Classifier):
 	#################################################################
 
 	#  How many snippets will we encounter as we march through time with the current rolling buffer size and stride?
-	def itemize(self):
+	def itemize(self, skip_unfair=True):
 		maxindexlen = 0
 		maxlabellen = 0
 		total_snippets = 0											#  Across all enactments.
+		labels = self.labels('train')
+
 		for enactment_input in self.enactment_inputs:
 			pe = ProcessedEnactment(enactment_input, verbose=False)
 			snippets = pe.snippets_from_frames(self.rolling_buffer_length, self.rolling_buffer_stride)
-			total_snippets += len(snippets)
 			for snippet in snippets:
 				label = snippet[0]
-				if label in self.relabelings:
+				if label in self.relabelings:						#  Look up.
 					label = self.relabelings[label]
-				if len(label) > maxlabellen:
-					maxlabellen = len(label)
+																	#  Just because something has been relabeled does not mean that the DB knows it.
+				if (skip_unfair and label in labels) or not skip_unfair:
+					total_snippets += 1
+					if len(label) > maxlabellen:
+						maxlabellen = len(label)
 		maxindexlen = len(str(total_snippets))
 
 		for enactment_input in self.enactment_inputs:
@@ -2767,13 +2864,19 @@ class TemporalClassifier(Classifier):
 				label = snippet[0]
 				if label in self.relabelings:
 					label = self.relabelings[label]
-				print_str = '    [' + str(ctr) + ']:' + ' '*(maxindexlen - len(str(ctr))) + \
-				                 label + ' '*(maxlabellen - len(label)) + '\t' + \
-				                 str(snippet[1]) + '\t-->\t' + str(snippet[3])
-				print(print_str)
-				ctr += 1;
+
+				if (skip_unfair and label in labels) or not skip_unfair:
+					print_str = '    [' + str(ctr) + ']:' + ' '*(maxindexlen - len(str(ctr))) + \
+					                 label + ' '*(maxlabellen - len(label)) + '\t' + \
+					                 str(snippet[1]) + '\t-->\t' + str(snippet[3])
+					print(print_str)
+					ctr += 1;
 			print('')
-		print('>>> Total snippets in test set: ' + str(total_snippets))
+
+		if skip_unfair:
+			print('>>> Total (fair) snippets in test set: ' + str(total_snippets))
+		else:
+			print('>>> Total snippets in test set: ' + str(total_snippets))
 		return
 
 	def itemize_snippets(self):
@@ -2930,11 +3033,17 @@ class TemporalClassifier(Classifier):
 																	#  [LHx, LHy, LHz, LH0, LH1, LH2, RHx, ..., num_objects] in frame 0
 																	#  [LHx, LHy, LHz, LH0, LH1, LH2, RHx, ..., num_objects] in frame 1
 		B = []														#  [LHx, LHy, LHz, LH0, LH1, LH2, RHx, ..., num_objects] in frame 2
-		if len(self.rolling_buffer) < self.rolling_buffer_length:
-			for i in range(0, self.rolling_buffer_length - len(self.rolling_buffer)):
+		if self.rolling_buffer_filling:								#  Buffer has yet to reach capacity
+			for i in range(len([x for x in self.rolling_buffer if x is not None]), self.rolling_buffer_length):
 				B.append( [0.0 for x in range(0, vector_len)] )
-		for i in range(0, len(self.rolling_buffer)):
-			B.append( [x for x in self.rolling_buffer[i]] )
+			for i in range(0, self.rolling_buffer.index(None)):
+				B.append( [x for x in self.undo_vector_coefficients(self.rolling_buffer[i])] )
+		else:														#  Buffer reached capacity at some point but may contain Nones left from stride
+			for i in range(0, len(self.rolling_buffer)):
+				if self.rolling_buffer[i] is not None:
+					B.append( [x for x in self.undo_vector_coefficients(self.rolling_buffer[i])] )
+				else:
+					B.append( [0.0 for x in range(0, vector_len)] )
 		B = np.array(B)
 
 		x_intervals = int(np.floor(float(self.width) / float(vector_len)))
@@ -2966,7 +3075,7 @@ class TemporalClassifier(Classifier):
 					tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 					pt = (x * x_intervals, self.height - 10)
 					cv2.putText(tmp, self.recognizable_objects[x - 12], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-					tmp = self.rotateText(tmp, 90.0, (x * x_intervals, self.height - 10))
+					tmp = self.rotate_text(tmp, 90.0, (x * x_intervals, self.height - 10))
 					indices = np.where(tmp > 0)
 					for i in range(0, len(indices[0])):
 						graph[indices[0][i], indices[1][i]] = tmp[indices[0][i], indices[1][i]]
@@ -2982,7 +3091,7 @@ class TemporalClassifier(Classifier):
 																	#  All-white RGB
 		graph = np.ones((self.height, self.width, 3), dtype='uint8') * 255
 
-		labels = self.labels()
+		labels = self.labels('train')
 		buffer_len = self.seismograph_length
 		vector_len = len(labels)
 		img_center = (int(round(float(self.width) * 0.5)), int(round(float(self.height) * 0.5)))
@@ -3021,7 +3130,7 @@ class TemporalClassifier(Classifier):
 				tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 				pt = (x * x_intervals, self.height - 10)
 				cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 1)
-				tmp = self.rotateText(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
+				tmp = self.rotate_text(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
 				indices = np.where(tmp > 0)
 				for i in range(0, len(indices[0])):
 					graph[indices[0][i], indices[1][i]] = tmp[indices[0][i], indices[1][i]]
@@ -3038,7 +3147,7 @@ class TemporalClassifier(Classifier):
 																	#  All-white RGB
 		graph = np.ones((self.height, self.width, 3), dtype='uint8') * 255
 
-		labels = self.labels()
+		labels = self.labels('train')
 		buffer_len = self.seismograph_length
 		vector_len = len(labels)
 		img_center = (int(round(float(self.width) * 0.5)), int(round(float(self.height) * 0.5)))
@@ -3077,7 +3186,7 @@ class TemporalClassifier(Classifier):
 				tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 				pt = (x * x_intervals, self.height - 10)
 				cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 1)
-				tmp = self.rotateText(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
+				tmp = self.rotate_text(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
 				indices = np.where(tmp > 0)
 				for i in range(0, len(indices[0])):
 					graph[indices[0][i], indices[1][i]] = tmp[indices[0][i], indices[1][i]]
@@ -3094,7 +3203,7 @@ class TemporalClassifier(Classifier):
 																	#  All-white RGB
 		graph = np.ones((self.height, self.width, 3), dtype='uint8') * 255
 
-		labels = self.labels()
+		labels = self.labels('train')
 		buffer_len = self.seismograph_length
 		vector_len = len(labels)
 		img_center = (int(round(float(self.width) * 0.5)), int(round(float(self.height) * 0.5)))
@@ -3133,7 +3242,7 @@ class TemporalClassifier(Classifier):
 				tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 				pt = (x * x_intervals, self.height - 10)
 				cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 1)
-				tmp = self.rotateText(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
+				tmp = self.rotate_text(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
 				indices = np.where(tmp > 0)
 				for i in range(0, len(indices[0])):
 					graph[indices[0][i], indices[1][i]] = tmp[indices[0][i], indices[1][i]]
@@ -3144,7 +3253,7 @@ class TemporalClassifier(Classifier):
 
 		return graph
 
-	def rotateText(self, src, angle, true_point):
+	def rotate_text(self, src, angle, true_point):
 		center = (int(round(float(self.width) * 0.5)), int(round(float(self.height) * 0.5)))
 		img = src[:, :, :]
 
