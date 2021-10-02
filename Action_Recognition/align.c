@@ -15,19 +15,19 @@
 #define LEFT(i)    (2 * i) + 1                                      /* Return index of left child in heap. */
 #define RIGHT(i)   (2 * i) + 2                                      /* Return index of right child in heap. */
 #define SWAP(a, b) ({a ^= b; b ^= a; a ^= b;})                      /* Swap heap indices. */
-/**/
+/*
 #define __ALIGN_DEBUG 1
-/**/
+*/
 
 float heuristic(unsigned int);
 void reconstruct_path(unsigned int**, unsigned int*, unsigned int**, unsigned int);
 
 bool found(unsigned int**, unsigned int*, unsigned int);
-void delete_key(unsigned int**, unsigned int*, unsigned int, float**);
+void heapify(unsigned int**, unsigned int*, unsigned int, float**);
+void insert_heap(unsigned int**, unsigned int*, unsigned int, float**);
 unsigned int extract_min(unsigned int**, unsigned int*, float**);
 void decrease_key(unsigned int**, unsigned int*, unsigned int);
-void insert_heap(unsigned int**, unsigned int*, unsigned int, float**);
-void heapify(unsigned int**, unsigned int*, unsigned int, float**);
+void delete_key(unsigned int**, unsigned int*, unsigned int, float**);
 
 void print_fmatrix(unsigned int, unsigned int, float**);
 void print_umatrix(unsigned int, unsigned int, unsigned int**);
@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
     while(heapLen > 0)                                              //  Begin A*
       {
         #ifdef __ALIGN_DEBUG
-        printf("\n>>>\n");
+        printf("\n>>> ");
         print_heap(&heap, &heapLen, &F);
         print_variables(rows, cols, &C, &F, &G, &came_from);
         #endif
@@ -128,7 +128,7 @@ int main(int argc, char* argv[])
 
         left_exists = (current_index % cols > 0);                   //  A cell exists to the left.
                                                                     //  A cell exists above.
-        above_exists = ((current_index - (current_index % cols)) / rows >= 0);
+        above_exists = ((current_index - (current_index % cols)) / rows > 0);
 
         if(left_exists && above_exists)                             //  Diagonal to the upper-left exists.
           {
@@ -265,7 +265,7 @@ void reconstruct_path(unsigned int** path, unsigned int* pathLen, unsigned int**
 
 /********************************************************************/
 
-/*  */
+/* Is 'index' in the heap? */
 bool found(unsigned int** heap, unsigned int* heapLen, unsigned int index)
   {
     unsigned int i = 0;
@@ -286,7 +286,16 @@ void heapify(unsigned int** heap, unsigned int* heapLen, unsigned int index, flo
     unsigned int smallest;
 
     #ifdef __ALIGN_DEBUG
-    printf("heapify(%d)\n", index);
+    unsigned int i;
+    printf("heapify(%d): ", index);
+    for(i = 0; i < (*heapLen); i++)
+      {
+        if(i < (*heapLen) - 1)
+          printf("[%d:%d] %f,  ", i, (*heap)[i], (*Mat)[(*heap)[i]]);
+        else
+          printf("[%d:%d] %f", i, (*heap)[i], (*Mat)[(*heap)[i]]);
+      }
+    printf("\n");
     #endif
 
     left = LEFT(index);
@@ -298,6 +307,11 @@ void heapify(unsigned int** heap, unsigned int* heapLen, unsigned int index, flo
 
     if(right < (*heapLen) && (*Mat)[ (*heap)[right] ] < (*Mat)[ (*heap)[smallest] ])
       smallest = right;
+
+    #ifdef __ALIGN_DEBUG
+    printf("  index = %d; smallest = %d\n", index, smallest);
+    printf("  left = %d; right = %d\n", left, right);
+    #endif
 
     if(smallest != index)
       {
@@ -327,30 +341,16 @@ void insert_heap(unsigned int** heap, unsigned int* heapLen, unsigned int new_in
         i = PARENT(i);
       }
 
-    return;
-  }
-
-/* Remove the node at index and repair the heap. */
-void decrease_key(unsigned int** heap, unsigned int* heapLen, unsigned int index)
-  {
-    unsigned int i = index;
-
     #ifdef __ALIGN_DEBUG
-    printf("decrease_key(%d)\n", index);
+    for(i = 0; i < (*heapLen); i++)
+      printf("  [%d:%d]:%f ", i, (*heap)[i], (*Mat)[(*heap)[i]]);
+    printf("\n");
     #endif
 
-    (*heap)[i] = UINT_MAX;                                          //  I want to take advantage of unsigned int's range,
-                                                                    //  so we will treat UINT_MAX like negative infinity.
-    while(i != 0)
-      {
-        SWAP((*heap)[i], (*heap)[PARENT(i)]);
-        i = PARENT(i);
-      }
-
     return;
   }
 
-/*  */
+/* Pop the root value and repair the heap. */
 unsigned int extract_min(unsigned int** heap, unsigned int* heapLen, float** Mat)
   {
     unsigned int root;
@@ -376,7 +376,27 @@ unsigned int extract_min(unsigned int** heap, unsigned int* heapLen, float** Mat
     return root;
   }
 
-/*  */
+/* Remove the node at index and repair the heap. */
+void decrease_key(unsigned int** heap, unsigned int* heapLen, unsigned int index)
+  {
+    unsigned int i = index;
+
+    #ifdef __ALIGN_DEBUG
+    printf("decrease_key(%d)\n", index);
+    #endif
+
+    (*heap)[i] = UINT_MAX;                                          //  I want to take advantage of unsigned int's range,
+                                                                    //  so we will treat UINT_MAX like negative infinity.
+    while(i != 0)
+      {
+        SWAP((*heap)[i], (*heap)[PARENT(i)]);
+        i = PARENT(i);
+      }
+
+    return;
+  }
+
+/* Delete the given 'index' and repair the heap. */
 void delete_key(unsigned int** heap, unsigned int* heapLen, unsigned int index, float** Mat)
   {
     #ifdef __ALIGN_DEBUG
@@ -408,7 +428,10 @@ void print_umatrix(unsigned int rows, unsigned int cols, unsigned int** Mat)
     unsigned int i;
     for(i = 0; i < rows * cols; i++)
       {
-        printf("%u ", (*Mat)[i]);
+        if((*Mat)[i] == UINT_MAX)
+          printf("* ");
+        else
+          printf("%u ", (*Mat)[i]);
         if((i + 1) % cols == 0)
           printf("\n");
       }
@@ -419,12 +442,12 @@ void print_umatrix(unsigned int rows, unsigned int cols, unsigned int** Mat)
 void print_variables(unsigned int rows, unsigned int cols, float** C, float** F, float** G, unsigned int** came_from)
   {
     printf("rows = %d, cols = %d\n\n", rows, cols);
-    printf("C:\n");
-    print_fmatrix(rows, cols, C);
-    printf("G:\n");
-    print_fmatrix(rows, cols, G);
-    printf("F:\n");
-    print_fmatrix(rows, cols, F);
+    //printf("C:\n");
+    //print_fmatrix(rows, cols, C);
+    //printf("G:\n");
+    //print_fmatrix(rows, cols, G);
+    //printf("F:\n");
+    //print_fmatrix(rows, cols, F);
     printf("came-from:\n");
     print_umatrix(rows, cols, came_from);
     return;
@@ -435,7 +458,7 @@ void print_heap(unsigned int** heap, unsigned int* heapLen, float** Mat)
     unsigned int i;
     printf("Heap: ");
     for(i = 0; i < (*heapLen); i++)
-      printf("[%d]:%f  ", (*heap)[i], (*Mat)[ (*heap)[i] ]);
+      printf("[%d:%d]:%f  ", i, (*heap)[i], (*Mat)[ (*heap)[i] ]);
     printf("\n");
     return;
   }
