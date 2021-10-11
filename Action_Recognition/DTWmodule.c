@@ -231,6 +231,7 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
     unsigned int len = 0;                                           //  Length of the cheapest path.
     unsigned int index, neighbor;
     signed int i, j;
+    double norm;
     bool right_exists, down_exists;
 
     if((T_1 = (double*)malloc(rows * cols * sizeof(double))) == NULL)
@@ -290,10 +291,12 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
 
     index = 0;                                                      //  Count up.
     len = 0;
+    (*cost) = 0.0;
+    norm = 1.0 / (double)(rows + cols);                             //  Normalize by (M + N). Perform division once, outside the loop.
     while(index != UINT_MAX)
       {
         len++;
-        (*cost) += T_1[index] / (double)(rows + cols);              //  Normalize by (M + N)
+        (*cost) += T_1[index] * norm;                               //  (Multiplication is computationally cheaper.)
         index = T_2[index];
       }
                                                                     //  Allocate.
@@ -330,6 +333,9 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
         len++;
         index = T_2[index];
       }
+
+    free(T_1);                                                      //  Clean up. Go home.
+    free(T_2);
 
     return len;
   }
@@ -416,7 +422,6 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
           }
       }
 
-    //pathLen = a_star(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
     pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
@@ -596,7 +601,6 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
                                                                     //  Build the cost matrix.
     build_L2_matrix(query, query_len, template, template_len, d, &C);
 
-    //pathLen = a_star(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
     pathLen = viterbi(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
