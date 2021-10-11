@@ -61,19 +61,19 @@ unsigned int build_L2_matrix(double* Q, unsigned int q_len,
   }
 
 /*  Wrapper for the above.
-    Receives a list of lists of floats: the query.
-    Receives a list of lists of floats: the template.
+    Receives a list of tuples of floats: the query.
+    Receives a list of tuples of floats: the template.
     For both query and template, the inner lists (of floats) must have the same dimension, call it d.
     For our purposes, the length of the outer lists (of lists) will have the same length, too--though that is not enforced.
     Returns a list of lists of Python floats, which are C doubles. */
 static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
   {
-    PyObject* Q;                                                    //  As recevied from Python, a list of lists of floats.
+    PyObject* Q;                                                    //  As recevied from Python, a list of tuples of floats.
     Py_ssize_t q_len;                                               //  Length of outer list = number of frames in query snippet.
-    PyObject* T;                                                    //  As recevied from Python, a list of lists of floats.
+    PyObject* T;                                                    //  As recevied from Python, a list of tuples of floats.
     Py_ssize_t t_len;                                               //  Length of outer list = number of frames in template snippet.
 
-    PyObject* sublist;                                              //  Used to iterate over the lists of lists of floats.
+    PyObject* sublist;                                              //  Used to iterate over the lists of tuples of floats.
     Py_ssize_t sublist_len;
     Py_ssize_t i, j;
 
@@ -100,13 +100,13 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
       {
         sublist = PyList_GetItem(Q, i);
 
-        if(!PyList_Check(sublist))
+        if(!PyTuple_Check(sublist))
           {
-            PyErr_SetString(PyExc_TypeError, "List must contain lists of floats");
+            PyErr_SetString(PyExc_TypeError, "List must contain tuples of floats");
             return NULL;
           }
 
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
         if(first)
           {
             first = false;
@@ -126,16 +126,16 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
       {
         sublist = PyList_GetItem(T, i);
 
-        if(!PyList_Check(sublist))
+        if(!PyTuple_Check(sublist))
           {
-            PyErr_SetString(PyExc_TypeError, "List must contain lists of floats");
+            PyErr_SetString(PyExc_TypeError, "List must contain tuples of floats");
             return NULL;
           }
 
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
         if((unsigned int)sublist_len != d)
           {
-            PyErr_SetString(PyExc_TypeError, "All inner lists of floats must have the same length");
+            PyErr_SetString(PyExc_TypeError, "All inner tuples of floats must have the same length");
             return NULL;
           }
 
@@ -159,7 +159,7 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
     for(i = 0; i < q_len; i++)                                      //  Iterate over Q; fill values into the C-side matrix.
       {
         sublist = PyList_GetItem(Q, i);
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
 
         for(j = 0; j < sublist_len; j++)
           {
@@ -176,10 +176,11 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
     for(i = 0; i < t_len; i++)                                      //  Iterate over T; fill values into the C-side matrix.
       {
         sublist = PyList_GetItem(T, i);
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
 
         for(j = 0; j < sublist_len; j++)
           {
+                                                                    //  Fill in the template, row-major.
             template[ctr] = PyFloat_AsDouble(PyList_GetItem(sublist, j));
             ctr++;
 
@@ -705,12 +706,12 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
 /* This function handles the tasks of both L2() and path() in one call. */
 static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
   {
-    PyObject* Q;                                                    //  As recevied from Python, a list of lists of floats.
+    PyObject* Q;                                                    //  As recevied from Python, a list of tuples of floats.
     Py_ssize_t q_len;                                               //  Length of outer list = number of frames in query snippet.
-    PyObject* T;                                                    //  As recevied from Python, a list of lists of floats.
+    PyObject* T;                                                    //  As recevied from Python, a list of tuples of floats.
     Py_ssize_t t_len;                                               //  Length of outer list = number of frames in template snippet.
 
-    PyObject* sublist;                                              //  Used to iterate over the lists of lists of floats.
+    PyObject* sublist;                                              //  Used to iterate over the lists of tuples of floats.
     Py_ssize_t sublist_len;
     Py_ssize_t i, j;
 
@@ -739,17 +740,17 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     query_len = (unsigned int)q_len;                                //  Convert to unsigned ints for use in the C-side function.
     template_len = (unsigned int)t_len;
 
-    for(i = 0; i < q_len; i++)                                      //  Iterate over Q; make sure it is a list of lists of floats.
+    for(i = 0; i < q_len; i++)                                      //  Iterate over Q; make sure it is a list of tuples of floats.
       {
         sublist = PyList_GetItem(Q, i);
 
-        if(!PyList_Check(sublist))
+        if(!PyTuple_Check(sublist))
           {
-            PyErr_SetString(PyExc_TypeError, "List must contain lists of floats");
+            PyErr_SetString(PyExc_TypeError, "List must contain tuples of floats");
             return NULL;
           }
 
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
         if(first)
           {
             first = false;
@@ -757,7 +758,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
           }
         else if((unsigned int)sublist_len != d)
           {
-            PyErr_SetString(PyExc_TypeError, "All inner lists of floats must have the same length");
+            PyErr_SetString(PyExc_TypeError, "All inner tuples of floats must have the same length");
             return NULL;
           }
 
@@ -765,20 +766,20 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
           return NULL;
       }
 
-    for(i = 0; i < t_len; i++)                                      //  Iterate over T; make sure it is a list of lists of floats.
+    for(i = 0; i < t_len; i++)                                      //  Iterate over T; make sure it is a list of tuples of floats.
       {
         sublist = PyList_GetItem(T, i);
 
-        if(!PyList_Check(sublist))
+        if(!PyTuple_Check(sublist))
           {
-            PyErr_SetString(PyExc_TypeError, "List must contain lists of floats");
+            PyErr_SetString(PyExc_TypeError, "List must contain tuples of floats");
             return NULL;
           }
 
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
         if((unsigned int)sublist_len != d)
           {
-            PyErr_SetString(PyExc_TypeError, "All inner lists of floats must have the same length");
+            PyErr_SetString(PyExc_TypeError, "All inner tuples of floats must have the same length");
             return NULL;
           }
 
@@ -807,7 +808,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
         for(j = 0; j < sublist_len; j++)
           {
                                                                     //  Fill in the query, row-major.
-            query[ctr] = PyFloat_AsDouble(PyList_GetItem(sublist, j));
+            query[ctr] = PyFloat_AsDouble(PyTuple_GetItem(sublist, j));
             ctr++;
 
             if(PyErr_Occurred())
@@ -824,7 +825,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
         for(j = 0; j < sublist_len; j++)
           {
                                                                     //  Fill the template, row-major.
-            template[ctr] = PyFloat_AsDouble(PyList_GetItem(sublist, j));
+            template[ctr] = PyFloat_AsDouble(PyTuple_GetItem(sublist, j));
             ctr++;
 
             if(PyErr_Occurred())
@@ -883,9 +884,9 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
 
 static PyMethodDef methods[] =
   {
-    {"L2", &L2, METH_VARARGS, "Compute the cost matrix between all frames using L2 distance.\nInput: two lists of lists of floats, Q and T. The number of columns must be the same.\nOutput: a matrix with as many rows as Q has frames and as many columns as T has frames."},
+    {"L2", &L2, METH_VARARGS, "Compute the cost matrix between all frames using L2 distance.\nInput: two lists of tuples of floats, Q and T. The number of columns must be the same.\nOutput: a matrix with as many rows as Q has frames and as many columns as T has frames."},
     {"path", &path, METH_VARARGS, "Compute the alignment path through a given cost matrix.\nInput: cost matrix as a list of lists of floats (number of Q frames by number of T frames).\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
-    {"DTW", &DTW, METH_VARARGS, "Compute the alignment for a given Query and a given Template.\nInput: query as a list of lists of floats (number of Q frames by vector length); template as a list of lists of floats (number of T frames by vector length).\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
+    {"DTW", &DTW, METH_VARARGS, "Compute the alignment for a given Query and a given Template.\nInput: query as a list of tuples of floats (number of Q frames by vector length); template as a list of tuples of floats (number of T frames by vector length).\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
     {NULL, NULL, 0, NULL}
   };
 
