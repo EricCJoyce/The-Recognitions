@@ -114,7 +114,7 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
           }
         else if((unsigned int)sublist_len != d)
           {
-            PyErr_SetString(PyExc_TypeError, "All inner lists of floats must have the same length");
+            PyErr_SetString(PyExc_TypeError, "All inner tuples of floats must have the same length");
             return NULL;
           }
 
@@ -164,7 +164,7 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
         for(j = 0; j < sublist_len; j++)
           {
                                                                     //  Fill in the query, row-major.
-            query[ctr] = PyFloat_AsDouble(PyList_GetItem(sublist, j));
+            query[ctr] = PyFloat_AsDouble(PyTuple_GetItem(sublist, j));
             ctr++;
 
             if(PyErr_Occurred())
@@ -181,7 +181,7 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
         for(j = 0; j < sublist_len; j++)
           {
                                                                     //  Fill in the template, row-major.
-            template[ctr] = PyFloat_AsDouble(PyList_GetItem(sublist, j));
+            template[ctr] = PyFloat_AsDouble(PyTuple_GetItem(sublist, j));
             ctr++;
 
             if(PyErr_Occurred())
@@ -803,7 +803,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     for(i = 0; i < q_len; i++)                                      //  Iterate over Q; fill values into the C-side matrix.
       {
         sublist = PyList_GetItem(Q, i);
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
 
         for(j = 0; j < sublist_len; j++)
           {
@@ -820,7 +820,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     for(i = 0; i < t_len; i++)                                      //  Iterate over T; fill values into the C-side matrix.
       {
         sublist = PyList_GetItem(T, i);
-        sublist_len = PyList_Size(sublist);
+        sublist_len = PyTuple_Size(sublist);
 
         for(j = 0; j < sublist_len; j++)
           {
