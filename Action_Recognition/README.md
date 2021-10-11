@@ -91,42 +91,20 @@ pip install h5py
 pip install opencv-python
 ```
 
-### [R](https://www.r-project.org/)
+### Python Development Tools
 
 **Ubuntu 16.04 LTS**:
+The development tools for Python should have already been handled by the call above that included
 ```
-sudo apt install apt-transport-https software-properties-common
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E298A3A825C0D65DFD57CBB651716619E084DAB9
-
-sudo add-apt-repository 'deb https://cloud.r-project.org/bin/linux/ubuntu xenial-cran35/'
-sudo apt update
-sudo apt install r-base
+sudo apt-get install python-dev
 ```
 
-Check your installation by entering:
+You will need this library to compile the C code in `DTWmodule.c` into a Python library. Do this by running
 ```
-R --version
-```
-
-Now enter the R interpreter:
-```
-sudo -i R
+python3.5 setup.py build
 ```
 
-Install multivariate dynamic time-warping:
-```
-install.packages("dtw")
-```
-
-Quit R. (No need to save the workspace image, so enter `n` when asked.)
-```
-q()
-```
-
-Now that you've installed the R backend, install Python 3's rpy2 library like so (obviously with your name in place of mine):
-```
-sudo /home/eric/.local/bin/pip3.5 install rpy2==2.9.5
-```
+This creates a folder named `build`. Inside, find a file named `DTW.cpython-35m-x86_64-linux-gnu.so` or something appropriately named, given your system specs. Copy this `*.so` file into the same directory as your other Recognition scripts.
 
 **Windows**:
 
