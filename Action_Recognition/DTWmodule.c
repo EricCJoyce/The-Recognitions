@@ -13,6 +13,7 @@
 #define LEFT(i)    (2 * i) + 1                                      /* Return index of left child in heap. */
 #define RIGHT(i)   (2 * i) + 2                                      /* Return index of right child in heap. */
 #define SWAP(a, b) ({a ^= b; b ^= a; a ^= b;})                      /* Swap heap indices. */
+#define MIN(a, b)  (a < b ? a : b)                                  /* Compare rise to run (unsigned ints). */
 
 unsigned int build_L2_matrix(double*, unsigned int, double*, unsigned int, unsigned int, double**);
 unsigned int a_star(unsigned int, unsigned int, double*, double*, unsigned int**, unsigned int**, unsigned int**);
@@ -376,9 +377,9 @@ unsigned int a_star(unsigned int rows, unsigned int cols, double* C, double* cos
                                                                     //  'a' receives the ROWS.
                 (*alignment_a)[i] = ((*path)[i] - ((*path)[i] % cols)) / cols;
                 (*alignment_b)[i] = (*path)[i] % cols;              //  'b' receives the COLUMNS.
-                (*cost) += G[ (*path)[i] ] / (rows + cols);         //  Add up cost, normalized by M + N.
+                (*cost) += G[ (*path)[i] ];                         //  Add up cost.
               }
-            //(*cost) /= (double)pathLen;                             //  Normalize cost.
+            (*cost) /= (double)(rows + cols);                       //  Normalize cost by N + M.
 
             break;
           }
@@ -444,7 +445,7 @@ unsigned int a_star(unsigned int rows, unsigned int cols, double* C, double* cos
 /* Estimated cost is the Manhattan distance to goal. */
 double heuristic(unsigned int index, unsigned int cols)
   {
-    return (double)((index - (index % cols)) / cols) + (index % cols);
+    return (double)(MIN((index - (index % cols)) / cols), (index % cols));
   }
 
 void reconstruct_path(unsigned int** path, unsigned int* pathLen, unsigned int** came_from, unsigned int start)
