@@ -445,7 +445,7 @@ unsigned int a_star(unsigned int rows, unsigned int cols, double* C, double* cos
 /* Estimated cost is the Manhattan distance to goal. */
 double heuristic(unsigned int index, unsigned int cols)
   {
-    return (double)(MIN((index - (index % cols)) / cols), (index % cols));
+    return (double)(MIN((index - (index % cols)) / cols, (index % cols)));
   }
 
 void reconstruct_path(unsigned int** path, unsigned int* pathLen, unsigned int** came_from, unsigned int start)
