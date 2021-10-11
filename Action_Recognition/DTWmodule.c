@@ -9,22 +9,15 @@
 #include "stopcompilation"
 #endif
 
-#define PARENT(i)  ((i - 1) / 2)                                    /* Return index of parent in heap. */
-#define LEFT(i)    (2 * i) + 1                                      /* Return index of left child in heap. */
-#define RIGHT(i)   (2 * i) + 2                                      /* Return index of right child in heap. */
-#define SWAP(a, b) ({a ^= b; b ^= a; a ^= b;})                      /* Swap heap indices. */
-#define MIN(a, b)  (a < b ? a : b)                                  /* Compare rise to run (unsigned ints). */
+#define ROW(i, w)  ((i - (i % w)) / w)                              /* On which row is index 'i'? */
+#define COL(i, w)  (i % w)                                          /* In which column is index 'i'? */
+
+/*
+#define __DTW_DEBUG 1
+*/
 
 unsigned int build_L2_matrix(double*, unsigned int, double*, unsigned int, unsigned int, double**);
-unsigned int a_star(unsigned int, unsigned int, double*, double*, unsigned int**, unsigned int**, unsigned int**);
-double heuristic(unsigned int, unsigned int);
-void reconstruct_path(unsigned int**, unsigned int*, unsigned int**, unsigned int);
-bool found(unsigned int**, unsigned int*, unsigned int);
-void heapify(unsigned int**, unsigned int*, unsigned int, double**);
-void insert_heap(unsigned int**, unsigned int*, unsigned int, double**);
-unsigned int extract_min(unsigned int**, unsigned int*, double**);
-void decrease_key(unsigned int**, unsigned int*, unsigned int);
-void delete_key(unsigned int**, unsigned int*, unsigned int, double**);
+unsigned int viterbi(unsigned int, unsigned int, double*, double*, unsigned int**, unsigned int**, unsigned int**);
 
 /* Given two matrices, Q in Real^q_len-by-d, T in Real^t_len-by-d, compute the L2 distance between
    all pairs of elemtns. Both Q (for query) and T (for template) are sequences of encoded frames.
@@ -229,350 +222,116 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
    Store the time-warped indices of the query in (*q).
    Store the time-warped indices of the template in (*t).
    Return the length of the path. */
-/*
-unsigned int viterbi(double* C, unsigned int rows, unsigned int cols,
-                     double* cost, double** path, double** q, double** t)
+unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
+                     double* cost, unsigned int** path, unsigned int** q, unsigned int** t)
   {
     double* T_1;                                                    //  Hold accumulated costs so far.
     unsigned int* T_2;                                              //  Hold indices preferred so far.
-    unsigned int T = rows + cols;
 
+    unsigned int len = 0;                                           //  Length of the cheapest path.
     unsigned int index, neighbor;
-    double val, min_val;
-    unsigned int min_index;
-    unsigned int len = 0;                                           //  Length of the path.
-    unsigned int i, j;
-    bool up_exists, left_exists;
-                                                                    //  Longest possible paths would be along the edges.
-    if((T_1 = (double*)malloc(3 * T * sizeof(double))) == NULL)     //  At most three possible transitions: up, left, up-left.
+    signed int i, j;
+    bool right_exists, down_exists;
+
+    if((T_1 = (double*)malloc(rows * cols * sizeof(double))) == NULL)
       return 0;
-    if((T_2 = (unsigned int*)malloc(3 * T * sizeof(int))) == NULL)
+    if((T_2 = (unsigned int*)malloc(rows * cols * sizeof(int))) == NULL)
       {
         free(T_1);
         return 0;
       }
-    for(i = 0; i < 3; i++)                                          //  Initialize T_1 and T_2.
+    for(i = 0; i < rows * cols; i++)                                //  "Blank out" matrices.
       {
-        T_1[i * (rows + cols)] = 0.0;                               //  Initialize row-major, first column costs.
-        T_2[i * (rows + cols)] = rows * cols - 1;                   //  Initialize row-major, first column sources.
+        T_1[i] = INFINITY;
+        T_2[i] = UINT_MAX;
       }
-    for(j = 1; j < T; j++)                                          //  Longest possible path = T = half cost perimeter.
+    T_1[rows * cols - 1] = 0.0;                                     //  Zero cost to be at the start.
+
+    for(i = rows - 1; i >= 0; i--)
       {
-        min_val = INFINITY;
-        min_index = UINT_MAX;
-
-        for(i = 0; i < 3; i++)                                      //  At most three possible "states": left, up, up-left.
+        for(j = cols - 1; j >= 0; j--)
           {
-            index = T_2[i * T + j - 1];
+            index = (unsigned int)i * cols + (unsigned int)j;
 
-            up_exists = ((index - (index % rows)) / rows > 0);
-            left_exists = (index % rows > 0);
+            right_exists = (COL(index, cols) < cols - 1);           //  Does another cell exist to the right of this one?
+            down_exists = (ROW(index, cols) < rows - 1);            //  Does another cell exist below this one?
 
-            switch(i)
+            if(right_exists && down_exists)                         //  Compare cost of arriving at 'index' from 'neighbor' = down-right.
               {
-                case 0: if(up_exists && left_exists)                //  Up-left
-                          {
-                            neighbor = index - cols - 1;
-                            val = 2.0 * (C[neighbor] + C[index]);
-                          }
-                        else
-                          {
-                            neighbor = UINT_MAX;
-                            val = INFINITY;
-                          }
-                        break;
-                case 1: if(left_exists)                             //  Left
-                          {
-                            neighbor = index - 1;
-                            val = C[neighbor] + C[index];
-                          }
-                        else
-                          {
-                            neighbor = UINT_MAX;
-                            val = INFINITY;
-                          }
-                        break;
-                case 2: if(up_exists)                               //  Up
-                          {
-                            neighbor = index - cols;
-                            val = C[neighbor] + C[index];
-                          }
-                        else
-                          {
-                            neighbor = UINT_MAX;
-                            val = INFINITY;
-                          }
-                        break;
+                neighbor = index + cols + 1;
+                if(2.0 * C[index] + T_1[neighbor] < T_1[index])
+                  {
+                    T_1[index] = T_1[neighbor] + 2.0 * C[index];
+                    T_2[index] = neighbor;
+                  }
               }
 
-            T_1[i * T + j] = min_val;
-            T_2[i * T + j] = min_index;
+            if(right_exists)                                        //  Compare cost of arriving at 'index' from 'neighbor' = right.
+              {
+                neighbor = index + 1;
+                if(C[index] + T_1[neighbor] < T_1[index])
+                  {
+                    T_1[index] = T_1[neighbor] + C[index];
+                    T_2[index] = neighbor;
+                  }
+              }
+
+            if(down_exists)                                         //  Compare cost of arriving at 'index' from 'neighbor' = down.
+              {
+                neighbor = index + cols;
+                if(C[index] + T_1[neighbor] < T_1[index])
+                  {
+                    T_1[index] = T_1[neighbor] + C[index];
+                    T_2[index] = neighbor;
+                  }
+              }
           }
+      }
+
+    index = 0;                                                      //  Count up.
+    len = 0;
+    while(index != UINT_MAX)
+      {
+        len++;
+        (*cost) += T_1[index] / (double)(rows + cols);              //  Normalize by (M + N)
+        index = T_2[index];
+      }
+                                                                    //  Allocate.
+    if(((*path) = (unsigned int*)malloc(len * sizeof(int))) == NULL)
+      {
+        free(T_1);
+        free(T_2);
+        return 0;
+      }
+    if(((*q) = (unsigned int*)malloc(len * sizeof(int))) == NULL)
+      {
+        free(T_1);
+        free(T_2);
+        free(path);
+        return 0;
+      }
+    if(((*t) = (unsigned int*)malloc(len * sizeof(int))) == NULL)
+      {
+        free(T_1);
+        free(T_2);
+        free(path);
+        free(q);
+        return 0;
+      }
+
+    index = 0;                                                      //  Reset.
+    len = 0;
+    while(index != UINT_MAX)
+      {
+        (*path)[len] = index;
+        (*q)[len] = ROW(index, cols);
+        (*t)[len] = COL(index, cols);
+
+        len++;
+        index = T_2[index];
       }
 
     return len;
-  }
-*/
-/* Screw it. Use A*. */
-unsigned int a_star(unsigned int rows, unsigned int cols, double* C, double* cost,
-                    unsigned int** path, unsigned int** alignment_a, unsigned int** alignment_b)
-  {
-    unsigned int i;
-    unsigned int start;                                             //  'goal' is always zero (element [0, 0]).
-    unsigned int current_index, neighbor;
-    bool left_exists, above_exists;                                 //  Test whether cells exist to the left or above the current matrix cell.
-
-    unsigned int* came_from;                                        //  Matrix of source indices: came_from[n] is the index of the node
-                                                                    //  immediately preceding n on the current cheapest path from start to n.
-    double* G;                                                      //  For node n, G[n] is the cost of the current cheapest path from start to n.
-    double* F;                                                      //  For node n, F[n] = G[n] + heuristic(n).
-    double g;                                                       //  F[n] represents our current best guess as to how short a path from start
-                                                                    //  to finish can be if it goes through n.
-    unsigned int pathLen = 0;                                       //  Value to be returned.
-
-    unsigned int* heap;                                             //  This will be "over"-allocated.
-    unsigned int heapLen = 0;                                       //  The effective size of the heap, <= total capacity.
-                                                                    //  Allocate source-cell lookup.
-    if((came_from = (unsigned int*)malloc(rows * cols * sizeof(int))) == NULL)
-      exit(1);
-
-    if((F = (double*)malloc(rows * cols * sizeof(double))) == NULL) //  Allocate estimated cost matrix.
-      exit(1);
-
-    if((G = (double*)malloc(rows * cols * sizeof(double))) == NULL) //  Allocate known cost matrix.
-      exit(1);
-
-    for(i = 0; i < rows * cols; i++)                                //  Initialize.
-      {
-        came_from[i] = UINT_MAX;
-        G[i] = INFINITY;                                            //  Fill in costs.
-        F[i] = INFINITY;                                            //  Fill in estimated costs.
-      }
-                                                                    //  (Over)allocate the heap (and avoid realloc()).
-    if((heap = (unsigned int*)malloc(rows * cols * sizeof(int))) == NULL)
-      exit(1);
-
-    start = rows * cols - 1;                                        //  Algorithm starts in the lower-right.
-                                                                    //  Algorithm ends in the upper-left (at zero).
-    heap[0] = start;
-    heapLen++;
-    G[start] = 0.0;
-    F[start] = heuristic(start, cols);
-
-    while(heapLen > 0)                                              //  Begin A*
-      {
-        current_index = extract_min(&heap, &heapLen, &F);
-        if(current_index == 0)                                      //  Goal reached!
-          {
-            reconstruct_path(path, &pathLen, &came_from, start);    //  Build path.
-
-            if(((*alignment_a) = (unsigned int*)malloc(pathLen * sizeof(int))) == NULL)
-              exit(1);
-            if(((*alignment_b) = (unsigned int*)malloc(pathLen * sizeof(int))) == NULL)
-              exit(1);
-
-            (*cost) = 0.0;
-            for(i = 0; i < pathLen; i++)                            //  Build alignment sequences.
-              {
-                                                                    //  'a' receives the ROWS.
-                (*alignment_a)[i] = ((*path)[i] - ((*path)[i] % cols)) / cols;
-                (*alignment_b)[i] = (*path)[i] % cols;              //  'b' receives the COLUMNS.
-                (*cost) += G[ (*path)[i] ];                         //  Add up cost.
-              }
-            (*cost) /= (double)(rows + cols);                       //  Normalize cost by N + M.
-
-            break;
-          }
-
-        left_exists = (current_index % cols > 0);                   //  A cell exists to the left.
-                                                                    //  A cell exists above.
-        above_exists = ((current_index - (current_index % cols)) / rows > 0);
-
-        if(left_exists && above_exists)                             //  Diagonal to the upper-left exists.
-          {
-            neighbor = current_index - cols - 1;
-            g = 2.0 * (G[current_index] + C[neighbor]);
-
-            if(g < G[neighbor])
-              {
-                came_from[neighbor] = current_index;
-                G[neighbor] = g;
-                F[neighbor] = g + heuristic(neighbor, cols);
-                if(!found(&heap, &heapLen, neighbor))
-                  insert_heap(&heap, &heapLen, neighbor, &F);
-              }
-          }
-
-        if(left_exists)                                             //  Left exists.
-          {
-            neighbor = current_index - 1;
-            g = (G[current_index] + C[neighbor]);
-
-            if(g < G[neighbor])
-              {
-                came_from[neighbor] = current_index;
-                G[neighbor] = g;
-                F[neighbor] = g + heuristic(neighbor, cols);
-                if(!found(&heap, &heapLen, neighbor))
-                  insert_heap(&heap, &heapLen, neighbor, &F);
-              }
-          }
-
-        if(above_exists)                                            //  Above exists.
-          {
-            neighbor = current_index - cols;
-            g = (G[current_index] + C[neighbor]);
-
-            if(g < G[neighbor])
-              {
-                came_from[neighbor] = current_index;
-                G[neighbor] = g;
-                F[neighbor] = g + heuristic(neighbor, cols);
-                if(!found(&heap, &heapLen, neighbor))
-                  insert_heap(&heap, &heapLen, neighbor, &F);
-              }
-          }
-      }
-
-    free(came_from);                                                //  Clean up. Go home.
-    free(G);
-    free(F);
-    free(heap);
-
-    return pathLen;
-  }
-
-/* Estimated cost is the Manhattan distance to goal. */
-double heuristic(unsigned int index, unsigned int cols)
-  {
-    return (double)(MIN((index - (index % cols)) / cols, (index % cols)));
-  }
-
-void reconstruct_path(unsigned int** path, unsigned int* pathLen, unsigned int** came_from, unsigned int start)
-  {
-    unsigned int p = 0;                                             //  Goal is always 0.
-    unsigned int ctr = 1;
-
-    while(p != start)                                               //  Pass 1: the count-up.
-      {
-        p = (*came_from)[p];
-        ctr++;
-      }
-
-    (*pathLen) = ctr;                                               //  Now allocate.
-    if(((*path) = (unsigned int*)malloc(ctr * sizeof(int))) == NULL)
-      exit(1);
-
-    p = 0;                                                          //  Reset.
-    ctr = 0;
-    while(p != start)                                               //  Pass 2: storage.
-      {
-        (*path)[ctr] = p;                                           //  Fill in path.
-        ctr++;
-        p = (*came_from)[p];
-      }
-    (*path)[ctr] = start;
-
-    return;
-  }
-
-/* Is 'index' in the heap? */
-bool found(unsigned int** heap, unsigned int* heapLen, unsigned int index)
-  {
-    unsigned int i = 0;
-
-    while(i < (*heapLen) && (*heap)[i] != index)
-      i++;
-    return i < (*heapLen);
-  }
-
-/* Preserve heap properties, according to values in the cost matrix 'Mat'. */
-void heapify(unsigned int** heap, unsigned int* heapLen, unsigned int index, double** Mat)
-  {
-    unsigned int left, right;
-    unsigned int smallest;
-
-    left = LEFT(index);
-    right = RIGHT(index);
-    smallest = index;
-
-    if(left < (*heapLen) && (*Mat)[ (*heap)[left] ] < (*Mat)[ (*heap)[index] ])
-      smallest = left;
-
-    if(right < (*heapLen) && (*Mat)[ (*heap)[right] ] < (*Mat)[ (*heap)[smallest] ])
-      smallest = right;
-
-    if(smallest != index)
-      {
-        SWAP((*heap)[index], (*heap)[smallest]);
-        heapify(heap, heapLen, smallest, Mat);
-      }
-
-    return;
-  }
-
-/* Add value 'new_index' to the given 'heap' with current effective capacity 'heapLen'.
-   This function increases 'heapLen' and preserves the min-heap property. */
-void insert_heap(unsigned int** heap, unsigned int* heapLen, unsigned int new_index, double** Mat)
-  {
-    unsigned int i = (*heapLen);
-
-    (*heap)[(*heapLen)] = new_index;
-    (*heapLen)++;
-
-    while(i != 0 && (*Mat)[ (*heap)[PARENT(i)] ] > (*Mat)[ (*heap)[i] ])
-      {
-        SWAP((*heap)[i], (*heap)[PARENT(i)]);
-        i = PARENT(i);
-      }
-
-    return;
-  }
-
-/* Pop the root value and repair the heap. */
-unsigned int extract_min(unsigned int** heap, unsigned int* heapLen, double** Mat)
-  {
-    unsigned int root;
-
-    if((*heapLen) == 0)
-      return UINT_MAX;
-
-    if((*heapLen) == 1)
-      {
-        (*heapLen)--;
-        return (*heap)[0];
-      }
-
-    root = (*heap)[0];
-    (*heap)[0] = (*heap)[(*heapLen) - 1];
-    (*heapLen)--;
-    heapify(heap, heapLen, 0, Mat);
-
-    return root;
-  }
-
-/* Remove the node at index and repair the heap. */
-void decrease_key(unsigned int** heap, unsigned int* heapLen, unsigned int index)
-  {
-    unsigned int i = index;
-
-    (*heap)[i] = UINT_MAX;                                          //  I want to take advantage of unsigned int's range,
-                                                                    //  so we will treat UINT_MAX like negative infinity.
-    while(i != 0)
-      {
-        SWAP((*heap)[i], (*heap)[PARENT(i)]);
-        i = PARENT(i);
-      }
-
-    return;
-  }
-
-/* Delete the given 'index' and repair the heap. */
-void delete_key(unsigned int** heap, unsigned int* heapLen, unsigned int index, double** Mat)
-  {
-    decrease_key(heap, heapLen, index);
-    extract_min(heap, heapLen, Mat);
-    return;
   }
 
 /* Receives a list of lists of floats: the cost matrix.
@@ -657,8 +416,8 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
           }
       }
 
-    pathLen = a_star(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
-    //pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    //pathLen = a_star(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
     if(!ret)                                                        //  If it failed, clean up before we die.
@@ -837,8 +596,8 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
                                                                     //  Build the cost matrix.
     build_L2_matrix(query, query_len, template, template_len, d, &C);
 
-    pathLen = a_star(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
-    //pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    //pathLen = a_star(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    pathLen = viterbi(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
     if(!ret)                                                        //  If it failed, clean up before we die.
