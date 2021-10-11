@@ -376,9 +376,9 @@ unsigned int a_star(unsigned int rows, unsigned int cols, double* C, double* cos
                                                                     //  'a' receives the ROWS.
                 (*alignment_a)[i] = ((*path)[i] - ((*path)[i] % cols)) / cols;
                 (*alignment_b)[i] = (*path)[i] % cols;              //  'b' receives the COLUMNS.
-                (*cost) += G[ (*path)[i] ];     //  TODO: NORMALIZE HERE by M+N??                    //  Add up cost.
+                (*cost) += G[ (*path)[i] ] / (rows + cols);         //  Add up cost, normalized by M + N.
               }
-            (*cost) /= (double)pathLen;                             //  Normalize cost.
+            //(*cost) /= (double)pathLen;                             //  Normalize cost.
 
             break;
           }
@@ -657,6 +657,7 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
       }
 
     pathLen = a_star(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    //pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
     if(!ret)                                                        //  If it failed, clean up before we die.
@@ -836,6 +837,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     build_L2_matrix(query, query_len, template, template_len, d, &C);
 
     pathLen = a_star(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    //pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
     if(!ret)                                                        //  If it failed, clean up before we die.
