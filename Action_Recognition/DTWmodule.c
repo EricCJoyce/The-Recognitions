@@ -297,10 +297,10 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
     while(index != UINT_MAX)
       {
         i++;
-        (*cost) += T_1[index];
+        (*cost) += C[index];
         index = T_2[index];
       }
-    (*cost) /= (double)(rows + cols);                               //  Normalize by (M + N).
+    (*cost) = (*cost) / (double)(rows + cols);                      //  Normalize by (M + N).
     len = i;                                                        //  Save path length.
                                                                     //  Allocate.
     if(((*path) = (unsigned int*)malloc(len * sizeof(int))) == NULL)
