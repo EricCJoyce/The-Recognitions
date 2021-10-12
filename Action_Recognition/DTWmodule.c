@@ -230,9 +230,8 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
 
     unsigned int len = 0;                                           //  Length of the cheapest path.
     unsigned int index, neighbor;
-    signed int i, j;
-    double norm;
-    bool right_exists, down_exists;
+    unsigned int i, j;
+    bool left_exists, up_exists;
 
     if((T_1 = (double*)malloc(rows * cols * sizeof(double))) == NULL)
       return 0;
@@ -246,59 +245,63 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
         T_1[i] = INFINITY;
         T_2[i] = UINT_MAX;
       }
-    T_1[rows * cols - 1] = 0.0;                                     //  Zero cost to be at the start.
 
-    for(i = rows - 1; i >= 0; i--)
+    for(i = 0; i < rows; i++)
       {
-        for(j = cols - 1; j >= 0; j--)
+        for(j = 0; j < cols; j++)
           {
-            index = (unsigned int)i * cols + (unsigned int)j;
-
-            right_exists = (COL(index, cols) < cols - 1);           //  Does another cell exist to the right of this one?
-            down_exists = (ROW(index, cols) < rows - 1);            //  Does another cell exist below this one?
-
-            if(right_exists && down_exists)                         //  Compare cost of arriving at 'index' from 'neighbor' = down-right.
+            index = i * cols + j;
+            if(index == 0)
+              T_1[index] = C[index];
+            else
               {
-                neighbor = index + cols + 1;
-                if(2.0 * C[index] + T_1[neighbor] < T_1[index])
+                left_exists = (COL(index, cols) > 0);               //  Does another cell exist to the left of this one?
+                up_exists = (ROW(index, cols) > 0);                 //  Does another cell exist above this one?
+
+                if(left_exists && up_exists)                        //  Compare cost of arriving at 'index' from 'neighbor' = above-left.
                   {
-                    T_1[index] = T_1[neighbor] + 2.0 * C[index];
-                    T_2[index] = neighbor;
+                    neighbor = index - cols - 1;
+                    if(2.0 * C[index] + T_1[neighbor] < T_1[index])
+                      {
+                        T_1[index] = 2.0 * C[index] + T_1[neighbor];
+                        T_2[index] = neighbor;
+                      }
                   }
-              }
 
-            if(right_exists)                                        //  Compare cost of arriving at 'index' from 'neighbor' = right.
-              {
-                neighbor = index + 1;
-                if(C[index] + T_1[neighbor] < T_1[index])
+                if(left_exists)                                     //  Compare cost of arriving at 'index' from 'neighbor' = left.
                   {
-                    T_1[index] = T_1[neighbor] + C[index];
-                    T_2[index] = neighbor;
+                    neighbor = index - 1;
+                    if(C[index] + T_1[neighbor] < T_1[index])
+                      {
+                        T_1[index] = C[index] + T_1[neighbor];
+                        T_2[index] = neighbor;
+                      }
                   }
-              }
 
-            if(down_exists)                                         //  Compare cost of arriving at 'index' from 'neighbor' = down.
-              {
-                neighbor = index + cols;
-                if(C[index] + T_1[neighbor] < T_1[index])
+                if(up_exists)                                       //  Compare cost of arriving at 'index' from 'neighbor' = above.
                   {
-                    T_1[index] = T_1[neighbor] + C[index];
-                    T_2[index] = neighbor;
+                    neighbor = index - cols;
+                    if(C[index] + T_1[neighbor] < T_1[index])
+                      {
+                        T_1[index] = C[index] + T_1[neighbor];
+                        T_2[index] = neighbor;
+                      }
                   }
               }
           }
       }
 
-    index = 0;                                                      //  Count up.
-    len = 0;
+    index = rows * cols - 1;                                        //  Count up.
+    i = 0;
     (*cost) = 0.0;
-    norm = 1.0 / (double)(rows + cols);                             //  Normalize by (M + N). Perform division once, outside the loop.
     while(index != UINT_MAX)
       {
-        len++;
-        (*cost) += T_1[index] * norm;                               //  (Multiplication is computationally cheaper.)
+        i++;
+        (*cost) += T_1[index];
         index = T_2[index];
       }
+    (*cost) /= (double)(rows + cols);                               //  Normalize by (M + N).
+    len = i;                                                        //  Save path length.
                                                                     //  Allocate.
     if(((*path) = (unsigned int*)malloc(len * sizeof(int))) == NULL)
       {
@@ -322,15 +325,15 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
         return 0;
       }
 
-    index = 0;                                                      //  Reset.
-    len = 0;
+    index = rows * cols - 1;                                        //  Reset.
+    i = 0;
     while(index != UINT_MAX)
       {
-        (*path)[len] = index;
-        (*q)[len] = ROW(index, cols);
-        (*t)[len] = COL(index, cols);
+        (*path)[len - i - 1] = index;
+        (*q)[len - i - 1] = COL(index, cols);
+        (*t)[len - i - 1] = ROW(index, cols);
 
-        len++;
+        i++;
         index = T_2[index];
       }
 
