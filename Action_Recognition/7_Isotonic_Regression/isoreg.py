@@ -111,11 +111,12 @@ def usage():
 	print('Perform isotonic regression on confidence scores listed in the given source file.')
 	print('Plot the isotonic curve and write discretized "buckets" to file.')
 	print('')
-	print('Usage:  python3.5 isoreg.py <parameters, preceded by flags>')
-	print(' e.g.:  python3.5 isoreg.py -src confidences-winners-110921T003434.txt')
+	print('Usage:  python3 isoreg.py <parameters, preceded by flags>')
+	print(' e.g.:  python3 isoreg.py -src confidences-winners-110921T003434.txt')
 	print('')
 	print('Flags:  -src  Following argument is the filepath to a "confidences" file written by one of the Classifiers.')
 	print('        -?    Display this message.')
+	return
 
 if __name__ == '__main__':
 	main()
