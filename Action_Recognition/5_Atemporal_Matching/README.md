@@ -17,4 +17,3 @@ Notice that at this point in the pipeline, we have abstracted classification awa
 - MatPlotLib
 - NumPy
 - SciKit-Learn
-- R
