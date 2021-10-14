@@ -15,4 +15,3 @@ A human-readable `*.db` database file. (For deployment, you may want to re-write
 - MatPlotLib
 - NumPy
 - SciKit-Learn
-- R
