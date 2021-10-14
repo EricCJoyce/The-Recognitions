@@ -1,22 +1,16 @@
-#  $ sudo -i R														Run R
-#  > install.packages("dtw")                                        Install Dynamic Time-Warping library so that rpy2 can call upon it
-#  > q()															Quit R
-
 import cv2
 import datetime
+import DTW															#  DTW.cpython-35m-x86_64-linux-gnu.so
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import rpy2.robjects.numpy2ri
-rpy2.robjects.numpy2ri.activate()
-from rpy2.robjects.packages import importr
-import rpy2.robjects as robj
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.neighbors import KDTree
 from sklearn.neighbors import (KNeighborsClassifier, NeighborhoodComponentsAnalysis)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+import subprocess													#  Call ./align
 import sys
 import time
 
@@ -391,9 +385,6 @@ class Classifier():
 		self.y_train = []											#  To become a list of ground-truth labels (strings).
 		self.recognizable_objects = []								#  Filled in by the derived classes,
 																	#  either from Enactments (atemporal) or a database (temporal).
-		self.R = rpy2.robjects.r									#  Shortcut to the R backend.
-		self.DTW = importr('dtw')									#  Shortcut to the R DTW library.
-
 		self.timing = {}											#  Really only used by the derived classes.
 
 		self.epsilon = 0.000001										#  Prevent divisions by zero.
@@ -590,18 +581,16 @@ class Classifier():
 	#  Shared classification engine.                                #
 	#################################################################
 
-	#  This is a core classification routine, usable by Atemporal and Temporal subclasses alike.
+	#  This is the core classification routine, usable by Atemporal and Temporal subclasses alike.
 	#  Given a single query sequence, return:
 	#    - Matching costs over all classes
 	#    - Confidences over all classes
 	#    - Probability distribution over all classes
 	#    - Metadata (nearest neighbor indices, alignment sequences) over all classes
 	#    - Timing
-	def classify(self, query_seq):
-		query = np.array(query_seq)									#  Convert to numpy.
-		rq, cq = query.shape										#  Save number of rows and number of columns.
-		query_R = self.R.matrix(query, nrow=rq, ncol=cq)			#  Convert to R matrix.
 
+	#  Use the C-extension DTW module.
+	def classify(self, query):
 		least_cost = float('inf')
 		nearest_neighbor_label = None
 																	#  In defense of hashing versus building a flat list:
@@ -619,13 +608,11 @@ class Classifier():
 		timing = {}
 		timing['dtw-classification'] = []							#  This is a coarser grain: time each classification process.
 		timing['test-cutoff-conditions'] = []						#  Prepare to collect times for calling test_cutoff_conditions().
-		timing['dtw-R-call'] = []									#  Prepare to collect times for running R's DTW.
 		timing['compute-confidence'] = []							#  Prepare to collect times for computing confidence scores.
 		timing['isotonic-lookup'] = []								#  Prepare to collect times for bucket-search.
 
-		t0_start = time.process_time()								#  Start timer.
 		db_index = 0												#  Index into self.X_train let us know which sample best matches the query.
-		for template_seq in self.X_train:							#  For every training-set sample, 'template'...
+		for template in self.X_train:								#  For every training-set sample, 'template'...
 			template_label = self.y_train[db_index]					#  Save the true label for this template sequence.
 
 			conditions_passed = False
@@ -636,22 +623,12 @@ class Classifier():
 				timing['test-cutoff-conditions'].append(t1_stop - t1_start)
 
 			if self.conditions is None or conditions_passed:		#  Either we have no conditions, or our conditions give us reason to run DTW.
-
-				template = np.array(template_seq)					#  Convert to numpy.
-				rt, ct = template.shape								#  Save number of rows and number of columns.
-																	#  Convert to R matrix.
-				template_R = self.R.matrix(template, nrow=rt, ncol=ct)
-
 				t1_start = time.process_time()						#  Start timer.
-																	#  What is the cost of aligning this template with this query?
-				alignment = self.R.dtw(template_R, query_R, open_begin=self.open_begin, open_end=self.open_end)
-				t1_stop = time.process_time()						#  Stop timer.
-				timing['dtw-R-call'].append(t1_stop - t1_start)
+																	#  What is the distance between this query and this template?
+				dist, _, query_indices, template_indices = DTW.DTW(query, template)
 
-				dist = alignment.rx('normalizedDistance')[0][0]		#  (Normalized) cost of matching this query to this template
-																	#  Save sequences of aligned frames (we might render them side by side)
-				template_indices = [int(x) for x in list(alignment.rx('index1s')[0])]
-				query_indices = [int(x) for x in list(alignment.rx('index2s')[0])]
+				t1_stop = time.process_time()						#  Stop timer.
+				timing['dtw-classification'].append(t1_stop - t1_start)
 
 				if least_cost > dist:								#  A preferable match over all!
 					least_cost = dist								#  Save the cost.
@@ -690,8 +667,6 @@ class Classifier():
 		else:														#  No mapping; probability = confidence, which is sloppy, but... meh.
 			for label, confidence in confidences.items():
 				probabilities[label] = confidence
-		t0_stop = time.process_time()								#  Stop timer.
-		timing['dtw-classification'].append(t0_stop - t0_start)
 
 		return matching_costs, confidences, probabilities, metadata, timing
 
@@ -1068,7 +1043,6 @@ class Classifier():
 	#    - load-enactment											Times taken to load enactments.
 	#    - dtw-classification										This is a coarser grain: time each classification process.
 	#    - test-cutoff-conditions									Times taken to test cutoff conditions.
-	#    - dtw-R-call												Times taken to run R's DTW.
 	#    - compute-confidence										Times taken to compute confidence scores.
 	#    - isotonic-lookup											Times taken to look up probabilities from computed confidence scores.
 	#    - make-tentative-prediction								Times taken to compute the least cost match.
@@ -1087,138 +1061,153 @@ class Classifier():
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
+		accounted_time = 0.0										#  Separate itemized times from overhead
+
 		fh = open('timing-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Times for classifier tasks, completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
 			fh.write('#  ' + ' '.join(sys.argv) + '\n')
+		fh.write('\n')
 																	#  'total' MUST be in the table.
 		fh.write('TOTAL TIME\t' + str(self.timing['total']) + '\n\n')
 																	#  Report enactment-loading times.
 		if 'load-enactment' in self.timing and len(self.timing['load-enactment']) > 0:
-			fh.write('Avg. enactment-loading time\t' + str(np.mean(self.timing['load-enactment'])) + '\t' + str(np.mean(self.timing['load-enactment']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. enactment-loading time\t' + str(np.mean(self.timing['load-enactment'])) + '\t' + str(np.sum(self.timing['load-enactment']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev enactment-loading time\t' + str(np.std(self.timing['load-enactment'])) + '\n\n')
+			accounted_time += np.sum(self.timing['load-enactment'])
 		else:
 			fh.write('Avg. enactment-loading time\tN/A\n')
 			fh.write('Std.dev enactment-loading time\tN/A\n\n')
 																	#  Report DTW-classification times.
 		if 'dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0:
-			fh.write('Avg. DTW time (per query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.mean(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. DTW time (per query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.sum(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev DTW time (per query pair)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
+			accounted_time += np.sum(self.timing['dtw-classification'])
 		else:
 			fh.write('Avg. DTW time (per query pair)\tN/A\n')
 			fh.write('Std.dev DTW time (per query pair)\tN/A\n\n')
 																	#  Report cutoff-condition testing times.
 		if 'test-cutoff-conditions' in self.timing and len(self.timing['test-cutoff-conditions']) > 0:
-			fh.write('Avg. cutoff-condition testing time\t' + str(np.mean(self.timing['test-cutoff-conditions'])) + '\t' + str(np.mean(self.timing['test-cutoff-conditions']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. cutoff-condition testing time\t' + str(np.mean(self.timing['test-cutoff-conditions'])) + '\t' + str(np.sum(self.timing['test-cutoff-conditions']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev cutoff-condition testing time\t' + str(np.std(self.timing['test-cutoff-conditions'])) + '\n\n')
+			accounted_time += np.sum(self.timing['test-cutoff-conditions'])
 		else:
 			fh.write('Avg. cutoff-condition testing time\tN/A\n')
 			fh.write('Std.dev cutoff-condition testing time\tN/A\n\n')
-																	#  Report DTW times.
-		if 'dtw-R-call' in self.timing and len(self.timing['dtw-R-call']) > 0:
-			fh.write('Avg. DTW time (per template-query pair)\t' + str(np.mean(self.timing['dtw-R-call'])) + '\t' + str(np.mean(self.timing['dtw-R-call']) / self.timing['total'] * 100.0) + '%\n')
-			fh.write('Std.dev DTW time (per template-query pair)\t' + str(np.std(self.timing['dtw-R-call'])) + '\n\n')
-		else:
-			fh.write('Avg. DTW time (per template-query pair)\tN/A\n')
-			fh.write('Std.dev DTW time (per template-query pair)\tN/A\n\n')
 																	#  Report cutoff-condition testing times.
 		if 'compute-confidence' in self.timing and len(self.timing['compute-confidence']) > 0:
-			fh.write('Avg. confidence computation time\t' + str(np.mean(self.timing['compute-confidence'])) + '\t' + str(np.mean(self.timing['compute-confidence']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. confidence computation time\t' + str(np.mean(self.timing['compute-confidence'])) + '\t' + str(np.sum(self.timing['compute-confidence']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev confidence computation time\t' + str(np.std(self.timing['compute-confidence'])) + '\n\n')
+			accounted_time += np.sum(self.timing['compute-confidence'])
 		else:
 			fh.write('Avg. confidence computation time\tN/A\n')
 			fh.write('Std.dev confidence computation time\tN/A\n\n')
 																	#  Report isotonic lookup times.
 		if 'isotonic-lookup' in self.timing and len(self.timing['isotonic-lookup']) > 0:
-			fh.write('Avg. probability lookup time\t' + str(np.mean(self.timing['isotonic-lookup'])) + '\t' + str(np.mean(self.timing['isotonic-lookup']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. probability lookup time\t' + str(np.mean(self.timing['isotonic-lookup'])) + '\t' + str(np.sum(self.timing['isotonic-lookup']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev probability lookup time\t' + str(np.std(self.timing['isotonic-lookup'])) + '\n\n')
+			accounted_time += np.sum(self.timing['isotonic-lookup'])
 		else:
 			fh.write('Avg. probability lookup time\tN/A\n')
 			fh.write('Std.dev probability lookup time\tN/A\n\n')
 																	#  Report least-distance-finding times.
 		if 'make-tentative-prediction' in self.timing and len(self.timing['make-tentative-prediction']) > 0:
-			fh.write('Avg. tentative decision-making time\t' + str(np.mean(self.timing['make-tentative-prediction'])) + '\t' + str(np.mean(self.timing['make-tentative-prediction']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. tentative decision-making time\t' + str(np.mean(self.timing['make-tentative-prediction'])) + '\t' + str(np.sum(self.timing['make-tentative-prediction']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev tentative decision-making time\t' + str(np.std(self.timing['make-tentative-prediction'])) + '\n\n')
+			accounted_time += np.sum(self.timing['make-tentative-prediction'])
 		else:
 			fh.write('Avg. tentative decision-making time\tN/A\n')
 			fh.write('Std.dev tentative decision-making time\tN/A\n\n')
 																	#  Report confidence score-sorting times.
 		if 'sort-confidences' in self.timing and len(self.timing['sort-confidences']) > 0:
-			fh.write('Avg. confidence sorting time\t' + str(np.mean(self.timing['sort-confidences'])) + '\t' + str(np.mean(self.timing['sort-confidences']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. confidence sorting time\t' + str(np.mean(self.timing['sort-confidences'])) + '\t' + str(np.sum(self.timing['sort-confidences']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev confidence sorting time\t' + str(np.std(self.timing['sort-confidences'])) + '\n\n')
+			accounted_time += np.sum(self.timing['sort-confidences'])
 		else:
 			fh.write('Avg. confidence sorting time\tN/A\n')
 			fh.write('Std.dev confidence sorting time\tN/A\n\n')
 																	#  Report probability-sorting times.
 		if 'sort-probabilities' in self.timing and len(self.timing['sort-probabilities']) > 0:
-			fh.write('Avg. probability sorting time\t' + str(np.mean(self.timing['sort-probabilities'])) + '\t' + str(np.mean(self.timing['sort-probabilities']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. probability sorting time\t' + str(np.mean(self.timing['sort-probabilities'])) + '\t' + str(np.sum(self.timing['sort-probabilities']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev probability sorting time\t' + str(np.std(self.timing['sort-probabilities'])) + '\n\n')
+			accounted_time += np.sum(self.timing['sort-probabilities'])
 		else:
 			fh.write('Avg. probability sorting time\tN/A\n')
 			fh.write('Std.dev probability sorting time\tN/A\n\n')
 																	#  Report temporal-buffer update times.
 		if 'push-temporal-buffer' in self.timing and len(self.timing['push-temporal-buffer']) > 0:
-			fh.write('Avg. temporal-buffer update time\t' + str(np.mean(self.timing['push-temporal-buffer'])) + '\t' + str(np.mean(self.timing['push-temporal-buffer']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. temporal-buffer update time\t' + str(np.mean(self.timing['push-temporal-buffer'])) + '\t' + str(np.sum(self.timing['push-temporal-buffer']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev temporal-buffer update time\t' + str(np.std(self.timing['push-temporal-buffer'])) + '\n\n')
+			accounted_time += np.sum(self.timing['push-temporal-buffer'])
 		else:
 			fh.write('Avg. temporal-buffer update time\tN/A\n')
 			fh.write('Std.dev temporal-buffer update time\tN/A\n\n')
 																	#  Report temporal-smoothing times.
 		if 'temporal-smoothing' in self.timing and len(self.timing['temporal-smoothing']) > 0:
-			fh.write('Avg. temporal-smoothing time\t' + str(np.mean(self.timing['temporal-smoothing'])) + '\t' + str(np.mean(self.timing['temporal-smoothing']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. temporal-smoothing time\t' + str(np.mean(self.timing['temporal-smoothing'])) + '\t' + str(np.sum(self.timing['temporal-smoothing']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev temporal-smoothing time\t' + str(np.std(self.timing['temporal-smoothing'])) + '\n\n')
+			accounted_time += np.sum(self.timing['temporal-smoothing'])
 		else:
 			fh.write('Avg. temporal-smoothing time\tN/A\n')
 			fh.write('Std.dev temporal-smoothing time\tN/A\n\n')
 																	#  Report final decision-making times.
 		if 'make-temporally-smooth-decision' in self.timing and len(self.timing['make-temporally-smooth-decision']) > 0:
-			fh.write('Avg. temporally-smoothed classification time\t' + str(np.mean(self.timing['make-temporally-smooth-decision'])) + '\t' + str(np.mean(self.timing['make-temporally-smooth-decision']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. temporally-smoothed classification time\t' + str(np.mean(self.timing['make-temporally-smooth-decision'])) + '\t' + str(np.sum(self.timing['make-temporally-smooth-decision']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev temporally-smoothed classification time\t' + str(np.std(self.timing['make-temporally-smooth-decision'])) + '\n\n')
+			accounted_time += np.sum(self.timing['make-temporally-smooth-decision'])
 		else:
 			fh.write('Avg. temporally-smoothed classification time\tN/A\n')
 			fh.write('Std.dev temporally-smoothed classification time\tN/A\n\n')
 																	#  Report side-by-side rendering times.
 		if 'render-side-by-side' in self.timing and len(self.timing['render-side-by-side']) > 0:
-			fh.write('Avg. side-by-side video rendering time\t' + str(np.mean(self.timing['render-side-by-side'])) + '\t' + str(np.mean(self.timing['render-side-by-side']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. side-by-side video rendering time\t' + str(np.mean(self.timing['render-side-by-side'])) + '\t' + str(np.sum(self.timing['render-side-by-side']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev side-by-side video rendering time\t' + str(np.std(self.timing['render-side-by-side'])) + '\n\n')
+			accounted_time += np.sum(self.timing['render-side-by-side'])
 		else:
 			fh.write('Avg. side-by-side video rendering time\tN/A\n')
 			fh.write('Std.dev side-by-side video rendering time\tN/A\n\n')
 																	#  Report annotation times.
 		if 'render-annotated-source' in self.timing and len(self.timing['render-annotated-source']) > 0:
-			fh.write('Avg. video annotation time\t' + str(np.mean(self.timing['render-annotated-source'])) + '\t' + str(np.mean(self.timing['render-annotated-source']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. video annotation time\t' + str(np.mean(self.timing['render-annotated-source'])) + '\t' + str(np.sum(self.timing['render-annotated-source']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev video annotation time\t' + str(np.std(self.timing['render-annotated-source'])) + '\n\n')
+			accounted_time += np.sum(self.timing['render-annotated-source'])
 		else:
 			fh.write('Avg. video annotation time\tN/A\n')
 			fh.write('Std.dev video annotation time\tN/A\n\n')
 																	#  Report rolling-buffer seismograph rendering times.
 		if 'render-rolling-buffer' in self.timing and len(self.timing['render-rolling-buffer']) > 0:
-			fh.write('Avg. rolling buffer rendering time\t' + str(np.mean(self.timing['render-rolling-buffer'])) + '\t' + str(np.mean(self.timing['render-rolling-buffer']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. rolling buffer rendering time\t' + str(np.mean(self.timing['render-rolling-buffer'])) + '\t' + str(np.sum(self.timing['render-rolling-buffer']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev rolling buffer rendering time\t' + str(np.std(self.timing['render-rolling-buffer'])) + '\n\n')
+			accounted_time += np.sum(self.timing['render-rolling-buffer'])
 		else:
 			fh.write('Avg. rolling buffer rendering time\tN/A\n')
 			fh.write('Std.dev rolling buffer rendering time\tN/A\n\n')
 																	#  Report confidence seismograph rendering times.
 		if 'render-confidence' in self.timing and len(self.timing['render-confidence']) > 0:
-			fh.write('Avg. confidence rendering time\t' + str(np.mean(self.timing['render-confidence'])) + '\t' + str(np.mean(self.timing['render-confidence']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. confidence rendering time\t' + str(np.mean(self.timing['render-confidence'])) + '\t' + str(np.sum(self.timing['render-confidence']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev confidence rendering time\t' + str(np.std(self.timing['render-confidence'])) + '\n\n')
+			accounted_time += np.sum(self.timing['render-confidence'])
 		else:
 			fh.write('Avg. confidence rendering time\tN/A\n')
 			fh.write('Std.dev confidence rendering time\tN/A\n\n')
 																	#  Report probabilities seismograph rendering times.
 		if 'render-probabilities' in self.timing and len(self.timing['render-probabilities']) > 0:
-			fh.write('Avg. probabilities rendering time\t' + str(np.mean(self.timing['render-probabilities'])) + '\t' + str(np.mean(self.timing['render-probabilities']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. probabilities rendering time\t' + str(np.mean(self.timing['render-probabilities'])) + '\t' + str(np.sum(self.timing['render-probabilities']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev probabilities rendering time\t' + str(np.std(self.timing['render-probabilities'])) + '\n\n')
+			accounted_time += np.sum(self.timing['render-probabilities'])
 		else:
 			fh.write('Avg. probabilities rendering time\tN/A\n')
 			fh.write('Std.dev probabilities rendering time\tN/A\n\n')
 																	#  Report smoothed-probabilities seismograph rendering times.
 		if 'render-smoothed-probabilities' in self.timing and len(self.timing['render-smoothed-probabilities']) > 0:
-			fh.write('Avg. smoothed-probabilities rendering time\t' + str(np.mean(self.timing['render-smoothed-probabilities'])) + '\t' + str(np.mean(self.timing['render-smoothed-probabilities']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Avg. smoothed-probabilities rendering time\t' + str(np.mean(self.timing['render-smoothed-probabilities'])) + '\t' + str(np.sum(self.timing['render-smoothed-probabilities']) / self.timing['total'] * 100.0) + '%\n')
 			fh.write('Std.dev smoothed-probabilities rendering time\t' + str(np.std(self.timing['render-smoothed-probabilities'])) + '\n\n')
+			accounted_time += np.sum(self.timing['render-smoothed-probabilities'])
 		else:
 			fh.write('Avg. smoothed-probabilities rendering time\tN/A\n')
 			fh.write('Std.dev smoothed-probabilities rendering time\tN/A\n\n')
+
+		fh.write('Overhead\t' + str(self.timing['total'] - accounted_time) + '\t' + str((self.timing['total'] - accounted_time) / self.timing['total'] * 100.0) + '%\n')
 
 		fh.close()
 		return
@@ -1233,11 +1222,18 @@ In the interpreter:
   atemporal = AtemporalClassifier(window_size=10, stride=2, divide=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2', 'Enactment11', 'Enactment12'], verbose=True)
 
 Alternatively, you can give this class only a test set, not training set, and load a database file like the TemporalClassifier uses.
+
 In the interpreter:
   atemporal = AtemporalClassifier(window_size=10, stride=2, test=['Enactment11', 'Enactment12'], verbose=True)
-  atemporal.relabel_from_file('relabels_07sep21.txt')
+  atemporal.relabel_allocations_from_file('relabels.txt')
   atemporal.commit()
   atemporal.load_db('10f.db')
+
+Of this:
+  atemporal = AtemporalClassifier(window_size=10, stride=2, db_file='10f.db', test=['Enactment11', 'Enactment12'], hand_schema='strong-hand', props_coeff=60.0, verbose=True, render=True
+  atemporal.relabel_allocations_from_file('relabels.txt')
+  atemporal.commit()
+
 '''
 class AtemporalClassifier(Classifier):
 	def __init__(self, **kwargs):
@@ -1400,17 +1396,7 @@ class AtemporalClassifier(Classifier):
 		success_ctr = 0
 		mismatch_ctr = 0
 
-		self.timing = {}											#  (Re)set.
-		self.timing['total'] = 0
-		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
-		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
-		self.timing['dtw-R-call'] = []								#  Prepare to collect times for running R's DTW.
-		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
-		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
-		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
-		self.timing['make-decision'] = []							#  Prepare to collect final decision-making runtimes.
-		if self.render:
-			self.timing['render-side-by-side'] = []					#  Prepare to collect rendering times.
+		self.initialize_timers()									#  (Re)set.
 
 		t0_start = time.process_time()								#  Start timer.
 		for i in range(0, len(self.y_test)):
@@ -1420,7 +1406,6 @@ class AtemporalClassifier(Classifier):
 			matching_costs, confidences, probabilities, metadata, timing = super(AtemporalClassifier, self).classify(query)
 			self.timing['dtw-classification'] += timing['dtw-classification']
 			self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-			self.timing['dtw-R-call'] += timing['dtw-R-call']
 			self.timing['compute-confidence'] += timing['compute-confidence']
 			self.timing['isotonic-lookup'] += timing['isotonic-lookup']
 
@@ -1455,17 +1440,20 @@ class AtemporalClassifier(Classifier):
 
 			if self.render:											#  Put the query and the template side by side.
 				if prediction is not None:							#  If there's no prediction, there is nothing to render.
-					t1_start = time.process_time()					#  Start timer.
-					if prediction == ground_truth_label:
-						success_ctr += 1
-						vid_file_name = 'atemporal-success_' + str(success_ctr) + '.avi'
-					else:
-						mismatch_ctr += 1
-						vid_file_name = 'atemporal-mismatch_' + str(mismatch_ctr) + '.avi'
+																	#  Our ability to render also depends on which DTW engine we used:
+																	#  the Fortran engine is speedy but does not compute alignment sequences.
+					if 'template-indices' in metadata[prediction] and 'query-indices' in metadata[prediction]:
+						t1_start = time.process_time()				#  Start timer.
+						if prediction == ground_truth_label:
+							success_ctr += 1
+							vid_file_name = 'atemporal-success_' + str(success_ctr) + '.avi'
+						else:
+							mismatch_ctr += 1
+							vid_file_name = 'atemporal-mismatch_' + str(mismatch_ctr) + '.avi'
 
-					self.render_side_by_side(vid_file_name, prediction, ground_truth_label, i, metadata)
-					t1_stop = time.process_time()
-					self.timing['render-side-by-side'].append(t1_stop - t1_start)
+						self.render_side_by_side(vid_file_name, prediction, ground_truth_label, i, metadata)
+						t1_stop = time.process_time()
+						self.timing['render-side-by-side'].append(t1_stop - t1_start)
 
 			if self.verbose:
 				if int(round(float(i) / float(num_labels - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
@@ -1546,7 +1534,7 @@ class AtemporalClassifier(Classifier):
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
 						vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
 						if self.hand_schema == 'strong-hand':		#  Re-arrange for "strong-hand-first" encoding?
-							vec = strong_hand_encode(vec)
+							vec = self.strong_hand_encode(vec)
 						seq.append( self.apply_vector_coefficients(vec) )
 					self.X_train.append( seq )						#  Append the snippet sequence.
 					self.y_train.append( action_label )				#  Append ground-truth-label.
@@ -2096,6 +2084,24 @@ class AtemporalClassifier(Classifier):
 		return
 
 	#################################################################
+	#  Timing.                                                      #
+	#################################################################
+
+	#  Set up 'self.timing' to start collecting measurements.
+	def initialize_timers(self):
+		self.timing = {}											#  (Re)set.
+		self.timing['total'] = 0									#  Measure total time taken
+		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
+		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
+		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
+		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
+		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
+		self.timing['make-decision'] = []							#  Prepare to collect final decision-making runtimes.
+		if self.render:
+			self.timing['render-side-by-side'] = []					#  Prepare to collect rendering times.
+		return
+
+	#################################################################
 	#  Rendering                                                    #
 	#################################################################
 
@@ -2127,13 +2133,11 @@ class AtemporalClassifier(Classifier):
 																	#  Iterate over the two alignments.
 		for j in range(0, max(q_alignment_length, t_alignment_length)):
 			if j < q_alignment_length:
-																	#  These come ONE-indexed from R.
-				q_index = metadata[prediction]['query-indices'][j] - 1
+				q_index = metadata[prediction]['query-indices'][j]
 			else:
 				q_index = None
 			if j < t_alignment_length:
-																	#  These come ONE-indexed from R.
-				t_index = metadata[prediction]['template-indices'][j] - 1
+				t_index = metadata[prediction]['template-indices'][j]
 			else:
 				t_index = None
 																	#  Allocate a blank frame.
@@ -2290,7 +2294,7 @@ Buffers-full of vectors from the enactments are given to the classification engi
 This constitutes "temporal" classification because sequence boundaries are not known a priori.
 
 In the interpreter:
-temporal = TemporalClassifier(rolling_buffer_length=10, rolling_buffer_stride=2, db_file='10f.db', inputs=['Enactment11', 'Enactment12'], verbose=True)
+temporal = TemporalClassifier(rolling_buffer_length=10, rolling_buffer_stride=2, db_file='10f.db', relabel='relabels.txt', inputs=['Enactment11', 'Enactment12'], verbose=True)
 '''
 class TemporalClassifier(Classifier):
 	def __init__(self, **kwargs):
@@ -2463,25 +2467,7 @@ class TemporalClassifier(Classifier):
 			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instance in training set}
 			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
 
-		self.timing['total'] = 0									#  Prepare to capture time taken by the entire classification run.
-		self.timing['load-enactment'] = []							#  Prepare to capture enactment loading times.
-		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
-		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
-		self.timing['dtw-R-call'] = []								#  Prepare to collect times for running R's DTW.
-		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
-		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
-		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
-		self.timing['sort-confidences'] = []						#  Prepare to collect confidence-score sorting times.
-		self.timing['sort-probabilities'] = []						#  Prepare to collect probability sorting times.
-		self.timing['push-temporal-buffer'] = []					#  Prepare to collect temporal-buffer update times.
-		self.timing['temporal-smoothing'] = []						#  Prepare to collect temporal-smoothing runtimes.
-		self.timing['make-temporally-smooth-decision'] = []			#  Prepare to collect final decision-making runtimes.
-		if self.render:
-			self.timing['render-annotated-source'] = []				#  Prepare to collect rendering times.
-			self.timing['render-rolling-buffer'] = []
-			self.timing['render-confidence'] = []
-			self.timing['render-probabilities'] = []
-			self.timing['render-smoothed-probabilities'] = []
+		self.initialize_timers()									#  (Re)set.
 
 		t0_start = time.process_time()								#  Start timer.
 		for enactment_input in self.enactment_inputs:				#  Treat each input enactment as a separate slice of time.
@@ -2578,19 +2564,16 @@ class TemporalClassifier(Classifier):
 				#  based on nearest-neighbor. Actual predictions are#
 				#  subject to threshold and smoothed probabilities. #
 				#####################################################
-				#if len(self.rolling_buffer) == self.rolling_buffer_length:
 				if self.is_rolling_buffer_full():
 
 					tentative_prediction = None						#  (Re)set.
 					prediction = None
 
-					#if True:
 					if fair or not skip_unfair:
 																	#  Call the parent class's core matching engine.
 						matching_costs, confidences, probabilities, metadata, timing = super(TemporalClassifier, self).classify(self.rolling_buffer)
 						self.timing['dtw-classification'] += timing['dtw-classification']
 						self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-						self.timing['dtw-R-call'] += timing['dtw-R-call']
 						self.timing['compute-confidence'] += timing['compute-confidence']
 						self.timing['isotonic-lookup'] += timing['isotonic-lookup']
 
@@ -2603,7 +2586,6 @@ class TemporalClassifier(Classifier):
 					#                          template-indices,    #
 					#                          db-index}            #
 					#################################################
-					#if True:
 					if fair or not skip_unfair:
 						t1_start = time.process_time()				#  Start timer.
 						least_cost = float('inf')					#  Tentative prediction always determined by least matching cost.
@@ -2644,8 +2626,6 @@ class TemporalClassifier(Classifier):
 				#  Smooth the contents of the temporal buffer and   #
 				#  make a prediction (or abstain from predicting).  #
 				#####################################################
-				#if len(self.temporal_buffer) == self.temporal_buffer_length:
-				#if True:
 				if fair or not skip_unfair:
 					t1_start = time.process_time()					#  Start timer.
 					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
@@ -2958,6 +2938,32 @@ class TemporalClassifier(Classifier):
 						ground_truth_label = self.relabelings[ground_truth_label]
 
 					print(enactment_input + ':\t' + str(timestamp) + '\t' + ground_truth_label)
+		return
+
+	#################################################################
+	#  Timing.                                                      #
+	#################################################################
+
+	#  Set up 'self.timing' to start collecting measurements.
+	def initialize_timers(self):
+		self.timing['total'] = 0									#  Prepare to capture time taken by the entire classification run.
+		self.timing['load-enactment'] = []							#  Prepare to capture enactment loading times.
+		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
+		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
+		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
+		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
+		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
+		self.timing['sort-confidences'] = []						#  Prepare to collect confidence-score sorting times.
+		self.timing['sort-probabilities'] = []						#  Prepare to collect probability sorting times.
+		self.timing['push-temporal-buffer'] = []					#  Prepare to collect temporal-buffer update times.
+		self.timing['temporal-smoothing'] = []						#  Prepare to collect temporal-smoothing runtimes.
+		self.timing['make-temporally-smooth-decision'] = []			#  Prepare to collect final decision-making runtimes.
+		if self.render:
+			self.timing['render-annotated-source'] = []				#  Prepare to collect rendering times.
+			self.timing['render-rolling-buffer'] = []
+			self.timing['render-confidence'] = []
+			self.timing['render-probabilities'] = []
+			self.timing['render-smoothed-probabilities'] = []
 		return
 
 	#################################################################
