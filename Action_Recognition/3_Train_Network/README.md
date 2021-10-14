@@ -10,7 +10,7 @@ You have the opportunity to influence our future classifier's behavior by applyi
 ```
 ./EnactmentName
     |
-    |--- /gt                <--- Built by module 1
+    |--- /GT                <--- Built by module 1
     |--- /Props
     |--- /Subprops
     |--- /Users
