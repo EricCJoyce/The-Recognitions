@@ -84,7 +84,7 @@ def main():
 		for i in range(0, 256):
 			d = (float(i) / 255.0) * (e.max_depth - e.min_depth) + e.min_depth
 			histg.append(h[d])
-			if d not in histogam:
+			if d not in histogram:
 				histogram[d] = 0
 			histogram[d] += h[d]
 																	#  Save individual histograms
