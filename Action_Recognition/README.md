@@ -138,4 +138,4 @@ pip3 install keras==2.2.5
 pip install keras==2.2.5
 ```
 
-### [Mask-RCNN](https://github.com/matterport/Mask_RCNN) (see also [this version](https://github.com/leekunhee/Mask_RCNN) adapted for TensorFlow version 2)
+### [Mask-RCNN](https://github.com/matterport/Mask_RCNN)
