@@ -876,6 +876,81 @@ class Enactment():
 		return
 
 	#################################################################
+	#  Output: write a hand-pose file.                              #
+	#################################################################
+
+	def write_hand_pose_file(self, file_name=None):
+		if self.verbose:
+			print('>>> Writing hand poses to file.')
+
+		num_frames = len(self.frames)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		if file_name is None:
+			fh = open(self.enactment_name + '.handposes', 'w')
+		else:
+			fh = open(file_name + '.handposes', 'w')
+
+		fh.write('#  Hand poses from FactualVR enactment materials.\n')
+		fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
+		fh.write('#  FPS:\n')
+		fh.write('#    ' + str(self.fps) + '\n')
+		fh.write('#  ENCODING STRUCTURE:\n')
+		structure_string = '\t'.join(['timestamp', 'filename', 'label', \
+		                              'LHx', 'LHy', 'LHz', 'LH0', 'LH1', 'LH2', \
+		                              'RHx', 'RHy', 'RHz', 'RH0', 'RH1', 'RH2'])
+		fh.write('#    ' + structure_string + '\n')
+
+		ctr = 0
+		for time_stamp, frame in sorted(self.frames.items()):
+			fh.write(str(time_stamp) + '\t')
+			fh.write(frame.fullpath() + '\t')
+			fh.write(frame.ground_truth_label + '\t')
+			if frame.left_hand_pose is not None:					#  Write the LEFT-HAND subvector
+				fh.write(str(frame.left_hand_pose[0]) + '\t')
+				fh.write(str(frame.left_hand_pose[1]) + '\t')
+				fh.write(str(frame.left_hand_pose[2]) + '\t')
+				if frame.left_hand_pose[3] == 0:
+					fh.write('1.0\t0.0\t0.0\t')
+				elif frame.left_hand_pose[3] == 1:
+					fh.write('0.0\t1.0\t0.0\t')
+				elif frame.left_hand_pose[3] == 2:
+					fh.write('0.0\t0.0\t1.0\t')
+				else:												#  This case should never happen, but be prepared!
+					fh.write('0.0\t0.0\t0.0\t')
+			else:
+				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+			if frame.right_hand_pose is not None:					#  Write the RIGHT-HAND subvector
+				fh.write(str(frame.right_hand_pose[0]) + '\t')
+				fh.write(str(frame.right_hand_pose[1]) + '\t')
+				fh.write(str(frame.right_hand_pose[2]) + '\t')
+				if frame.right_hand_pose[3] == 0:
+					fh.write('1.0\t0.0\t0.0\t')
+				elif frame.right_hand_pose[3] == 1:
+					fh.write('0.0\t1.0\t0.0\t')
+				elif frame.right_hand_pose[3] == 2:
+					fh.write('0.0\t0.0\t1.0\t')
+				else:												#  This case should never happen, but be prepared!
+					fh.write('0.0\t0.0\t0.0\t')
+			else:
+				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+
+			if self.verbose:
+				if int(round(float(ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+
+		fh.close()
+
+		if self.verbose:
+			print('')
+
+		return
+
+	#################################################################
 	#  Editing: make changes to actions, poses, detections.         #
 	#################################################################
 
@@ -1527,6 +1602,9 @@ class Enactment():
 		frame_ctr = 0
 		fh = open(self.enactment_name + '_props.txt', 'w')			#  Create "<self.enactment_name>_props.txt"
 		fh.write('#  Enactment object-mask lookup-table, created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		if self.object_detection_source is not None:
+			fh.write('#  OBJECT DETECTION SOURCE:\n')
+			fh.write('#    ' + self.object_detection_source + '\n')
 		fh.write('#  RECOGNIZABLE OBJECTS:\n')
 																	#  self.recognizable_objects will have been filled if we just performed logical_parse()
 		fh.write('#    ' + '\t'.join(self.recognizable_objects) + '\n')
@@ -1547,6 +1625,84 @@ class Enactment():
 				fh.write(str(time_stamp) + '\t')					#  Write time_stamp
 				fh.write(frame.fullpath() + '\t')					#  Write video file full path
 				fh.write(detection.instance_name + '\t')			#  Write instance name
+				fh.write(detection.object_name + '\t')				#  Write object name
+				fh.write(detection.detection_source + '\t')			#  Write detection source
+				fh.write(str(detection.confidence) + '\t')			#  Write detection confidence
+				fh.write(str(detection.bounding_box[0]) + ',' + str(detection.bounding_box[1]) + ';' + \
+				         str(detection.bounding_box[2]) + ',' + str(detection.bounding_box[3]) + '\t')
+				fh.write(detection.mask_path + '\t')				#  Write mask path
+
+				center = detection.center('avg')
+																	#  In meters
+				d = self.min_depth + (float(depthmap[center[1], center[0]]) / 255.0) * (self.max_depth - self.min_depth)
+				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
+				centroid *= d										#  Scale by known depth (meters from head)
+				pt = np.dot(flip, centroid)							#  Flip point
+				detection.set_centroid( (pt[0], pt[1], pt[2]) )
+																	#  Write the 3D centroid (determined by pixels' average)
+				fh.write(str(detection.centroid[0]) + ',' + str(detection.centroid[1]) + ',' + str(detection.centroid[2]) + '\t')
+
+				center = detection.center('bbox')
+																	#  In meters
+				d = self.min_depth + (float(depthmap[center[1], center[0]]) / 255.0) * (self.max_depth - self.min_depth)
+				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
+				centroid *= d										#  Scale by known depth (meters from head)
+				pt = np.dot(flip, centroid)							#  Flip point
+				detection.set_centroid( (pt[0], pt[1], pt[2]) )
+																	#  Write the 3D centroid (determined by bounding box)
+				fh.write(str(detection.centroid[0]) + ',' + str(detection.centroid[1]) + ',' + str(detection.centroid[2]) + '\n')
+
+				mask_ctr += 1
+
+			if self.verbose:
+				if int(round(float(frame_ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(frame_ctr) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(frame_ctr) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+
+			frame_ctr += 1
+
+		fh.close()
+		return
+
+	#  Write all detected RObjects (masks already exist) to a mask lookup-table, "<self.enactment_name>_<detector_name>_detections.txt"
+	def render_detected(self, detector_name=None):
+		K = self.K()												#  Retrieve camera matrix
+		K_inv = np.linalg.inv(K)									#  Build inverse K-matrix
+																	#  Build the flip matrix
+		flip = np.array([[-1.0,  0.0, 0.0], \
+		                 [ 0.0, -1.0, 0.0], \
+		                 [ 0.0,  0.0, 1.0]], dtype='float64')
+
+		mask_ctr = 0
+		frame_ctr = 0
+		if detector_name is None:
+			fh = open(self.enactment_name + '_detections.txt', 'w')	#  Create "<self.enactment_name>_detections.txt"
+		else:
+			fh = open(self.enactment_name + '_' + detector_name + '_detections.txt', 'w')
+
+		fh.write('#  Enactment object-mask lookup-table, created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		if self.object_detection_source is not None:
+			fh.write('#  OBJECT DETECTION SOURCE:\n')
+			fh.write('#    ' + self.object_detection_source + '\n')
+		fh.write('#  RECOGNIZABLE OBJECTS:\n')
+																	#  self.recognizable_objects will have been filled if we just performed logical_parse()
+		fh.write('#    ' + '\t'.join(self.recognizable_objects) + '\n')
+		fh.write('#  FORMAT:\n')
+		fh.write('#    timestamp    image-filename    instance    class    detection-source    confidence    bounding-box    mask-filename    3D-centroid-Avg    3D-centroid-BBox\n')
+
+		num_frames = self.num_frames()
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		for time_stamp, frame in sorted(self.frames.items()):
+																	#  Cache the Frame's depth map once, here.
+			depthmap = cv2.imread(frame.fullpath('depth'), cv2.IMREAD_UNCHANGED)
+
+			for detection in frame.detections:
+				fh.write(str(time_stamp) + '\t')					#  Write time_stamp
+				fh.write(frame.fullpath() + '\t')					#  Write video file full path
+				fh.write('*' + '\t')								#  Write instance name (detections do not pick up "instances")
 				fh.write(detection.object_name + '\t')				#  Write object name
 				fh.write(detection.detection_source + '\t')			#  Write detection source
 				fh.write(str(detection.confidence) + '\t')			#  Write detection confidence
@@ -1765,17 +1921,22 @@ class Enactment():
 
 	#  Load an RGB 3-tuple for each string in self.recognizable_objects.
 	def load_color_map(self, color_file):
-		self.robject_colors = {}									#  (Re)set
-		for robject in self.recognizable_objects:					#  What if the colors file is missing something? Initialize with randoms.
-			self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
+		self.random_colors()										#  What if the colors file is missing something? Initialize with randoms.
 
-		fh = open(color_file, 'r')
+		fh = open(color_file, 'r')									#  Now attempt to open the given file.
 		for line in fh.readlines():
 			if line[0] != '#':
 				arr = line.strip().split('\t')
 				self.robject_colors[ arr[0] ] = (int(arr[1]), int(arr[2]), int(arr[3]))
 		fh.close()
 
+		return
+
+	#  Invent an RGB 3-tuple for each string in self.recognizable_objects.
+	def random_colors(self):
+		self.robject_colors = {}									#  (Re)set
+		for robject in self.recognizable_objects:
+			self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
 		return
 
 	#################################################################
