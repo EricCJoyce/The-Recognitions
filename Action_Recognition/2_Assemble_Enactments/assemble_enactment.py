@@ -17,20 +17,42 @@ def main():
 		e.LH_super['fontsize'] = params['fontsize']
 		e.RH_super['fontsize'] = params['fontsize']
 
-		if params['colors-file'] is not None:						#  Were we given a color look-up file?
-			e.load_color_map(params['colors-file'])
+		#############################################################
+		#  Enactments initialize with JSON sensor data by default.  #
+		#                                                           #
+		#  Determine the enactment's source for object data:        #
+		#    ground-truth (*_props.txt) or                          #
+		#    network (e.g. *_mask_rcnn_factual_0028_detections.txt) #
+		#  This is enactment_name + params['parse-suffix'].         #
+		#                                                           #
+		#  When handling objects, do we call their centroid the     #
+		#  average of all pixels in the mask or the bounding-box    #
+		#  center? (Applies to both objects and IK hands.)          #
+		#  This is params['centroid-mode'].                         #
+		#                                                           #
+		#  Do we want hand poses from the sensors (noisy!) or from  #
+		#  the IK hands?                                            #
+		#  This is params['hand-pose-mode'].                        #
+		#                                                           #
+		#  If sensor data: are we shutting off the signal when      #
+		#  hands are not visible?                                   #
+		#  If IK: are they available? And are we using the pixel    #
+		#  average or the bounding-box average?                     #
+		#                                                           #
+		#  Where will hand poses come from?                         #
+		#  That is params['hand-pose-src-file'].                    #
+		#############################################################
+																	#  Read objects--possibly including GT hands.
+		e.load_parsed_objects(enactment_name + params['parse-suffix'], params['centroid-mode'])
 
-		if params['pose-src'] == 'IK-bbox':							#  Pick your pose.
-			e.load_parsed_objects(None, 'bbox')
-			e.compute_IK_poses()
-		elif params['pose-src'] == 'IK-avg':
-			e.load_parsed_objects(None, 'avg')
-			e.compute_IK_poses()
-		elif params['pose-src'] == 'sensor-shutoff':
-			e.load_parsed_objects(None, 'bbox')
-			e.apply_camera_projection_shutoff()
-		else:
-			e.load_parsed_objects(None, 'bbox')
+		if params['hand-pose-src-file'] is None:					#  No external hand-pose source file:
+																	#  then consider whether we will use sensor poses or IK poses.
+			if params['hand-pose-mode'] == 'IK-bbox' or params['hand-pose-mode'] == 'IK-avg':
+				e.compute_IK_poses()								#  Centroid-mode handles the rest.
+			elif params['hand-pose-mode'] == 'sensor-shutoff':
+				e.apply_camera_projection_shutoff()
+		else:														#  We are we using a hand-pose source file.
+			e.load_hand_pose_file(enactment_name + params['hand-pose-src-file'])
 
 		g = Gaussian(mu=params['gaussian']['mu'], \
 		             sigma_gaze=params['gaussian']['sigma-gaze'], \
@@ -46,7 +68,11 @@ def main():
 		e.write_text_enactment_file(g)								#  Create the file we want.
 
 		if params['render']:										#  Rendering?
+			if params['colors-file'] is not None:					#  Were we given a color look-up file?
+				e.load_color_map(params['colors-file'])
+
 			e.render_gaussian_weighted_video(g)
+			#e.render_annotated_video()
 
 	return
 
@@ -58,8 +84,11 @@ def get_command_line_params():
 	params['gaussian']['sigma-gaze'] = (2.0, 1.5, 3.0)				#  key:sigma-hand ==> val:(x, y, z)
 	params['gaussian']['sigma-hand'] = (0.5, 0.5, 0.5)
 
-	params['pose-src'] = 'IK-bbox'									#  By default, use the bounding-box center of the IK hands.
-																	#  (I don't like sensor data: they are WAY too noisy!)
+	params['parse-suffix'] = '_props.txt'							#  Suffix of source of object detections--possibly including hands.
+	params['centroid-mode'] = 'bbox'
+	params['hand-pose-mode'] = 'sensor-shutoff'
+	params['hand-pose-src-file'] = None
+
 	params['min-pixels'] = 400										#  I decided this was a good default minimum.
 	params['colors-file'] = None
 	params['render'] = False										#  Whether to render stuff.
@@ -76,7 +105,8 @@ def get_command_line_params():
 																	#  Permissible setting flags
 	flags = ['-e', \
 	         '-mu', '-sigHead', '-sigHand', \
-	         '-render', '-color', '-colors', '-minpx', '-pose', \
+	         '-suffix', '-centroid', '-handmode', '-handsrc', \
+	         '-render', '-color', '-colors', '-minpx', \
 	         '-v', '-?', '-help', '--help', \
 	         '-User', '-imgw', '-imgh', '-fontsize']
 	for i in range(1, len(sys.argv)):
@@ -127,8 +157,15 @@ def get_command_line_params():
 					params['min-pixels'] = max(1, abs(int(argval)))
 				elif argtarget == '-color' or argtarget == '-colors':
 					params['colors-file'] = argval
-				elif argtarget == '-pose':
-					params['pose-src'] = argval
+
+				elif argtarget == '-suffix':
+					params['parse-suffix'] = argval
+				elif argtarget == '-centroid':
+					params['centroid-mode'] = argval
+				elif argtarget == '-handmode':
+					params['hand-pose-mode'] = argval
+				elif argtarget == '-handsrc':
+					params['hand-pose-src-file'] = argval
 
 				elif argtarget == '-imgw':
 					params['imgw'] = max(1, int(argval))
@@ -139,9 +176,13 @@ def get_command_line_params():
 				elif argtarget == '-fontsize':
 					params['fontsize'] = float(argval)
 
-	if params['pose-src'] not in ['IK-bbox', 'IK-avg', 'sensor-shutoff', 'sensor']:
-		print('>>> INVALID DATA received for pose source. Restoring default value.')
-		params['pose-src'] = 1
+	if params['hand-pose-mode'] not in ['IK-bbox', 'IK-avg', 'sensor-shutoff', 'sensor']:
+		print('>>> INVALID DATA received for hand-pose mode. Restoring default value.')
+		params['hand-pose-mode'] = 'sensor-shutoff'
+
+	if params['centroid-mode'] not in ['bbox', 'avg']:
+		print('>>> INVALID DATA received for centroid mode. Restoring default value.')
+		params['centroid-mode'] = 'bbox'
 
 	if params['fontsize'] < 1:
 		print('>>> INVALID DATA received for fontsize. Restoring default value.')
@@ -157,6 +198,7 @@ def usage():
 	print('')
 	print('Usage:  python3 assemble_enactment.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 assemble_enactment.py -e Enactment11 -e Enactment12 -v -render')
+	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _mask_rcnn_factual_0028_detections.txt -handsrc .IK-bbox.handposes -v -render')
 	print('')
 	print('Flags:  -e        Following argument is path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -mu       Following three arguments are the three components of the Gaussian\'s mu for the gaze.')
@@ -164,12 +206,20 @@ def usage():
 	print('        -sigHand  Following three arguments are the three components of the Gaussian\'s sigma for the hands.')
 	print('        -minpx    Following argument is the minimum number of pixels an object needs to occupy to be admitted')
 	print('                  to the *.enactment file. The default is 400.')
-	print('        -pose     Following argument is a string in {IK-bbox, IK-avg, sensor-shutoff, sensor}.')
-	print('                  This indicates what the source for hand poses should be. The default is "IK-bbox", meaning')
-	print('                  hand poses are derived from the bounding-box center of the IK hands. If a hand is not')
-	print('                  visible, then that hand\'s subvector is zero. The idea is that this mimics a HoloLens.')
-	print('                  The "sensor" alternatives take hand data from the hand paddle sensors. The "shutoff" option')
-	print('                  mimics the HoloLens assumption that if hands are not seen, then their poses are not registered.')
+	print('')
+	print('        -suffix   Following string is the suffix of the file to be used as object-detection source.')
+	print('                  By default, this is "_props.txt", meaning the script expects to use ground-truth detections')
+	print('                  unless directed elsewhere.')
+	print('        -centroid Following string in {avg, bbox} indicates how an object\'s centroid is computed.')
+	print('                  Default is "bbox".')
+	print('        -handmode Following string in {IK-bbox, IK-avg, sensor-shutoff, sensor} indicates how hand poses')
+	print('                  are to be computed. Default is "sensor-shutoff".')
+	print('        -handsrc  Following string is a suffix for special files containing only hand poses.')
+	print('                  If invoked, the poses in these files overwrite the enactments\' poses.')
+	print('                  You would derive a hand-pose file from the script "extract_hand_poses.py" and, say,')
+	print('                  apply these poses to object-detections made using a network (that was not trained to')
+	print('                  detect hands by itself.)')
+	print('')
 	print('        -color    Following argument is the path to a text file itemizing which recognizable objects should')
 	print('                  receive which color overlays (Only matters if you are rendering.) If no file is specified,')
 	print('                  then colors will be generated randomly.')
