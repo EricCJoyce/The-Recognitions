@@ -2496,6 +2496,11 @@ class Enactment():
 	#  Include in the rendering as many details as have been prepared. If we computed masks, show the masks. If centroids, show centroids....
 	def render_gaussian_weighted_video(self, gaussian):
 		K = self.K()												#  Build the camera matrix
+		K_inv = np.linalg.inv(K)									#  Build inverse K-matrix
+																	#  Build the flip matrix
+		flip = np.array([[-1.0,  0.0, 0.0], \
+		                 [ 0.0, -1.0, 0.0], \
+		                 [ 0.0,  0.0, 1.0]], dtype='float64')
 		sorted_frames = sorted(self.frames.items())
 		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
 
@@ -3180,6 +3185,52 @@ class Enactment():
 
 		if self.verbose:
 			print('')
+
+		return
+
+	#  Complement to write_hand_pose_file().
+	def load_hand_pose_file(self, file_name):
+		hand_poses = {}												#  key:time stamp ==> val:{key:'left'  ==> val:(x, y, z, state),
+																	#                          key:'right' ==> val:(x, y, z, state)}
+		fh = open(file_name, 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				time_stamp = float(arr[0])
+				frame_file = arr[1]
+				label = arr[2]
+
+				lh_vec = [float(x) for x in arr[3:9]]
+				if 1.0 in lh_vec[3:]:
+					lh_state = lh_vec[3:].index(1.0)
+				else:
+					lh_state = None
+
+				rh_vec = [float(x) for x in arr[9:]]
+				if 1.0 in rh_vec[3:]:
+					rh_state = rh_vec[3:].index(1.0)
+				else:
+					rh_state = None
+
+				hand_poses[time_stamp] = {}
+				hand_poses[time_stamp]['left'] = (lh_vec[0], lh_vec[1], lh_vec[2], lh_state)
+				hand_poses[time_stamp]['right'] = (rh_vec[0], rh_vec[1], rh_vec[2], rh_state)
+		fh.close()
+
+		for time_stamp, frame in self.frames.items():
+			if time_stamp in hand_poses and hand_poses[time_stamp]['left'][3] is not None:
+				frame.set_left_hand_pose( hand_poses[time_stamp]['left'] )
+				frame.set_left_hand_global_pose( hand_poses[time_stamp]['left'] )
+			else:
+				frame.set_left_hand_pose(None)
+				frame.set_left_hand_global_pose(None)
+
+			if time_stamp in hand_poses and hand_poses[time_stamp]['right'][3] is not None:
+				frame.set_right_hand_pose( hand_poses[time_stamp]['right'] )
+				frame.set_right_hand_global_pose( hand_poses[time_stamp]['right'] )
+			else:
+				frame.set_right_hand_pose(None)
+				frame.set_right_hand_global_pose(None)
 
 		return
 
