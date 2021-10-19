@@ -93,6 +93,7 @@ def main():
 		plt.ylabel('Frequency')
 		plt.title(enactment_name + ' Depth Histogram')
 		plt.savefig(enactment_name + '-histogram.png')
+		plt.clf()
 
 	histg = []
 	for i in range(0, 256):
@@ -104,6 +105,7 @@ def main():
 	plt.ylabel('Frequency')
 	plt.title('Combined Depth Histogram')
 	plt.savefig('total-histogram.png')
+	plt.clf()
 
 	#################################################################
 	#  Final pass on the given enactments: apply rules; build       #
@@ -178,6 +180,7 @@ def usage():
 	print('')
 	print('Usage:  python3 process_enactment.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 process_enactment.py -r substation.rules -e Enactment11 -e Enactment12 -v -render')
+	print(' e.g.:  python3 process_enactment.py -r substation.rules -e Enactment1 -o IK-bbox -o IK-avg -v -render')
 	print('')
 	print('Flags:  -e       MUST HAVE AT LEAST ONE: Path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -r       MUST HAVE EXACTLY ONE: Path to a rules file that tells the parser which objects are which.')
