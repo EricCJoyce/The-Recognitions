@@ -935,6 +935,7 @@ class Enactment():
 					fh.write('0.0\t0.0\t0.0\t')
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+			fh.write('\n')
 
 			if self.verbose:
 				if int(round(float(ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
