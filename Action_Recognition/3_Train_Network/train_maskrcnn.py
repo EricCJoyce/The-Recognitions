@@ -67,12 +67,32 @@ class BookmarkPhase1Callback(keras.callbacks.Callback):
 		fh.write(str(epoch) + '\t' + str(logs['loss']) + '\t' + str(logs['val_loss']))
 		fh.close()
 
+		loss = []													#  Prepare to collect history for intermediate graph.
+		val_loss = []
+
 		shutil.copy('bookmark_ph1.log', 'bookmark_ph1.backup.log')	#  The log is for plotting after training: track the curve.
+
 		fh = open('bookmark_ph1.log', 'w')
+		linectr = 0
 		for line in lines:
 			fh.write(line)
+			if linectr > 0:
+				arr = line.strip().split('\t')
+				loss.append(float(arr[1]))							#  At the same time, read them into our graphable lists.
+				val_loss.append(float(arr[2]))
+			linectr += 1
 		fh.write(str(epoch) + '\t' + str(logs['loss']) + '\t' + str(logs['val_loss']) + '\n')
+		loss.append(logs['loss'])									#  Add these to the graphable lists.
+		val_loss.append(logs['val_loss'])
 		fh.close()
+																	#  Graph the intermediate loss.
+		plt.plot(range(len(loss)), loss, 'bo', label='Training loss')
+		plt.plot(range(len(loss)), val_loss, 'r', label='Validation loss')
+		plt.xlabel('Epochs')
+		plt.ylabel('Loss')
+		plt.legend()
+		plt.savefig('latest-phase1.png')
+		plt.clf()													#  Clear the graph.
 																	#  Save the latest model.
 		self.model.save_weights('maskrcnn.ph1.' + str(epoch) + '.h5')
 
@@ -140,15 +160,34 @@ class BookmarkPhase2Callback(keras.callbacks.Callback):
 		fh.write(str(epoch) + '\t' + str(logs['loss']) + '\t' + str(logs['val_loss']))
 		fh.close()
 
+		loss = []													#  Prepare to collect history for intermediate graph.
+		val_loss = []
+
 		shutil.copy('bookmark_ph2.log', 'bookmark_ph2.backup.log')	#  The log is for plotting after training: track the curve.
 
 		fh = open('bookmark_ph2.log', 'w')
+		linectr = 0
 		for line in lines:
 			fh.write(line)
+			if linectr > 0:
+				arr = line.strip().split('\t')
+				loss.append(float(arr[1]))							#  At the same time, read them into our graphable lists.
+				val_loss.append(float(arr[2]))
+			linectr += 1
 		fh.write(str(epoch) + '\t' + str(logs['loss']) + '\t' + str(logs['val_loss']) + '\n')
+		loss.append(logs['loss'])									#  Add these to the graphable lists.
+		val_loss.append(logs['val_loss'])
 		fh.close()
 																	#  Save the latest model.
 		self.model.save_weights('maskrcnn.ph2.' + str(epoch) + '.h5')
+																	#  Graph the intermediate loss.
+		plt.plot(range(len(loss)), loss, 'bo', label='Training loss')
+		plt.plot(range(len(loss)), val_loss, 'r', label='Validation loss')
+		plt.xlabel('Epochs')
+		plt.ylabel('Loss')
+		plt.legend()
+		plt.savefig('latest-phase2.png')
+		plt.clf()													#  Clear the graph.
 
 		return
 
@@ -218,6 +257,13 @@ def main():
 
 	if params['verbose']:											#  Skip a line; clear all that TensorFlow barf.
 		print('')
+
+	fh = open('mask_rcnn_factual.recognizable.objects', 'w')		#  Log the objects this succession of networks will learn.
+	fh.write('#  Created for Mask-RCNN training session started at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+	fh.write('#  The accompanying succession of networks can recognize the following objects:\n')
+	for object_name in classes:
+		fh.write(object_name + '\n')
+	fh.close()
 																	#  Find all data for all classes for all enactments.
 	train, valid = load_all_learnable_instances(classes, params)	#  'train' = key:class-name ==> val:[ (enactment, imgfile, maskpath), ... ]
 																	#  'valid' = key:class-name ==> val:[ (enactment, imgfile, maskpath), ... ]
