@@ -333,12 +333,18 @@ class Database():
 				self.protected[(label, i)] = True
 		return
 
-	def keep_all(self, label):
+	#  If no label is given, then restore everything.
+	def keep_all(self, label=None):
 		protected = {}
-		for k, v in self.Xy.items():
-			if k == label:
+		if label is None:
+			for k, v in self.Xy.items():
 				for ctr in range(0, len(v['actions'])):
 					protected[ (label, ctr) ] = True
+		else:
+			for k, v in self.Xy.items():
+				if k == label:
+					for ctr in range(0, len(v['actions'])):
+						protected[ (label, ctr) ] = True
 		self.protected = protected
 		return
 
@@ -351,11 +357,13 @@ class Database():
 				del self.protected[(label, i)]
 		return
 
-	def drop_all(self, label):
+	#  If no label is given, then drop everything.
+	def drop_all(self, label=None):
 		protected = {}
-		for k, v in self.protected.items():
-			if k[0] != label:
-				protected[k] = v
+		if label is not None:
+			for k, v in self.protected.items():
+				if k[0] != label:
+					protected[k] = v
 		self.protected = protected
 		return
 
