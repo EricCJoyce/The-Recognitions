@@ -1,6 +1,6 @@
 import cv2
 import datetime
-import DTW															#  DTW.cpython-35m-x86_64-linux-gnu.so
+import DTW															#  DTW.cpython-36m-x86_64-linux-gnu.so
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -606,7 +606,7 @@ class Classifier():
 			metadata[label] = {}
 
 		timing = {}
-		timing['dtw-classification'] = []							#  This is a coarser grain: time each classification process.
+		timing['dtw-classification'] = []							#  Prepare to collect times for calling the DTW backend.
 		timing['test-cutoff-conditions'] = []						#  Prepare to collect times for calling test_cutoff_conditions().
 		timing['compute-confidence'] = []							#  Prepare to collect times for computing confidence scores.
 		timing['isotonic-lookup'] = []								#  Prepare to collect times for bucket-search.
@@ -1041,7 +1041,7 @@ class Classifier():
 	#  Look for:
 	#    - total													Total time taken.
 	#    - load-enactment											Times taken to load enactments.
-	#    - dtw-classification										This is a coarser grain: time each classification process.
+	#    - dtw-classification										Times taken to make a single call to the DTW backend.
 	#    - test-cutoff-conditions									Times taken to test cutoff conditions.
 	#    - compute-confidence										Times taken to compute confidence scores.
 	#    - isotonic-lookup											Times taken to look up probabilities from computed confidence scores.
@@ -1080,8 +1080,8 @@ class Classifier():
 			fh.write('Std.dev enactment-loading time\tN/A\n\n')
 																	#  Report DTW-classification times.
 		if 'dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0:
-			fh.write('Avg. DTW time (per query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.sum(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
-			fh.write('Std.dev DTW time (per query pair)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
+			fh.write('Avg. DTW time (per template-query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.sum(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev DTW time (per template-query pair)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
 			accounted_time += np.sum(self.timing['dtw-classification'])
 		else:
 			fh.write('Avg. DTW time (per query pair)\tN/A\n')
@@ -1229,8 +1229,8 @@ In the interpreter:
   atemporal.commit()
   atemporal.load_db('10f.db')
 
-Of this:
-  atemporal = AtemporalClassifier(window_size=10, stride=2, db_file='10f.db', test=['Enactment11', 'Enactment12'], hand_schema='strong-hand', props_coeff=60.0, verbose=True, render=True
+Or this:
+  atemporal = AtemporalClassifier(window_size=10, stride=2, db_file='10f.db', test=['Enactment11', 'Enactment12'], hand_schema='strong-hand', props_coeff=30.0, verbose=True, render=True)
   atemporal.relabel_allocations_from_file('relabels.txt')
   atemporal.commit()
 
