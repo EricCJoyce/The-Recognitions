@@ -42,6 +42,8 @@ class Database():
 		self.original_counts = {}
 		self.protected = {}											#  key: (label, index) ==> val: True
 
+		self.protected_vector = {}									#  key: object-label ==> val: True
+
 	#  Parse the ProcessedEnactments allocated to this database.
 	def commit(self):
 		recognizable_objects_alignment = {}
@@ -58,6 +60,8 @@ class Database():
 			print('ERROR: The given enactments differ in their vector lengths and are therefore incompatible.')
 			return
 		self.recognizable_objects = [x for x in recognizable_objects_alignment.keys()][0]
+		for recognizable_object in self.recognizable_objects:		#  Initially mark all recognizable objects as included.
+			self.protected_vector[recognizable_object] = True
 		self.vector_length = [x for x in vector_length_alignment.keys()][0]
 
 		self.Xy = {}												#  Putative training set, keyed by labels.
@@ -138,9 +142,10 @@ class Database():
 		fh.write('#  ACTIONS:\n')
 		fh.write('#    ' + '\t'.join(sorted([x for x in self.Xy.keys()])) + '\n')
 		fh.write('#  RECOGNIZABLE OBJECTS:\n')
-		fh.write('#    ' + '\t'.join(self.recognizable_objects) + '\n')
+		fh.write('#    ' + '\t'.join( [x for x in self.recognizable_objects if self.protected_vector[x]] ) + '\n')
 		fh.write('#  VECTOR LENGTH:\n')
-		fh.write('#    ' + str(self.vector_length) + '\n')
+		fh.write('#    ' + str(12 + len([x for x in self.recognizable_objects if self.protected_vector[x] == True])) + '\n')
+		#fh.write('#    ' + str(self.vector_length) + '\n')
 		fh.write('#  SNIPPET SIZE:\n')
 		fh.write('#    ' + str(self.snippet_size) + '\n')
 		fh.write('#  STRIDE:\n')
@@ -161,7 +166,13 @@ class Database():
 					                        actions['actions'][ctr][4]      + '\n')
 					sequence = self.vectors(action)
 					for vector in sequence:
-						fh.write('\t' + '\t'.join([str(x) for x in vector]) + '\n')
+						vec = list(vector[:12])						#  Always include the hands.
+						props_subvec = list(vector[12:])			#  Include props' signals if they're marked for inclusion.
+						for i in range(0, len(self.recognizable_objects)):
+							if self.protected_vector[ self.recognizable_objects[i] ] == True:
+								vec.append( props_subvec[i] )
+
+						fh.write('\t' + '\t'.join([str(x) for x in vec]) + '\n')
 				ctr += 1
 		fh.close()
 		return
@@ -324,6 +335,9 @@ class Database():
 			print('    Reduction  ' + "{:.2f}".format(float(self.original_counts[label] - len(reduced_set)) / float(self.original_counts[label]) * 100.0) +  '%')
 		return
 
+	#################################################################
+	#  Mark snippets for inclusion or omission.                     #
+	#################################################################
 	#  Mark the index-th snippet under 'label' as one to keep in the final output.
 	def keep(self, label, index):
 		if isinstance(index, int):
@@ -377,6 +391,15 @@ class Database():
 		for ctr in range(lim, len(indices)):
 			key = (label, ctr)
 			del self.protected[key]
+		return
+
+	#################################################################
+	#  Remove columns from all snippets.                            #
+	#################################################################
+	#  Really just marks the given 'object_label' for omission from outputs and vector means.
+	def remove_column(self, object_label):
+		if object_label in self.recognizable_objects:
+			self.protected_vector[object_label] = False
 		return
 
 	def relabel(self, old_label, new_label):
@@ -499,10 +522,17 @@ class Database():
 		sequence = self.vectors(snippet)
 		magnitudes = []
 		for vector in sequence:
+			props_vec = [props_coeff * vector[12:][i] for i in range(0, len(self.recognizable_objects)) \
+			                                           if self.protected_vector[ self.recognizable_objects[i] ] == True]
+			#vec = [hands_coeff * x for x in vector[:3]]  + \
+			#      [hands_coeff * x for x in vector[6:9]] + \
+			#      [props_coeff * x for x in vector[12:]]
 			vec = [hands_coeff * x for x in vector[:3]]  + \
 			      [hands_coeff * x for x in vector[6:9]] + \
-			      [props_coeff * x for x in vector[12:]]
+			      props_vec
+
 			magnitudes.append( np.linalg.norm(vec) )
+
 		return np.mean(magnitudes)
 
 	#  For each vector in the given 'snippet', compute the magnitude of the left-hand subvector only, excluding the one-hot-encoding.
@@ -537,7 +567,9 @@ class Database():
 		sequence = self.vectors(snippet)
 		magnitudes = []
 		for vector in sequence:
-			vec = [props_coeff * x for x in vector[12:]]
+			vec = [props_coeff * vector[12:][i] for i in range(0, len(self.recognizable_objects)) \
+			                                     if self.protected_vector[ self.recognizable_objects[i] ] == True]
+			#vec = [props_coeff * x for x in vector[12:]]
 			magnitudes.append( np.linalg.norm(vec) )
 		return np.mean(magnitudes)
 
@@ -593,7 +625,7 @@ class Database():
 					img_filename = arr[1]
 					obj_type = arr[3]
 					mask_path = arr[7]
-					if img_filename == frame and obj_type not in ['LeftHand', 'RightHand']:
+					if img_filename == frame and obj_type not in ['LeftHand', 'RightHand'] and self.protected_vector[ obj_type ] == True:
 						mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
 						mask[mask > 1] = 1							#  All values greater than 1 become 1
 																	#  Extrude to three channels
