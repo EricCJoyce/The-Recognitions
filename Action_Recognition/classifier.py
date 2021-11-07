@@ -1,6 +1,7 @@
 import cv2
 import datetime
 import DTW															#  DTW.cpython-36m-x86_64-linux-gnu.so
+from enactment import Enactment, Gaussian
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -10,7 +11,6 @@ from sklearn.neighbors import KDTree
 from sklearn.neighbors import (KNeighborsClassifier, NeighborhoodComponentsAnalysis)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-import subprocess													#  Call ./align
 import sys
 import time
 
@@ -385,6 +385,12 @@ class Classifier():
 		self.y_train = []											#  To become a list of ground-truth labels (strings).
 		self.recognizable_objects = []								#  Filled in by the derived classes,
 																	#  either from Enactments (atemporal) or a database (temporal).
+		self.vector_drop_map = []									#  List of Booleans will have as many entries as self.recognizable_objects.
+																	#  If an object's corresponding element in this list is False,
+																	#  then omit that column from ALL vectors.
+																	#  This parent class only has X_train, so clearing out columns in the
+																	#  training set happens here. Child classes must each handle clearing columns
+																	#  from their respective X_test lists themselves.
 		self.timing = {}											#  Really only used by the derived classes.
 
 		self.epsilon = 0.000001										#  Prevent divisions by zero.
@@ -440,7 +446,9 @@ class Classifier():
 					reading_recognizable_objects = True
 				elif reading_recognizable_objects:
 					self.recognizable_objects = line[1:].strip().split('\t')
-					self.robject_colors = {}						#  (Re)set
+																	#  Initialize all recognizable objects to true--that is, not omitted.
+					self.vector_drop_map = [True for x in self.recognizable_objects]
+					self.robject_colors = {}						#  (Re)set.
 					for robject in self.recognizable_objects:		#  Initialize with random colors as soon as we know our objects.
 						self.robject_colors[robject] = (np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256))
 					reading_recognizable_objects = False
@@ -587,7 +595,6 @@ class Classifier():
 	#    - Confidences over all classes
 	#    - Probability distribution over all classes
 	#    - Metadata (nearest neighbor indices, alignment sequences) over all classes
-	#    - Timing
 
 	#  Use the C-extension DTW module.
 	def classify(self, query):
@@ -605,30 +612,17 @@ class Classifier():
 		for label in self.labels('both'):							#  Include labels the classifier may not know; these will simply be empty.
 			metadata[label] = {}
 
-		timing = {}
-		timing['dtw-classification'] = []							#  Prepare to collect times for calling the DTW backend.
-		timing['test-cutoff-conditions'] = []						#  Prepare to collect times for calling test_cutoff_conditions().
-		timing['compute-confidence'] = []							#  Prepare to collect times for computing confidence scores.
-		timing['isotonic-lookup'] = []								#  Prepare to collect times for bucket-search.
-
 		db_index = 0												#  Index into self.X_train let us know which sample best matches the query.
 		for template in self.X_train:								#  For every training-set sample, 'template'...
 			template_label = self.y_train[db_index]					#  Save the true label for this template sequence.
 
 			conditions_passed = False
 			if self.conditions is not None:
-				t1_start = time.process_time()						#  Start timer.
 				conditions_passed = self.cutoff_conditions(template_label, query_seq)
-				t1_stop = time.process_time()						#  Stop timer.
-				timing['test-cutoff-conditions'].append(t1_stop - t1_start)
 
 			if self.conditions is None or conditions_passed:		#  Either we have no conditions, or our conditions give us reason to run DTW.
-				t1_start = time.process_time()						#  Start timer.
 																	#  What is the distance between this query and this template?
 				dist, _, query_indices, template_indices = DTW.DTW(query, template)
-
-				t1_stop = time.process_time()						#  Stop timer.
-				timing['dtw-classification'].append(t1_stop - t1_start)
 
 				if least_cost > dist:								#  A preferable match over all!
 					least_cost = dist								#  Save the cost.
@@ -642,19 +636,14 @@ class Classifier():
 					metadata[template_label]['query-indices'] = query_indices
 
 			db_index += 1
-
-		t1_start = time.process_time()								#  Start timer.
 																	#  Get a dictionary of key:label ==> val:confidence.
 		confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
-		t1_stop = time.process_time()								#  Stop timer.
-		timing['compute-confidence'].append(t1_stop - t1_start)
 
 		probabilities = {}											#  If we apply isotonic mapping, then this is a different measure than confidence.
 		for label in self.labels('train'):
 			probabilities[label] = 0.0
 
 		if self.isotonic_map is not None:							#  We have an isotonic mapping to apply.
-			t1_start = time.process_time()							#  Start timer.
 			for label, confidence in confidences.items():
 				brackets = sorted(self.isotonic_map.keys())
 				i = 0
@@ -662,13 +651,11 @@ class Classifier():
 					i += 1
 
 				probabilities[label] = self.isotonic_map[ brackets[i] ]
-			t1_stop = time.process_time()							#  Stop timer.
-			timing['isotonic-lookup'].append(t1_stop - t1_start)
 		else:														#  No mapping; probability = confidence, which is sloppy, but... meh.
 			for label, confidence in confidences.items():
 				probabilities[label] = confidence
 
-		return matching_costs, confidences, probabilities, metadata, timing
+		return matching_costs, confidences, probabilities, metadata
 
 	#  Does the given 'query_seq' present enough support for us to even consider attempting to match this query
 	#  with templates exemplifying 'candidate_label'?
@@ -837,6 +824,51 @@ class Classifier():
 
 		return tuple(vec)
 
+	#  Remove the index-th element from all vectors in self.X_train.
+	#  Note that 'index' only treats the props-subvector.
+	#  In other words, dropping index 0 will drop the first recognizable object--NOT the left-hand's X component!
+	def drop_vector_element(self, index):
+		assert isinstance(index, int) or isinstance(index, list), \
+		  'Argument \'index\' passed to Classifier.drop_vector_element() must be either a single integer or a list of integers.'
+
+		if isinstance(index, int):									#  Cut a single index from everything in self.X_train.
+			assert index < len(self.recognizable_objects), \
+			  'Argument \'index\' passed to Classifier.drop_vector_element() must be an integer less than the number of recognizable objects.'
+
+			X_train = []
+			for sequence in self.X_train:
+				seq = []
+				for vector in sequence:
+					vec = list(vector[:12])							#  Save the intact hands-subvector.
+					vec += [vector[i + 12] for i in range(0, len(self.recognizable_objects)) if i != index]
+					seq.append( tuple(vec) )						#  Return to tuple.
+				X_train.append( seq )								#  Return mutilated snippet to training set.
+
+			self.vector_length -= 1									#  Decrement the vector length.
+			self.vector_drop_map[index] = False						#  Mark the index-th element for omission in the test set, too!
+			self.X_train = X_train
+
+		elif isinstance(index, list):								#  Cut all given indices from everything in self.X_train.
+																	#  Accept all or nothing.
+			assert len([x for x in index if x < len(self.recognizable_objects)]) == len(index), \
+			  'Argument \'index\' passed to Classifier.drop_vector_element() must be a list of integers, all less than the number of recognizable objects.'
+
+			X_train = []
+			for sequence in self.X_train:
+				seq = []
+				for vector in sequence:
+					vec = list(vector[:12])							#  Save the intact hands-subvector.
+					vec += [vector[i + 12] for i in range(0, len(self.recognizable_objects)) if i not in index]
+					seq.append( tuple(vec) )						#  Return to tuple.
+				X_train.append( seq )								#  Return mutilated snippet to training set.
+
+			self.vector_length -= len(index)						#  Shorten the vector length.
+			for i in index:
+				self.vector_drop_map[i] = False						#  Mark all indices for omission in the test set, too!
+			self.X_train = X_train
+
+		return
+
 	#################################################################
 	#  Rendering: (common to both derived classes.)                 #
 	#################################################################
@@ -884,14 +916,14 @@ class Classifier():
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
 		num_classes = self.num_labels()
-		labels = self.labels('both')
+		labels = self.labels()
 
 		M = self.confusion_matrix(predictions_truths)
 
 		fh = open('confusion-matrix-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier confusion matrix made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
-		fh.write('\t' + '\t'.join(labels) + '\n')					#  Write the column headers
-		for i in range(0, len(labels)):
+		fh.write('\t' + '\t'.join(labels) + '\n')					#  Write the column headers.
+		for i in range(0, num_classes):
 			fh.write(labels[i] + '\t' + '\t'.join([str(x) for x in M[i]]) + '\n')
 		fh.close()
 
@@ -1041,16 +1073,17 @@ class Classifier():
 	#  Look for:
 	#    - total													Total time taken.
 	#    - load-enactment											Times taken to load enactments.
+	#    - image-open												Times taken to read images from disk.
+	#    - object-detection											Times taken to perform object detection on a single frame.
+	#    - centroid-computation										Times taken to compute a 3D centroid from a detection bounding box.
 	#    - dtw-classification										Times taken to make a single call to the DTW backend.
-	#    - test-cutoff-conditions									Times taken to test cutoff conditions.
-	#    - compute-confidence										Times taken to compute confidence scores.
-	#    - isotonic-lookup											Times taken to look up probabilities from computed confidence scores.
 	#    - make-tentative-prediction								Times taken to compute the least cost match.
 	#    - sort-confidences											Times taken to put confidence scores in label-order.
 	#    - sort-probabilities										Times taken to put probabilities in label-order.
 	#    - push-temporal-buffer										Times taken to update temporal-buffer.
 	#    - temporal-smoothing										Times taken to perform temporal smoothing.
 	#    - make-temporally-smooth-decision							Times taken to make a final decision, given temporally-smoothed probabilities.
+	#    - per-frame                                                Time taken per frame of video
 	#    - render-side-by-side										Times taken to produce a video showing the query and best-matched template.
 	#    - render-annotated-source									Times taken to produce that annotated source image.
 	#    - render-rolling-buffer									Times taken to produce the rolling buffer seismograph.
@@ -1078,38 +1111,38 @@ class Classifier():
 		else:
 			fh.write('Avg. enactment-loading time\tN/A\n')
 			fh.write('Std.dev enactment-loading time\tN/A\n\n')
+																	#  Report image-opening times.
+		if 'image-open' in self.timing and len(self.timing['image-open']) > 0:
+			fh.write('Avg. image-loading time\t' + str(np.mean(self.timing['image-open'])) + '\t' + str(np.sum(self.timing['image-open']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev image-loading time\t' + str(np.std(self.timing['image-open'])) + '\n\n')
+			accounted_time += np.sum(self.timing['image-open'])
+		else:
+			fh.write('Avg. image-loading time\tN/A\n')
+			fh.write('Std.dev image-loading time\tN/A\n\n')
+																	#  Report object detection times.
+		if 'object-detection' in self.timing and len(self.timing['object-detection']) > 0:
+			fh.write('Avg. object-detection time\t' + str(np.mean(self.timing['object-detection'])) + '\t' + str(np.sum(self.timing['object-detection']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev object-detection time\t' + str(np.std(self.timing['object-detection'])) + '\n\n')
+			accounted_time += np.sum(self.timing['object-detection'])
+		else:
+			fh.write('Avg. object-detection time\tN/A\n')
+			fh.write('Std.dev object-detection time\tN/A\n\n')
+																	#  Report centroid computation times.
+		if 'centroid-computation' in self.timing and len(self.timing['centroid-computation']) > 0:
+			fh.write('Avg. centroid-computation time\t' + str(np.mean(self.timing['centroid-computation'])) + '\t' + str(np.sum(self.timing['centroid-computation']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev centroid-computation time\t' + str(np.std(self.timing['centroid-computation'])) + '\n\n')
+			accounted_time += np.sum(self.timing['centroid-computation'])
+		else:
+			fh.write('Avg. centroid-computation time\tN/A\n')
+			fh.write('Std.dev centroid-computation time\tN/A\n\n')
 																	#  Report DTW-classification times.
 		if 'dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0:
-			fh.write('Avg. DTW time (per template-query pair)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.sum(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
-			fh.write('Std.dev DTW time (per template-query pair)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
+			fh.write('Avg. DTW time (per query)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.sum(self.timing['dtw-classification']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev DTW time (per query)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
 			accounted_time += np.sum(self.timing['dtw-classification'])
 		else:
-			fh.write('Avg. DTW time (per query pair)\tN/A\n')
-			fh.write('Std.dev DTW time (per query pair)\tN/A\n\n')
-																	#  Report cutoff-condition testing times.
-		if 'test-cutoff-conditions' in self.timing and len(self.timing['test-cutoff-conditions']) > 0:
-			fh.write('Avg. cutoff-condition testing time\t' + str(np.mean(self.timing['test-cutoff-conditions'])) + '\t' + str(np.sum(self.timing['test-cutoff-conditions']) / self.timing['total'] * 100.0) + '%\n')
-			fh.write('Std.dev cutoff-condition testing time\t' + str(np.std(self.timing['test-cutoff-conditions'])) + '\n\n')
-			accounted_time += np.sum(self.timing['test-cutoff-conditions'])
-		else:
-			fh.write('Avg. cutoff-condition testing time\tN/A\n')
-			fh.write('Std.dev cutoff-condition testing time\tN/A\n\n')
-																	#  Report cutoff-condition testing times.
-		if 'compute-confidence' in self.timing and len(self.timing['compute-confidence']) > 0:
-			fh.write('Avg. confidence computation time\t' + str(np.mean(self.timing['compute-confidence'])) + '\t' + str(np.sum(self.timing['compute-confidence']) / self.timing['total'] * 100.0) + '%\n')
-			fh.write('Std.dev confidence computation time\t' + str(np.std(self.timing['compute-confidence'])) + '\n\n')
-			accounted_time += np.sum(self.timing['compute-confidence'])
-		else:
-			fh.write('Avg. confidence computation time\tN/A\n')
-			fh.write('Std.dev confidence computation time\tN/A\n\n')
-																	#  Report isotonic lookup times.
-		if 'isotonic-lookup' in self.timing and len(self.timing['isotonic-lookup']) > 0:
-			fh.write('Avg. probability lookup time\t' + str(np.mean(self.timing['isotonic-lookup'])) + '\t' + str(np.sum(self.timing['isotonic-lookup']) / self.timing['total'] * 100.0) + '%\n')
-			fh.write('Std.dev probability lookup time\t' + str(np.std(self.timing['isotonic-lookup'])) + '\n\n')
-			accounted_time += np.sum(self.timing['isotonic-lookup'])
-		else:
-			fh.write('Avg. probability lookup time\tN/A\n')
-			fh.write('Std.dev probability lookup time\tN/A\n\n')
+			fh.write('Avg. DTW time (per query)\tN/A\n')
+			fh.write('Std.dev DTW time (per query)\tN/A\n\n')
 																	#  Report least-distance-finding times.
 		if 'make-tentative-prediction' in self.timing and len(self.timing['make-tentative-prediction']) > 0:
 			fh.write('Avg. tentative decision-making time\t' + str(np.mean(self.timing['make-tentative-prediction'])) + '\t' + str(np.sum(self.timing['make-tentative-prediction']) / self.timing['total'] * 100.0) + '%\n')
@@ -1158,6 +1191,13 @@ class Classifier():
 		else:
 			fh.write('Avg. temporally-smoothed classification time\tN/A\n')
 			fh.write('Std.dev temporally-smoothed classification time\tN/A\n\n')
+																	#  Report per-frame time.
+		if 'per-frame' in self.timing and len(self.timing['per-frame']) > 0:
+			fh.write('Avg. per-frame time\t' + str(np.mean(self.timing['per-frame'])) + '\t' + str(np.sum(self.timing['per-frame']) / self.timing['total'] * 100.0) + '%\n')
+			fh.write('Std.dev per-frame time\t' + str(np.std(self.timing['per-frame'])) + '\n\n')
+		else:
+			fh.write('Avg. per-frame time\tN/A\n')
+			fh.write('Std.dev per-frame time\tN/A\n\n')
 																	#  Report side-by-side rendering times.
 		if 'render-side-by-side' in self.timing and len(self.timing['render-side-by-side']) > 0:
 			fh.write('Avg. side-by-side video rendering time\t' + str(np.mean(self.timing['render-side-by-side'])) + '\t' + str(np.sum(self.timing['render-side-by-side']) / self.timing['total'] * 100.0) + '%\n')
@@ -1402,12 +1442,11 @@ class AtemporalClassifier(Classifier):
 		for i in range(0, len(self.y_test)):
 			query = self.X_test[i]									#  Bookmark the query and ground-truth label
 			ground_truth_label = self.y_test[i]
+			t1_start = time.process_time()							#  Start timer.
 																	#  Call the parent class's core matching engine.
-			matching_costs, confidences, probabilities, metadata, timing = super(AtemporalClassifier, self).classify(query)
-			self.timing['dtw-classification'] += timing['dtw-classification']
-			self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-			self.timing['compute-confidence'] += timing['compute-confidence']
-			self.timing['isotonic-lookup'] += timing['isotonic-lookup']
+			matching_costs, confidences, probabilities, metadata = super(AtemporalClassifier, self).classify(query)
+			t1_stop = time.process_time()							#  Stop timer.
+			self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 			t1_start = time.process_time()							#  Start timer.
 			least_cost = float('inf')
@@ -1628,6 +1667,52 @@ class AtemporalClassifier(Classifier):
 		       'ERROR: The object-detection sources for the enactments given to AtemporalClassifier() do not align.'
 		for key in object_detection_source_alignment.keys():
 			self.object_detection_source = key
+
+		return
+
+	#  This method in the parent class only handles X_train.
+	#  This method calls the parent method and then separately handles clearing columns from X_test.
+	def drop_vector_element(self, index):
+		super(AtemporalClassifier, self).drop_vector_element(index)	#  The parent class's method treats the training set.
+																	#  This child class treats the test set itself.
+		assert isinstance(index, int) or isinstance(index, list), \
+		  'Argument \'index\' passed to AtemporalClassifier.drop_vector_element() must be either a single integer or a list of integers.'
+
+		if isinstance(index, int):									#  Cut a single index from everything in self.X_train.
+			assert index < len(self.recognizable_objects), \
+			  'Argument \'index\' passed to AtemporalClassifier.drop_vector_element() must be an integer less than the number of recognizable objects.'
+
+			X_test = []
+			for sequence in self.X_test:
+				seq = []
+				for vector in sequence:
+					vec = list(vector[:12])							#  Save the intact hands-subvector.
+					vec += [vector[i + 12] for i in range(0, len(self.recognizable_objects)) if i != index]
+					seq.append( tuple(vec) )						#  Return to tuple.
+				X_test.append( seq )								#  Return mutilated snippet to training set.
+
+			self.vector_length -= 1									#  Decrement the vector length.
+			self.vector_drop_map[index] = False						#  Mark the index-th element for omission in the test set, too!
+			self.X_test = X_test
+
+		elif isinstance(index, list):								#  Cut all given indices from everything in self.X_train.
+																	#  Accept all or nothing.
+			assert len([x for x in index if x < len(self.recognizable_objects)]) == len(index), \
+			  'Argument \'index\' passed to AtemporalClassifier.drop_vector_element() must be a list of integers, all less than the number of recognizable objects.'
+
+			X_test = []
+			for sequence in self.X_test:
+				seq = []
+				for vector in sequence:
+					vec = list(vector[:12])							#  Save the intact hands-subvector.
+					vec += [vector[i + 12] for i in range(0, len(self.recognizable_objects)) if i not in index]
+					seq.append( tuple(vec) )						#  Return to tuple.
+				X_test.append( seq )								#  Return mutilated snippet to training set.
+
+			self.vector_length -= len(index)						#  Shorten the vector length.
+			for i in index:
+				self.vector_drop_map[i] = False						#  Mark all indices for omission in the test set, too!
+			self.X_test = X_test
 
 		return
 
@@ -2092,9 +2177,6 @@ class AtemporalClassifier(Classifier):
 		self.timing = {}											#  (Re)set.
 		self.timing['total'] = 0									#  Measure total time taken
 		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
-		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
-		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
-		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
 		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
 		self.timing['make-decision'] = []							#  Prepare to collect final decision-making runtimes.
 		if self.render:
@@ -2352,6 +2434,25 @@ class TemporalClassifier(Classifier):
 		else:
 			self.relabelings = {}									#  key: old label ==> val: new label
 
+		if 'gaussian' in kwargs:									#  Were we given a Gaussian object or a 3-tuple of 3-tuples?
+			assert isinstance(kwargs['gaussian'], Gaussian) or (isinstance(kwargs['gaussian'], tuple) and len(kwargs['gaussian']) == 3), \
+			  'Argument \'gaussian\' passed to TemporalClassifier must be either a Gaussian object or a 3-tuple of 3-tuples of floats: (mu for the gaze, sigma for the gaze, sigma for the hands).'
+			if isinstance(kwargs['gaussian'], Gaussian):
+				self.gaussian = kwargs['gaussian']
+			else:
+				self.gaussian = Gaussian(mu=kwargs['gaussian'][0], \
+				                         sigma_gaze=kwargs['gaussian'][1], \
+				                         sigma_hand=kwargs['gaussian'][2])
+		else:
+			self.gaussian = Gaussian(mu=(0.0, 0.0, 0.0), sigma_gaze=(2.0, 1.5, 3.0), sigma_hand=(0.5, 0.5, 0.5))
+
+		if 'min_bbox' in kwargs:									#  Were we given a minimum bounding box area for recognized objects?
+			assert isinstance(kwargs['min_bbox'], int) and kwargs['min_bbox'] > 0, \
+			  'Argument \'\' passed to TemporalClassifier must be an integer greater than 0.'
+			self.minimum_bbox_area = kwargs['min_bbox']
+		else:
+			self.minimum_bbox_area = 400
+
 		if 'render_modes' in kwargs:								#  Were we given render modes?
 			assert isinstance(kwargs['render_modes'], list), \
 			       'Argument \'render_modes\' passed to TemporalClassifier must be a list of zero or more strings in {rolling-buffer, confidence, probabilities, smoothed}.'
@@ -2453,7 +2554,7 @@ class TemporalClassifier(Classifier):
 	#  And, yes, this is "simulated real time," but if we know we won't save the results of a test, then why perform that test?
 	#  This is what the 'skip_unfair' parameter is for: check the accumulated ground-truth labels first BEFORE running DTW.
 	#  Save time; run more tests.
-	def classify(self, skip_unfair=True):
+	def simulated_classify(self, skip_unfair=True):
 		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
 
 		classification_stats = {}
@@ -2492,6 +2593,7 @@ class TemporalClassifier(Classifier):
 			ground_truth_buffer = []								#  Can include "*" or "nothing" labels.
 			time_stamp_buffer = []
 			frame_path_buffer = []
+
 			t1_start = time.process_time()							#  Start timer.
 			fh = open(enactment_input + '.enactment', 'r')			#  Read in the input-enactment.
 			lines = fh.readlines()
@@ -2506,6 +2608,12 @@ class TemporalClassifier(Classifier):
 
 					if self.hand_schema == 'strong-hand':			#  Apply hand-schema (if applicable.)
 						vector = self.strong_hand_encode(vector)
+
+					vec = list(vector[:12])							#  Apply vector drop-outs (where applicable.)
+					for i in range(0, len(self.vector_drop_map)):
+						if self.vector_drop_map[i] == True:
+							vec.append(vector[i + 12])
+					vector = tuple(vec)
 																	#  Apply coefficients (if applicable.)
 					vector_buffer.append( self.apply_vector_coefficients(vector) )
 
@@ -2551,7 +2659,7 @@ class TemporalClassifier(Classifier):
 			#########################################################
 			#  Pseudo-boot-up is over. March through the buffer.    #
 			#########################################################
-			for frame_ctr in range(0, len(vector_buffer)):			#  March through vector_buffer.
+			for frame_ctr in range(0, num):							#  March through vector_buffer.
 				self.push_rolling( vector_buffer[frame_ctr] )		#  Push vector to rolling buffer.
 																	#  Push G.T. label to rolling G.T. buffer.
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
@@ -2570,12 +2678,11 @@ class TemporalClassifier(Classifier):
 					prediction = None
 
 					if fair or not skip_unfair:
+						t1_start = time.process_time()				#  Start timer.
 																	#  Call the parent class's core matching engine.
-						matching_costs, confidences, probabilities, metadata, timing = super(TemporalClassifier, self).classify(self.rolling_buffer)
-						self.timing['dtw-classification'] += timing['dtw-classification']
-						self.timing['test-cutoff-conditions'] += timing['test-cutoff-conditions']
-						self.timing['compute-confidence'] += timing['compute-confidence']
-						self.timing['isotonic-lookup'] += timing['isotonic-lookup']
+						matching_costs, confidences, probabilities, metadata = super(TemporalClassifier, self).classify(self.rolling_buffer)
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 					#################################################
 					#  matching_costs: key: label ==> val: cost     #
@@ -2626,7 +2733,7 @@ class TemporalClassifier(Classifier):
 				#  Smooth the contents of the temporal buffer and   #
 				#  make a prediction (or abstain from predicting).  #
 				#####################################################
-				if fair or not skip_unfair:
+				if (fair or not skip_unfair) and len([x for x in self.temporal_buffer if x is not None]) > 0:
 					t1_start = time.process_time()					#  Start timer.
 					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
 					t1_stop = time.process_time()					#  Stop timer.
@@ -2731,6 +2838,294 @@ class TemporalClassifier(Classifier):
 		t0_stop = time.process_time()
 		self.timing['total'] = t0_stop - t0_start
 		return classification_stats
+
+	#  THIS is the really real real-time method.
+	def classify(self, model):
+		classification_stats = {}
+		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
+
+		flip = np.array([[-1.0,  0.0, 0.0], \
+		                 [ 0.0, -1.0, 0.0], \
+		                 [ 0.0,  0.0, 1.0]], dtype='float64')		#  Build the flip matrix
+
+		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
+			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
+			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
+			classification_stats[label]['fp']      = 0				#                     key:fn      ==> val:false negative count
+			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instance in training set}
+			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
+
+		self.initialize_timers()									#  (Re)set.
+
+		t0_start = time.process_time()								#  Start timer.
+		for enactment_input in self.enactment_inputs:				#  Treat each input enactment as a separate slice of time.
+			e = Enactment(enactment_input, enactment_file=enactment_input + '.enactment')
+
+			#########################################################  THIS IS A CHEAT!
+			e.load_parsed_objects()
+			#########################################################  JUST TEMPORARY!
+
+			metadata = e.load_metadata()
+			min_depth = metadata['depthImageRange']['x']			#  Save the current enactment's minimum and maximum depths.
+			max_depth = metadata['depthImageRange']['y']
+
+			K_inv = np.linalg.inv(e.K())							#  Build inverse K-matrix
+																	#  (Re)initialize the rolling buffer.
+			self.rolling_buffer = [None for i in range(0, self.rolling_buffer_length)]
+			self.rolling_buffer_filling = True						#  Buffer has yet to reach capacity
+																	#  (Re)initialize the temporal buffer.
+			self.temporal_buffer = [None for i in range(0, self.temporal_buffer_length)]
+			self.temporal_buffer_filling = True						#  Buffer has yet to reach capacity
+																	#  (Re)initialize the ground-truth labels buffer.
+			self.buffer_labels = [None for i in range(0, self.rolling_buffer_length)]
+
+			hand_vector_buffer = []									#  Only store the hand poses:
+																	#  these would be independently computed in a deployed system (HoloLens).
+			ground_truth_buffer = []								#  Can include "*" or "nothing" labels.
+			time_stamp_buffer = []									#  Store time stamps for reference.
+			frame_path_buffer = []									#  Store file paths (NormalViewCameraFrames) for reference.
+			depth_map_path_buffer = []								#  Store file paths (DepthMapCameraFrames) for reference.
+
+			t1_start = time.process_time()							#  Start timer.
+			fh = open(enactment_input + '.enactment', 'r')			#  Read in the input-enactment.
+			lines = fh.readlines()
+			fh.close()
+			for line in lines:										#  All we want are: time stamps; file paths; hand poses.
+				if line[0] != '#':
+					arr = line.strip().split('\t')
+					timestamp = float(arr[0])						#  Save the time stamp.
+					frame_filename = arr[1]							#  Save the frame file path.
+																	#  Construct a depth map file path.
+					depth_map_filename = frame_filename.replace('NormalViewCameraFrames', 'DepthMapCameraFrames')
+					ground_truth_label = arr[2]						#  Save the true label (these include the nothing-labels.)
+					vector = [float(x) for x in arr[3:]]
+
+					hand_vector_buffer.append(vector[:12])
+
+					if ground_truth_label in self.relabelings:		#  Is this ground-truth label to be relabeled?
+						ground_truth_buffer.append( self.relabelings[ground_truth_label] )
+					else:
+						ground_truth_buffer.append( ground_truth_label )
+
+					time_stamp_buffer.append( timestamp )
+					frame_path_buffer.append( frame_filename )
+					depth_map_path_buffer.append( depth_map_filename )
+
+			t1_stop = time.process_time()							#  Stop timer.
+			self.timing['load-enactment'].append(t1_stop - t1_start)
+
+			num = len(time_stamp_buffer)
+			prev_ctr = 0
+			max_ctr = os.get_terminal_size().columns - 7			#  Leave enough space for the brackets, space, and percentage.
+			if self.verbose:
+				print('>>> Classifying from "' + enactment_input + '" in real time.')
+
+			tentative_prediction = None								#  Initially nothing.
+			prediction = None
+
+			#########################################################
+			#  Pseudo-boot-up is over. March through the enactment. #
+			#########################################################
+			for frame_ctr in range(0, num):							#  March through vector_buffer.
+				t1_start = time.process_time()						#  Start timer.
+				t2_start = t1_start									#  Duplicate timer.
+																	#  Open frame image.
+				frame_img = cv2.imread(frame_path_buffer[frame_ctr], cv2.IMREAD_UNCHANGED)
+																	#  Open depth map.
+				depth_map = cv2.imread(depth_map_path_buffer[frame_ctr], cv2.IMREAD_UNCHANGED)
+				t1_stop = time.process_time()						#  Stop timer.
+				self.timing['image-open'].append(t1_stop - t1_start)
+
+				t1_start = time.process_time()						#  Start timer.
+				#####################################################
+				del frame_img
+				results = e.frames[ time_stamp_buffer[frame_ctr] ].detections
+				#results = model.detect([frame_img], verbose=0)		#  Model makes prediction(s)
+				#####################################################
+				t1_stop = time.process_time()						#  Stop timer.
+				self.timing['object-detection'].append(t1_stop - t1_start)
+
+				hands_subvector = hand_vector_buffer[frame_ctr]		#  We already have the hands subvector.
+																	#  Initialize the props subvector to zero.
+				props_subvector = [0.0 for i in self.recognizable_objects]
+
+				#for i in range(0, len(results[0]['rois'])):			#  For every detection...
+				for i in range(0, len(results)):					#  For every detection...
+					bbox = results[i].bounding_box
+					#bbox = (results[0]['rois'][i][1], results[0]['rois'][i][0], \
+					#        results[0]['rois'][i][3], results[0]['rois'][i][2])
+					bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+					bbox_centroid = (bbox[0] + int(round((bbox[2] - bbox[0]) * 0.5)), bbox[1] + int(round((bbox[3] - bbox[1]) * 0.5)))
+					confidence = results[i].confidence
+					#confidence = float(results[0]['scores'][i])		#  Convert from numpy float32.
+
+					#if bbox_area > self.minimum_bbox_area:			#  BEWARE! Mask-RCNN is capable of predicting bounding boxes empty of pixels!
+					if bbox_area > self.minimum_bbox_area and results[i].object_name not in ['LeftHand', 'RightHand']:
+						object_index = self.recognizable_objects.index(results[i].object_name)
+						#object_index = results[0]['class_ids'][i] - 1
+
+						t1_start = time.process_time()				#  Start timer.
+																	#  In meters.
+						#'''
+						d = min_depth + (float(depth_map[bbox_centroid[1], bbox_centroid[0]]) / 255.0) * (max_depth - min_depth)
+						centroid = np.dot(K_inv, np.array([bbox_centroid[0], bbox_centroid[1], 1.0]))
+						centroid *= d								#  Scale by known depth (meters from head).
+						centroid_3d = np.dot(flip, centroid)		#  Flip point.
+						#'''
+
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['centroid-computation'].append(t1_stop - t1_start)
+																	#  If hands are not present, then they cannot influence object weights.
+						if np.linalg.norm(hands_subvector[:3]) > 0.0:
+							lh_centroid = hands_subvector[:3]
+						else:
+							lh_centroid = None
+						if np.linalg.norm(hands_subvector[6:9]) > 0.0:
+							rh_centroid = hands_subvector[6:9]
+						else:
+							rh_centroid = None
+
+						props_subvector[object_index] = max(props_subvector[object_index], self.gaussian.weigh(centroid_3d, lh_centroid, rh_centroid))
+
+				del depth_map										#  Free the memory!
+
+				vector = tuple(hands_subvector + props_subvector)	#  Assemble the vector.
+				if self.hand_schema == 'strong-hand':				#  Apply hand-schema (if applicable.)
+					vector = self.strong_hand_encode(vector)
+				vector = self.apply_vector_coefficients(vector)		#  Apply coefficients (if applicable.)
+				self.push_rolling( vector )							#  Push vector to rolling buffer.
+																	#  Push G.T. label to rolling G.T. buffer.
+				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
+
+				#####################################################
+				#  If the rolling buffer is full, then classify.    #
+				#  This will always produce a tentative prediction  #
+				#  based on nearest-neighbor. Actual predictions are#
+				#  subject to threshold and smoothed probabilities. #
+				#####################################################
+				if self.is_rolling_buffer_full():
+					tentative_prediction = None						#  (Re)set.
+					prediction = None
+
+					t1_start = time.process_time()					#  Start timer.
+																	#  Call the parent class's core matching engine.
+					matching_costs, confidences, probabilities, metadata = super(TemporalClassifier, self).classify(self.rolling_buffer)
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['dtw-classification'].append(t1_stop - t1_start)
+
+					#################################################
+					#  matching_costs: key: label ==> val: cost     #
+					#  confidences:    key: label ==> val: score    #
+					#  probabilities:  key: label ==> val: prob.    #
+					#  metadata:       key: label ==>               #
+					#                    val: {query-indices,       #
+					#                          template-indices,    #
+					#                          db-index}            #
+					#################################################
+
+					t1_start = time.process_time()					#  Start timer.
+					least_cost = float('inf')						#  Tentative prediction always determined by least matching cost.
+					for k, v in matching_costs.items():
+						if v < least_cost:
+							least_cost = v
+							tentative_prediction = k
+							tentative_confidence = confidences[k]
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
+
+					t1_start = time.process_time()					#  Start timer.
+					sorted_confidences = []
+					for label in self.labels('train'):				#  Maintain the order of label scores.
+						sorted_confidences.append( confidences[label] )
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['sort-confidences'].append(t1_stop - t1_start)
+
+					t1_start = time.process_time()					#  Start timer.
+					sorted_probabilities = []
+					for label in self.labels('train'):				#  Maintain the order of label scores.
+						sorted_probabilities.append( probabilities[label] )
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['sort-probabilities'].append(t1_stop - t1_start)
+
+					t1_start = time.process_time()					#  Start timer.
+					self.push_temporal( sorted_probabilities )		#  Add this probability distribution to the temporal buffer.
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
+
+					#################################################
+					#  Smooth the contents of the temporal buffer   #
+					#  and make a prediction (or abstain from       #
+					#  predicting).                                 #
+					#################################################
+
+					t1_start = time.process_time()					#  Start timer.
+					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
+
+					t1_start = time.process_time()					#  Start timer.
+					if smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] > self.threshold:
+						prediction = tentative_prediction
+					else:
+						prediction = None
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
+																	#  Only measure performance when conditions are fair.
+					if self.full() and self.uniform() and self.fair():
+						ground_truth_label = self.buffer_labels[0]
+						if prediction == ground_truth_label:
+							classification_stats[ground_truth_label]['tp'] += 1
+						elif prediction is not None:
+							classification_stats[prediction]['fp']  += 1
+							classification_stats[ground_truth_label]['fn'] += 1
+
+						classification_stats['_tests'].append( (prediction, ground_truth_label) )
+						classification_stats['_conf'].append( tentative_confidence )
+
+					t2_stop = time.process_time()					#  Stop per-frame timer.
+																	#  Save per-frame time: Note that this has been placed inside the
+																	#  "if buffer full" block even though t2_start is outside the block.
+																	#  This is because otherwise we artificially drive down the per-
+																	#  frame mean and drive up the per-frame standard deviation.
+					self.timing['per-frame'].append(t2_stop - t2_start)
+
+				if self.verbose:									#  Progress bar.
+					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+						prev_ctr = int(round(float(frame_ctr) / float(num - 1) * float(max_ctr)))
+						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(frame_ctr) / float(num - 1) * 100.0))) + '%]')
+						sys.stdout.flush()
+
+		t0_stop = time.process_time()
+		self.timing['total'] = t0_stop - t0_start
+
+		return classification_stats
+
+	#################################################################
+	#  Edit the frame-vectors.                                      #
+	#################################################################
+
+	def drop_vector_element(self, index):
+		super(TemporalClassifier, self).drop_vector_element(index)	#  The parent class's method treats the training set.
+																	#  This child class treats the test set itself.
+		assert isinstance(index, int) or isinstance(index, list), \
+		  'Argument \'index\' passed to TemporalClassifier.drop_vector_element() must be either a single integer or a list of integers.'
+
+		if isinstance(index, int):									#  Cut a single index from everything in self.X_train.
+			assert index < self.vector_length, \
+			  'Argument \'index\' passed to TemporalClassifier.drop_vector_element() must be an integer less than the number of recognizable objects.'
+			self.vector_length -= 1									#  Decrement the vector length.
+			self.vector_drop_map[index] = False						#  Mark the index-th element for omission in the test set, too!
+
+		elif isinstance(index, list):								#  Cut all given indices from everything in self.X_train.
+																	#  Accept all or nothing.
+			assert len([x for x in index if x < self.vector_length]) == len(index), \
+			  'Argument \'index\' passed to TemporalClassifier.drop_vector_element() must be a list of integers, all less than the number of recognizable objects.'
+			self.vector_length -= len(index)						#  Shorten the vector length.
+			for i in index:
+				self.vector_drop_map[i] = False						#  Mark all indices for omission in the test set, too!
+
+		return
 
 	#################################################################
 	#  Buffer update.                                               #
@@ -2948,16 +3343,18 @@ class TemporalClassifier(Classifier):
 	def initialize_timers(self):
 		self.timing['total'] = 0									#  Prepare to capture time taken by the entire classification run.
 		self.timing['load-enactment'] = []							#  Prepare to capture enactment loading times.
-		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
-		self.timing['test-cutoff-conditions'] = []					#  Prepare to collect times for calling test_cutoff_conditions().
-		self.timing['compute-confidence'] = []						#  Prepare to collect times for computing confidence scores.
-		self.timing['isotonic-lookup'] = []							#  Prepare to collect times for bucket-search.
+		self.timing['image-open'] = []								#  Prepare to capture frame opening times.
+		self.timing['object-detection'] = []						#  Prepare to capture object detection times.
+		self.timing['centroid-computation'] = []					#  Prepare to capture centroid computation times.
+		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process
+																	#  (directly affected by the size of the database).
 		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
 		self.timing['sort-confidences'] = []						#  Prepare to collect confidence-score sorting times.
 		self.timing['sort-probabilities'] = []						#  Prepare to collect probability sorting times.
 		self.timing['push-temporal-buffer'] = []					#  Prepare to collect temporal-buffer update times.
 		self.timing['temporal-smoothing'] = []						#  Prepare to collect temporal-smoothing runtimes.
 		self.timing['make-temporally-smooth-decision'] = []			#  Prepare to collect final decision-making runtimes.
+		self.timing['per-frame'] = []								#  Prepare to collect per-frame times.
 		if self.render:
 			self.timing['render-annotated-source'] = []				#  Prepare to collect rendering times.
 			self.timing['render-rolling-buffer'] = []
