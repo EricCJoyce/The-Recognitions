@@ -179,7 +179,11 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
             ctr++;
 
             if(PyErr_Occurred())
-              return NULL;
+              {
+                free(query);
+                free(template);
+                return NULL;
+              }
           }
       }
                                                                     //  Build the cost matrix.
@@ -313,15 +317,15 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
       {
         free(T_1);
         free(T_2);
-        free(path);
+        free((*path));
         return 0;
       }
     if(((*t) = (unsigned int*)malloc(len * sizeof(int))) == NULL)
       {
         free(T_1);
         free(T_2);
-        free(path);
-        free(q);
+        free((*path));
+        free((*q));
         return 0;
       }
 
@@ -565,6 +569,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     if((template = (double*)malloc(template_len * d * sizeof(double))) == NULL)
       {
         PyErr_SetString(PyExc_ValueError, "Unable to allocate memory for template");
+        free(query);
         return NULL;
       }
 
@@ -603,6 +608,8 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
       }
                                                                     //  Build the cost matrix.
     build_L2_matrix(query, query_len, template, template_len, d, &C);
+    free(query);
+    free(template);
 
     pathLen = viterbi(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
