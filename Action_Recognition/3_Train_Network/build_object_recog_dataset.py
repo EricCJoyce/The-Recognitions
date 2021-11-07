@@ -109,6 +109,7 @@ def build_dataset(classes, params):
 
 	fh = open('training-set.txt', 'w')								#  Write training set to file
 	fh.write('#  ' + ' '.join(sorted(data.keys())) + '\n')
+	fh.write('#  ' + ' '.join(sys.argv) + '\n')
 	fh.write('#  Learnable-object    Enactment    Image-file    Dimensions    Mask-path    B-Box\n')
 	for k, v in train.items():
 		for vv in v:
@@ -117,6 +118,7 @@ def build_dataset(classes, params):
 
 	fh = open('validation-set.txt', 'w')							#  Write validation set to file
 	fh.write('#  ' + ' '.join(sorted(data.keys())) + '\n')
+	fh.write('#  ' + ' '.join(sys.argv) + '\n')
 	fh.write('#  Learnable-object    Enactment    Image-file    Dimensions    Mask-path    B-Box\n')
 	for k, v in valid.items():
 		for vv in v:
