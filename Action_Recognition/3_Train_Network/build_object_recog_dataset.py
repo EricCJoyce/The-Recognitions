@@ -79,11 +79,12 @@ def build_dataset(classes, params):
 
 				if classpresent in classes:							#  Here is an instance of one of the things we want to learn.
 					mask = cv2.imread(maskpath, cv2.IMREAD_UNCHANGED)
+					dimensions = str(mask.shape[1]) + ',' + str(mask.shape[0])
 					indices = np.where(mask == 255)
 					if len(indices[0]) >= params['minpx']:			#  Is it large enough to be helpful?
 						if classpresent not in data:
 							data[classpresent] = []
-						data[classpresent].append( (enactment, imgfilename, maskpath, bbox_str) )
+						data[classpresent].append( (enactment, imgfilename, dimensions, maskpath, bbox_str) )
 		fh.close()
 
 	for k, v in data.items():										#  Shuffle everything
@@ -108,18 +109,18 @@ def build_dataset(classes, params):
 
 	fh = open('training-set.txt', 'w')								#  Write training set to file
 	fh.write('#  ' + ' '.join(sorted(data.keys())) + '\n')
-	fh.write('#  Learnable-object    Enactment    Image-file    Mask-path    B-Box\n')
+	fh.write('#  Learnable-object    Enactment    Image-file    Dimensions    Mask-path    B-Box\n')
 	for k, v in train.items():
 		for vv in v:
-			fh.write(k + '\t' + vv[0] + '\t' + vv[1] + '\t' + vv[2] + '\t' + vv[3] + '\n')
+			fh.write(k + '\t' + vv[0] + '\t' + vv[1] + '\t' + vv[2] + '\t' + vv[3] + '\t' + vv[4] + '\n')
 	fh.close()
 
 	fh = open('validation-set.txt', 'w')							#  Write validation set to file
 	fh.write('#  ' + ' '.join(sorted(data.keys())) + '\n')
-	fh.write('#  Learnable-object    Enactment    Image-file    Mask-path    B-Box\n')
+	fh.write('#  Learnable-object    Enactment    Image-file    Dimensions    Mask-path    B-Box\n')
 	for k, v in valid.items():
 		for vv in v:
-			fh.write(k + '\t' + vv[0] + '\t' + vv[1] + '\t' + vv[2] + '\t' + vv[3] + '\n')
+			fh.write(k + '\t' + vv[0] + '\t' + vv[1] + '\t' + vv[2] + '\t' + vv[3] + '\t' + vv[4] + '\n')
 	fh.close()
 
 	if params['verbose']:
@@ -227,8 +228,6 @@ def usage():
 	print('')
 	print('        -v      Enable verbosity')
 	print('        -?      Display this message')
-	print('')
-	print('Going to throw away some previous training efforts? Find them in ~/maskrcnn/logs/')
 	return
 
 if __name__ == '__main__':
