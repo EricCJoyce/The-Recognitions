@@ -55,9 +55,14 @@ def main():
 
 #  Iterate over all specified enactments and identify acceptable training samples.
 def build_dataset(classes, params):
-	data = {}														#  key:class-name ==> val:[ (enactment, imgfile, maskpath), ... ]
-	train = {}
-	valid = {}
+	object_lookup = {}												#  key:object-name ==> val:[images that contain an acceptable sample of this object]
+
+	image_lookup = {}												#  key:image-file ==> val:[ (image-file, class-name, enactment, dimensions,
+																	#                            maskpath, bboxstr), ... ]
+	targets = {}													#  key:class-name ==> val:the number of instances we wish to admit
+
+	train = []
+	valid = []
 
 	for enactment in params['enactments']:							#  Survey enactments directories
 		if params['verbose']:
@@ -76,62 +81,93 @@ def build_dataset(classes, params):
 				maskpath = arr[7]									#  mask-filename
 																	#  3D-centroid-Avg
 																	#  3D-centroid-BBox
-
 				if classpresent in classes:							#  Here is an instance of one of the things we want to learn.
 					mask = cv2.imread(maskpath, cv2.IMREAD_UNCHANGED)
 					dimensions = str(mask.shape[1]) + ',' + str(mask.shape[0])
 					indices = np.where(mask == 255)
+
 					if len(indices[0]) >= params['minpx']:			#  Is it large enough to be helpful?
-						if classpresent not in data:
-							data[classpresent] = []
-						data[classpresent].append( (enactment, imgfilename, dimensions, maskpath, bbox_str) )
+						if imgfilename not in image_lookup:
+							image_lookup[imgfilename] = []
+						image_lookup[imgfilename].append( (imgfilename, classpresent, enactment, dimensions, maskpath, bbox_str) )
+
+						if classpresent not in object_lookup:
+							object_lookup[classpresent] = []
+																	#  Make sure there is only one instance of any file name.
+						if imgfilename not in object_lookup[classpresent]:
+							object_lookup[classpresent].append(imgfilename)
 		fh.close()
 
-	for k, v in data.items():										#  Shuffle everything
-		np.random.shuffle(data[k])									#  Remember: this shuffles IN PLACE!
+	for classname in classes:										#  Set defaults.
+		targets[classname] = len(object_lookup[classname])			#  By default, no limit on how many (acceptable) samples admitted.
 
-	if params['balance']:											#  Balance the sets:
+	if params['balance']:											#  Balance the sets: reset 'targets'.
 		least = float('inf')
-		for k, v in data.items():									#  Find the least-represented class.
+		for k, v in object_lookup.items():							#  Find the least-represented class.
 			if len(v) < least:
 				least = len(v)
-		for k, v in data.items():									#  Clamp all classes to that length.
-			data[k] = v[:least]
+		for k in targets.keys():									#  Clamp all classes to that length.
+			targets[k] = least
 
-	if params['clamp'] < float('inf'):								#  Maximum is [:inf]
-		for k, v in data.items():									#  Clamp
-			data[k] = v[:params['clamp'] + 1]						#  Minimum is [:2]
+	if params['clamp'] < float('inf'):								#  Clamp: reset 'targets'.
+		for k in targets.keys():									#  Maximum is [:inf].
+			targets[k] = params['clamp'] + 1						#  Minimum is [:2].
 
-	for k, v in data.items():										#  Partition the sets
-		m = int(round(float(len(v)) * params['train']))
-		train[k] = data[k][:m]
-		valid[k] = data[k][m:]
+	used = {}														#  key:image-file ==> val:True
+																	#  Start from the least populous class because it is the most fragile.
+	for classname, samples in sorted(object_lookup.items(), key=lambda x: len(x[1])):
+		samples = [x for x in samples if x not in used]				#  Filter out anything that has already been allocated to something else.
+
+		if len(samples) > 0:
+																	#  Ensure we have at least one!
+			train_set_size = min( int(round(float(len(samples)) * params['train'])), targets[classname] - 1 )
+
+			np.random.shuffle(samples)								#  Shuffle IN PLACE!
+
+			allocate_for_train = samples[:train_set_size]
+			allocate_for_valid = samples[train_set_size:]
+
+			if params['verbose']:
+				print('      ' + str(len(samples)) + ' samples for ' + classname + ':\ttrain: ' + \
+				                 str(len(allocate_for_train)) + ',\tvalidate: ' + str(len(allocate_for_valid)))
+
+			for imgname in allocate_for_train:
+				train += image_lookup[ imgname ]					#  Allocate these representative images to training set.
+				used[ imgname ] = True								#  Mark this image as used.
+
+			for imgname in allocate_for_valid:
+				valid += image_lookup[ imgname ]					#  Allocate these representative images to validation set.
+				used[ imgname ] = True								#  Mark this image as used.
+		else:
+			print('  WARNING!   No samples for ' + classname)
 
 	fh = open('training-set.txt', 'w')								#  Write training set to file
-	fh.write('#  ' + ' '.join(sorted(data.keys())) + '\n')
+	fh.write('#  ' + ' '.join(sorted(classes)) + '\n')
 	fh.write('#  ' + ' '.join(sys.argv) + '\n')
-	fh.write('#  Learnable-object    Enactment    Image-file    Dimensions    Mask-path    B-Box\n')
-	for k, v in train.items():
-		for vv in v:
-			fh.write(k + '\t' + vv[0] + '\t' + vv[1] + '\t' + vv[2] + '\t' + vv[3] + '\t' + vv[4] + '\n')
+	fh.write('#  Image-file    Dimensions    Enactment    Learnable-object    B-Box    Mask-path\n')
+	for sample in train:
+		imagefilename = sample[0]
+		classpresent  = sample[1]
+		enactment     = sample[2]
+		dimensions    = sample[3]
+		maskpath      = sample[4]
+		bbox_str      = sample[5]
+		fh.write(imagefilename + '\t' + dimensions + '\t' + enactment + '\t' + classpresent + '\t' + bbox_str + '\t' + maskpath + '\n')
 	fh.close()
 
 	fh = open('validation-set.txt', 'w')							#  Write validation set to file
-	fh.write('#  ' + ' '.join(sorted(data.keys())) + '\n')
+	fh.write('#  ' + ' '.join(sorted(classes)) + '\n')
 	fh.write('#  ' + ' '.join(sys.argv) + '\n')
-	fh.write('#  Learnable-object    Enactment    Image-file    Dimensions    Mask-path    B-Box\n')
-	for k, v in valid.items():
-		for vv in v:
-			fh.write(k + '\t' + vv[0] + '\t' + vv[1] + '\t' + vv[2] + '\t' + vv[3] + '\t' + vv[4] + '\n')
+	fh.write('#  Image-file    Dimensions    Enactment    Learnable-object    B-Box    Mask-path\n')
+	for sample in valid:
+		imagefilename = sample[0]
+		classpresent  = sample[1]
+		enactment     = sample[2]
+		dimensions    = sample[3]
+		maskpath      = sample[4]
+		bbox_str      = sample[5]
+		fh.write(imagefilename + '\t' + dimensions + '\t' + enactment + '\t' + classpresent + '\t' + bbox_str + '\t' + maskpath + '\n')
 	fh.close()
-
-	if params['verbose']:
-		print('    ' + str(sum([len(x) for x in train.values()]) + sum([len(x) for x in valid.values()])) + ' trainable samples, total')
-		for classname in classes:
-			if classname not in train:
-				print('  WARNING!   No samples for ' + classname)
-			else:
-				print('      ' + str(len(train[classname])) + ' samples for ' + classname)
 
 	return
 
@@ -208,9 +244,14 @@ def get_command_line_params():
 #  Explain usage of this script and its options to the user.
 def usage():
 	print('Build a dataset from FactualVR enactments in preparation for training an object-detection network.')
+	print('NOTE: several objects typically appear in a single frame. This script attempts to balance training')
+	print('      and validation sets according to the given parameters, but must allocate frames entirely to')
+	print('      one set or the other. We do not want to incur false false positives!')
 	print('')
 	print('Usage:  python3 build_object_recog_dataset.py <parameters, preceded by flags>')
-	print(' e.g.   Drop intermediate-state objects:')
+	print(' e.g.   ')
+	print('        python3 build_object_recog_dataset.py -e BackBreaker1 -e Enactment1 -e Enactment2 -e Enactment3 -e Enactment4 -e Enactment5 -e Enactment6 -e Enactment7 -e Enactment9 -e Enactment10 -e MainFeederBox1 -e Regulator1 -e Regulator2 -v -minpx 400')
+	print(' e.g.   Drop intermediate-state objects, balance sets:')
 	print('        python3 build_object_recog_dataset.py -e BackBreaker1 -e Enactment1 -e Enactment2 -e Enactment3 -e Enactment4 -e Enactment5 -e Enactment6 -e Enactment7 -e Enactment9 -e Enactment10 -e MainFeederBox1 -e Regulator1 -e Regulator2 -x AuxiliaryFeederBox_Unknown -x BackBreaker_Unknown -x Disconnect_Unknown -x MainFeederBox_Unknown -x Regulator_Unknown -x SafetyPlank_Unknown -x TransferFeederBox_Unknown -v -minpx 200 -b')
 	print(' e.g.   Run in background:')
 	print('        nohup python3 build_object_recog_dataset.py -e BackBreaker1 -e Enactment1 -e Enactment2 &')
