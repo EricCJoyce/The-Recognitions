@@ -11,6 +11,9 @@
 IGNORE	Head
 IGNORE	Environment
 
+IGNORE	Global_Voltmeter_Global.BlackNeedle
+IGNORE	Global_Voltmeter_Global.RedNeedle
+
 PERMIT	LeftHand
 PERMIT	RightHand
 
