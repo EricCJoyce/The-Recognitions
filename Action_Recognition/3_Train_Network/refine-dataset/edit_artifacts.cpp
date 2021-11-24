@@ -201,9 +201,9 @@ void draw(Mat* img)
         if(zones[i].enabled)                                        //  Start with zeros and carve out an inclusion area
           {                                                         //    --ONLY where original mask pixels existed!!
             affect = Mat::zeros(Size(mask_src.cols, mask_src.rows), CV_8UC1);
-            for(y = zones[i].upper_left_y; y < zones[i].lower_right_y; y++)
+            for(y = zones[i].upper_left_y; y <= zones[i].lower_right_y; y++)
               {
-                for(x = zones[i].upper_left_x; x < zones[i].lower_right_x; x++)
+                for(x = zones[i].upper_left_x; x <= zones[i].lower_right_x; x++)
                   affect.at<uchar>(y, x) = 255;
               }
             bitwise_and(mask_src, affect, tmp_mask);
@@ -212,9 +212,9 @@ void draw(Mat* img)
         else                                                        //  Start with 255s and carve out an exclusion zone.
           {
             affect = Mat(Size(mask_src.cols, mask_src.rows), CV_8UC1, Scalar(255));
-            for(y = zones[i].upper_left_y; y < zones[i].lower_right_y; y++)
+            for(y = zones[i].upper_left_y; y <= zones[i].lower_right_y; y++)
               {
-                for(x = zones[i].upper_left_x; x < zones[i].lower_right_x; x++)
+                for(x = zones[i].upper_left_x; x <= zones[i].lower_right_x; x++)
                   affect.at<uchar>(y, x) = 0;
               }
             bitwise_and(working_mask, affect, working_mask);        //  Apply.
@@ -254,10 +254,6 @@ void draw(Mat* img)
           rectangle((*img), upperleft, lowerright, Scalar(0, 255, 0));
       }
 
-/*
-    if(bogie)
-      bitwise_not((*img), (*img));                                  //  Invert image to indicate.
-*/
     return;
   }
 
@@ -283,8 +279,8 @@ void onMouse(int event, int x, int y, int flags, void* param)
       {
         drawing = false;
 
-        current_x = x;
-        current_y = y;
+        current_x = (x >= 0) ? ((x < img.cols) ? x : img.cols - 1) : 0;
+        current_y = (y >= 0) ? ((y < img.rows) ? y : img.rows - 1) : 0;
 
         if(current_x > start_x && current_y < start_y)
           {
@@ -337,8 +333,8 @@ void onMouse(int event, int x, int y, int flags, void* param)
       }
     else if(event == EVENT_MOUSEMOVE && drawing)                    //  Mouse move.
       {
-        current_x = x;
-        current_y = y;
+        current_x = (x >= 0) ? ((x < img.cols) ? x : img.cols - 1) : 0;
+        current_y = (y >= 0) ? ((y < img.rows) ? y : img.rows - 1) : 0;
       }
     else if(event == EVENT_RBUTTONUP)                               //  Right mouse up.
       {
