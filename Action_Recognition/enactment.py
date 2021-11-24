@@ -165,6 +165,8 @@ class RObject():
 
 		return None
 
+	#  Override from outside this class.
+	#  (Because, though we could look up a Recognizable Object's corresponding depth map, this class has no sense of the camera.)
 	def set_centroid(self, c):
 		self.centroid = c[:]
 		return
@@ -195,6 +197,32 @@ class RObject():
 		self.mask_path = mask_path
 		cv2.imwrite(self.mask_path, mask)
 
+		return
+
+	#  Recognizable Object's mask must exist first. This effect will be performed, and it will be saved back to file.
+	def erode_mask(self, erosion):
+		mask = cv2.imread(self.mask_path, cv2.IMREAD_UNCHANGED)
+		if mask is not None:
+			kernel = np.ones((erosion, erosion), np.uint8)			#  Create kernel.
+			mask = cv2.erode(mask, kernel, iterations=1)			#  Perform erosion.
+
+			indices = np.where(mask > 0)							#  Re-compute bounding box.
+			self.bounding_box = (min(indices[1]), min(indices[0]), max(indices[1]), max(indices[0]))
+
+			cv2.imwrite(self.mask_path, mask)						#  Save mask.
+		return
+
+	#  Recognizable Object's mask must exist first. This effect will be performed, and it will be saved back to file.
+	def dilate_mask(self, erosion):
+		mask = cv2.imread(self.mask_path, cv2.IMREAD_UNCHANGED)
+		if mask is not None:
+			kernel = np.ones((erosion, erosion), np.uint8)			#  Create kernel.
+			mask = cv2.dilate(mask, kernel, iterations=1)			#  Perform dilation.
+
+			indices = np.where(mask > 0)							#  Re-compute bounding box.
+			self.bounding_box = (min(indices[1]), min(indices[0]), max(indices[1]), max(indices[0]))
+
+			cv2.imwrite(self.mask_path, mask)						#  Save mask.
 		return
 
 	#  Return the area in pixels of the bounding box (if it exists)
@@ -981,6 +1009,60 @@ class Enactment():
 
 		self.apply_actions_to_frames()								#  Refresh all Frame labels
 		return
+
+	#  Return a list of all RObjects matching the given condition.
+	def list_detections(self, condition):
+		if self.verbose:
+			print('>>> Searching for detections according to condition.')
+
+		ret = []
+
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+		num_frames = self.num_frames()
+		prev_ctr = 0
+		i = 0
+
+		for time_stamp, frame in sorted(self.frames.items()):
+			for detection in frame.detections:
+				if condition(detection):
+					ret.append( detection )
+
+			if self.verbose:
+				if int(round(float(i) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			i += 1
+
+		return ret
+
+	#  Return a list of tuples: (timestamp, index) for all RObjects matching the given condition.
+	def locate_detections(self, condition):
+		if self.verbose:
+			print('>>> Searching for detections according to condition.')
+
+		ret = []
+
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+		num_frames = self.num_frames()
+		prev_ctr = 0
+		i = 0
+
+		for time_stamp, frame in sorted(self.frames.items()):
+			detection_index = 0
+			for detection in frame.detections:
+				if condition(detection):
+					ret.append( (time_stamp, detection_index) )
+				detection_index += 1
+
+			if self.verbose:
+				if int(round(float(i) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			i += 1
+
+		return ret
 
 	#  This method receives a lambda-function as its argument.
 	#  For example, to disable all detections with bounding boxes less than 400 pixels:
