@@ -99,9 +99,9 @@ int main(int argc, char** argv)
                                                                     //  Display usage if arguments were lacking.
     if(params->mask_filenameLen == 0 || params->img_filenameLen == 0 || params->helpme)
       {
-        if(params->mask_filename > 0)
+        if(params->mask_filenameLen > 0)
           free(params->mask_filename);
-        if(params->img_filename > 0)
+        if(params->img_filenameLen > 0)
           free(params->img_filename);
         free(params);
         usage();
@@ -112,9 +112,9 @@ int main(int argc, char** argv)
     if(!mask_src.data)                                              //  Broken?
       {
         cout << "ERROR: could not open or find the mask \"" << params->mask_filename << "\"." << endl;
-        if(params->mask_filename > 0)
+        if(params->mask_filenameLen > 0)
           free(params->mask_filename);
-        if(params->img_filename > 0)
+        if(params->img_filenameLen > 0)
           free(params->img_filename);
         free(params);
         return 1;
@@ -124,9 +124,9 @@ int main(int argc, char** argv)
     if(!img_src.data)                                               //  Broken?
       {
         cout << "ERROR: could not open or find the image \"" << params->img_filename << "\"." << endl;
-        if(params->mask_filename > 0)
+        if(params->mask_filenameLen > 0)
           free(params->mask_filename);
-        if(params->img_filename > 0)
+        if(params->img_filenameLen > 0)
           free(params->img_filename);
         free(params);
         return 1;
@@ -223,7 +223,7 @@ void draw(Mat* img)
 
     cvtColor(working_mask, mask_rgb, COLOR_GRAY2RGB);               //  Convert working copy.
 
-    addWeighted((*img), 0.5, mask_rgb, 1.0, 0.0, (*img));           //  Weighted overlay.
+    addWeighted((*img), 0.3, mask_rgb, 1.0, 0.0, (*img));           //  Weighted overlay.
 
     if(drawing)
       {
