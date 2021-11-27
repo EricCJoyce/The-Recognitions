@@ -244,9 +244,14 @@ void draw(Mat* img)
 
     addWeighted((*img), 0.3, mask_rgb, 1.0, 0.0, (*img));           //  Weighted overlay.
 
-    upperleft = Point2i(min_x, min_y);
-    lowerright = Point2i(max_x, max_y);
-    rectangle((*img), upperleft, lowerright, Scalar(255, 0, 255));
+    if(locations.size() > 0)
+      {
+        upperleft = Point2i(min_x, min_y);
+        lowerright = Point2i(max_x, max_y);
+        rectangle((*img), upperleft, lowerright, Scalar(255, 0, 255));
+      }
+    else
+      putText((*img), "C L E A R", Point2i(img_src.cols / 2, img_src.rows / 2), FONT_HERSHEY_DUPLEX, 1.0, CV_RGB(255, 0, 255), 1.8);
 
     if(drawing)
       {
