@@ -190,11 +190,11 @@ void draw(Mat* img)
     Point2i lowerright;
 
     unsigned int i, x, y;
+    unsigned int min_x, min_y;
+    unsigned int max_x, max_y;
 
     (*img) = img_src.clone();                                       //  Restore from source.
     working_mask = mask_src.clone();                                //  Restore from source.
-
-    findNonZero(mask_src, locations);                               //  Compute this once.
 
     for(i = 0; i < zonesLen; i++)                                   //  Apply the effect of each Zone to the mask.
       {
@@ -221,9 +221,32 @@ void draw(Mat* img)
           }
       }
 
+    findNonZero(working_mask, locations);                           //  Compute this once.
+
+    min_x = mask_src.cols;                                          //  Bound the active mask.
+    min_y = mask_src.rows;
+    max_x = 0;
+    max_y = 0;
+    for(i = 0; i < locations.size(); i++)
+      {
+        if(locations.at(i).x > max_x)
+          max_x = locations.at(i).x;
+        if(locations.at(i).y > max_y)
+          max_y = locations.at(i).y;
+
+        if(locations.at(i).x < min_x)
+          min_x = locations.at(i).x;
+        if(locations.at(i).y < min_y)
+          min_y = locations.at(i).y;
+      }
+
     cvtColor(working_mask, mask_rgb, COLOR_GRAY2RGB);               //  Convert working copy.
 
     addWeighted((*img), 0.3, mask_rgb, 1.0, 0.0, (*img));           //  Weighted overlay.
+
+    upperleft = Point2i(min_x, min_y);
+    lowerright = Point2i(max_x, max_y);
+    rectangle((*img), upperleft, lowerright, Scalar(255, 0, 255));
 
     if(drawing)
       {
