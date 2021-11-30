@@ -174,6 +174,10 @@ int main(int argc, char** argv)
     if(zonesLen > 0)
       free(zones);
 
+    mask_src.release();
+    img_src.release();
+    img.release();
+
     return 0;
   }
 
@@ -281,6 +285,12 @@ void draw(Mat* img)
         else if(penType == PEN_INCLUDE)                             //  GREEN for INCLUSION.
           rectangle((*img), upperleft, lowerright, Scalar(0, 255, 0));
       }
+
+    affect.release();                                               //  Clean up.
+    tmp_mask.release();
+    working_mask.release();
+    mask_rgb.release();
+    locations.clear();
 
     return;
   }
