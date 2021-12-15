@@ -69,7 +69,7 @@ def main():
 
 		if params['render']:										#  Rendering?
 			if params['colors-file'] is not None:					#  Were we given a color look-up file?
-				e.load_color_map(params['colors-file'])
+				e.load_color_lookup(params['colors-file'])
 
 			e.render_gaussian_weighted_video(g)
 			#e.render_annotated_video()
