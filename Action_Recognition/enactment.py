@@ -2003,7 +2003,7 @@ class Enactment():
 		return
 
 	#  Load an RGB 3-tuple for each string in self.recognizable_objects.
-	def load_color_map(self, color_file):
+	def load_color_lookup(self, color_file):
 		self.random_colors()										#  What if the colors file is missing something? Initialize with randoms.
 
 		fh = open(color_file, 'r')									#  Now attempt to open the given file.
