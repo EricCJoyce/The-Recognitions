@@ -743,7 +743,7 @@ class Enactment():
 		self.RH_super['y'] = self.height - 50
 		self.RH_super['fontsize'] = 1.0
 
-		labels = self.load_action_labels()							#  Constructor loads ground-truth action labels.
+		labels = self.load_json_action_labels()						#  Constructor loads ground-truth action labels.
 		head_data = self.load_head_poses()							#  Used here to load time stamps.
 
 		camdata = self.load_camera_intrinsics()						#  Establish the focal length
@@ -808,7 +808,7 @@ class Enactment():
 		self.apply_actions_to_frames()
 
 	#################################################################
-	#  Output: write an enactment file.                             #
+	#  Output.                                                      #
 	#################################################################
 
 	#  Formatted representation of an enactment.
@@ -903,10 +903,7 @@ class Enactment():
 
 		return
 
-	#################################################################
-	#  Output: write a hand-pose file.                              #
-	#################################################################
-
+	#  Write a hand-pose file.
 	def write_hand_pose_file(self, file_name=None):
 		if self.verbose:
 			print('>>> Writing hand poses to file.')
@@ -966,9 +963,49 @@ class Enactment():
 			fh.write('\n')
 
 			if self.verbose:
-				if int(round(float(ctr) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
-					prev_ctr = int(round(float(ctr) / float(num_frames) * float(max_ctr)))
-					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames) * 100.0))) + '%]')
+				if int(round(float(ctr) / float(num_frames - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_frames - 1) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames - 1) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+
+		fh.close()
+
+		if self.verbose:
+			print('')
+
+		return
+
+	#  Write all action labels for all frames to file.
+	def write_all_frame_labels(self, file_name=None):
+		if self.verbose:
+			print('>>> Writing frame action-labels to file.')
+
+		num_frames = len(self.frames)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		if file_name is None:
+			fh = open(self.enactment_name + '.labels', 'w')
+		else:
+			fh = open(file_name + '.labels', 'w')
+
+		fh.write('#  Action labels from FactualVR enactment.\n')
+		fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
+		fh.write('#  ENCODING STRUCTURE:\n')
+		structure_string = '\t'.join(['timestamp', 'filename', 'label'])
+		fh.write('#    ' + structure_string + '\n')
+
+		ctr = 0
+		for time_stamp, frame in sorted(self.frames.items()):
+			fh.write(str(time_stamp) + '\t')
+			fh.write(frame.fullpath() + '\t')
+			fh.write(frame.ground_truth_label + '\n')
+
+			if self.verbose:
+				if int(round(float(ctr) / float(num_frames - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_frames - 1) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_frames - 1) * 100.0))) + '%]')
 					sys.stdout.flush()
 			ctr += 1
 
@@ -2845,7 +2882,7 @@ class Enactment():
 
 	#  Make color-coded "centipedes".
 	def render_action_poses(self, stem_verbs=True):
-		all_actions = np.unique([x['stepDescription'] for x in self.load_action_labels()['list']])
+		all_actions = np.unique([x['stepDescription'] for x in self.load_json_action_labels()['list']])
 		if stem_verbs:
 			reduction = {}
 			for act in all_actions:
@@ -3316,13 +3353,32 @@ class Enactment():
 
 		return
 
-	#  Retrieve a list of unique action labels from this enactment
-	def load_action_labels(self):
+	#  Retrieve a list of unique action labels from this enactment (from JSON)
+	def load_json_action_labels(self):
 		fh = open(self.enactment_name + '/Labels.fvr', 'r')			#  Fetch action time stamps
 		lines = ' '.join(fh.readlines())							#  These USED to be a single line; NOW they have carriage returns
 		fh.close()
 		labels = json.loads(lines)
 		return labels
+
+	#  Set all frame action labels according to the given file.
+	#  (Complement of write_all_frame_labels() above)
+	def load_all_frame_labels(self, filename):
+		time_label_lookup = {}
+		fh = open(filename, 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				time_stamp = float(arr[0])
+				label = arr[2]
+				time_label_lookup[time_stamp] = label
+		fh.close()
+
+		for time_stamp, frame in self.frames.items():
+			if time_stamp in time_label_lookup:
+				frame.ground_truth_label = time_label_lookup[time_stamp]
+
+		return
 
 	#  Retrieve head poses: a valid datum must have a head pose
 	def load_head_poses(self):
