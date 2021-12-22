@@ -2,7 +2,7 @@
 
 Modules 1 and 4 tell us the facts: what is in each frame. These facts are established either by ground-truth (module 1's use of the color-map and rules file) or by a trained neural network (module 4).
 
-To a degree, an `*.enactment` file is an interpretation of those facts. Objects are seen from a VR user's perspective. The user's field of view is Gaussian-weighted according to the assumption that centrally-framed objects are being approached or manipulated by the user. An object's Gaussian weight suggests its importance to the user's action, and forms the basis for classifying the user's action. The particularities of this Gaussian-weighting can be controlled here. Depending on the tasks you wish to classify, you may prefer a wide and shallow Gaussian or a deep and thin Gaussian to upweight objects significant to your tasks. The hands also have their own Gaussians that apply the same effect: upweight the objects near the hands.
+To a degree, an `*.enactment` file is an interpretation of those facts. Objects are seen from an AR/VR user's perspective. The user's field of view is Gaussian-weighted according to the assumption that centrally-framed objects are being approached or manipulated by the user. An object's Gaussian weight suggests its importance to the user's action, and forms the basis for classifying the user's action. The particulars of this Gaussian-weighting can be controlled here. Depending on the tasks you wish to classify, you may prefer a wide and shallow Gaussian or a deep and thin Gaussian to upweight objects significant to your tasks. The hands also have their own Gaussians that apply the same effect: upweight the objects near the hands.
 
 ## Inputs
 
@@ -10,8 +10,8 @@ To a degree, an `*.enactment` file is an interpretation of those facts. Objects 
 ```
 ./EnactmentName
     |
-    |--- /mask_rcnn_some_epoch  <--- Present if you have a trained network and ran module 4
-    |--- /GT                    <--- Built by module 1
+    |--- /some_network_some_epoch  <--- Present if you have a trained network and ran module 4
+    |--- /GT                       <--- Built by module 1
     |--- /Props
     |--- /Subprops
     |--- /Users
