@@ -4,6 +4,6 @@
 
 T.B.C.
 
-## Recognize first-person actions performed by a user in VR
+## Recognize first-person actions performed by a user in AR/VR
 
 T.B.C.
