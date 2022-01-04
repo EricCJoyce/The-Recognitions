@@ -18,8 +18,14 @@ def main():
 	os.makedirs('./training/images/train')							#  Make directories.
 	os.makedirs('./training/images/test')
 
+	if params['verbose']:
+		print('>>> Created folders \'./training/images/train\' and \'./training/images/test\'')
+
 	train = {}														#  key: (image file path, w, h) ==> val: [ (object-name, bbox),
 	test = {}														#                                          (object-name, bbox), ...]
+
+	if params['verbose']:
+		print('>>> Scanning training-set.txt...')
 
 	fh = open('training-set.txt', 'r')								#  Scan the training set file...
 	for line in fh.readlines():
@@ -37,6 +43,9 @@ def main():
 			train[ (img_path, width, height) ].append( (recognizable_object, bbox_str) )
 	fh.close()
 
+	if params['verbose']:
+		print('>>> Scanning validation-set.txt...')
+
 	fh = open('validation-set.txt', 'r')							#  Scan the validation set file...
 	for line in fh.readlines():
 		if line[0] != '#':
@@ -52,6 +61,10 @@ def main():
 				test[ (img_path, width, height) ] = []
 			test[ (img_path, width, height) ].append( (recognizable_object, bbox_str) )
 	fh.close()
+
+	if params['verbose']:
+		print('')
+		print('>>> Populating \'./training/images/train\'...')
 
 	train_ctr = 1
 	for imgpath_w_h, annotations in train.items():					#  Clone images and build XMLs.
@@ -77,6 +90,10 @@ def main():
 		fh_xml.write('\t\t<depth>' + str(params['imgd']) + '</depth>\n')
 		fh_xml.write('\t</size>\n')
 		fh_xml.write('\t<segmented>0</segmented>\n')
+
+		if params['verbose']:
+			print('    ' + imgpath + ': ' + str(len(annotations)) + ' annotated objects.')
+
 		for recog_obj in annotations:
 			recog_obj_label = recog_obj[0]
 			xmin            = recog_obj[1].split(';')[0].split(',')[0]
@@ -103,6 +120,10 @@ def main():
 
 		train_ctr += 1
 
+	if params['verbose']:
+		print('')
+		print('>>> Populating \'./training/images/test\'...')
+
 	test_ctr = 1
 	for imgpath_w_h, annotations in test.items():					#  Clone images and build XMLs.
 		imgpath = imgpath_w_h[0]
@@ -127,6 +148,10 @@ def main():
 		fh_xml.write('\t\t<depth>' + str(params['imgd']) + '</depth>\n')
 		fh_xml.write('\t</size>\n')
 		fh_xml.write('\t<segmented>0</segmented>\n')
+
+		if params['verbose']:
+			print('    ' + imgpath + ': ' + str(len(annotations)) + ' annotated objects.')
+
 		for recog_obj in annotations:
 			recog_obj_label = recog_obj[0]
 			xmin            = recog_obj[1].split(';')[0].split(',')[0]
