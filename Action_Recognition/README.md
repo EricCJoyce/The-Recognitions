@@ -2,7 +2,7 @@
 
 ## Build a first-person action classification system from VR enactments
 
-This repository contains the modules of a pipeline. The primordial inputs are labeled recordings of actions performed in a virtual environment. The primary output is a real-time action classification system, though there are several intermediate products and by-products on the way to developing this classifier.
+This repository contains the modules of a pipeline. The primordial inputs are labeled recordings of actions performed in an environment. The primary output is a real-time action classification system, though there are several intermediate products and by-products on the way to developing this classifier.
 
 ## Roadmap
 
@@ -32,22 +32,24 @@ This repository contains the modules of a pipeline. The primordial inputs are la
 ## Requirements
 
 ### [Python](https://www.python.org/)
-We recommend Python 3.5.2, though later versions may also be compatible.
+We recommend Python 3.6, though later versions may also be compatible.
 
 **Ubuntu 16.04 LTS**:
 ```
 sudo apt-get update
 sudo apt-get upgrade
 
-sudo apt-get install -y build-essential cmake gfortran git pkg-config
-sudo apt-get install -y python-dev software-properties-common wget vim
-sudo apt-get autoremove
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.6
+sudo apt install python3.6-dev
+sudo apt install python3.6-venv
+wget https://bootstrap.pypa.io/get-pip.py
+sudo python3.6 get-pip.py
 
-sudo apt-get install python3-pip
-pip3 install --upgrade pip
-sudo apt install curl
-curl -fsSL -o- https://bootstrap.pypa.io/pip/3.5/get-pip.py | python3.5
-pip3 install --upgrade setuptools
+sudo apt-get install -y build-essential cmake gfortran git pkg-config
+sudo apt-get install -y software-properties-common wget vim
+sudo apt-get autoremove
 ```
 
 **Windows**:
@@ -69,6 +71,7 @@ pip -V
 
 ```
 pip3 install numpy scipy scikit-learn
+pip3 install pandas
 pip3 install metric-learn
 pip3 install matplotlib
 pip3 install scikit-image
@@ -82,6 +85,7 @@ pip3 install opencv-python
 
 ```
 pip install numpy scipy scikit-learn
+pip install pandas
 pip install metric-learn
 pip install matplotlib
 pip install scikit-image
@@ -101,10 +105,10 @@ sudo apt-get install python-dev
 
 You will need this library to compile the C code in `DTWmodule.c` into a Python library. Do this by running
 ```
-python3.5 setup.py build
+python3.6 setup.py build
 ```
 
-This creates a folder named `build`. Inside, find a file named `DTW.cpython-35m-x86_64-linux-gnu.so` or something appropriately named, given your system specs. Copy this `*.so` file into the same directory as your other Recognition scripts.
+This creates a folder named `build`. Inside, find a file named `DTW.cpython-36m-x86_64-linux-gnu.so` or something appropriately named, given your system specs. Copy this `*.so` file into the same directory as your other Recognition scripts.
 
 **Windows**:
 
@@ -112,30 +116,36 @@ This creates a folder named `build`. Inside, find a file named `DTW.cpython-35m-
 
 ### [TensorFlow](https://www.tensorflow.org/)
 
-We recommend TensorFlow for the GPU, version 1.14. If you work with TensorFlow version 2, then please see below for [leekunhee](https://github.com/leekunhee)'s version of the Mask-RCNN library updated for version 2.
+We recommend TensorFlow for the GPU, version 2.6.
 
 **Ubuntu 16.04 LTS**:
 ```
-pip3 install tensorflow-gpu==1.14
+pip3 install tensorflow-gpu==2.6
 ```
 
 **Windows**:
 ```
-pip install tensorflow-gpu==1.14
+pip install tensorflow-gpu==2.6
 ```
 
-### [Keras](https://keras.io/)
-
-We recommend pairing Keras 2.2.5 with TensorFlow-GPU 1.14
-
-**Ubuntu 16.04 LTS**:
+Check your installation. Launch Python 3.6 and enter the following:
 ```
-pip3 install keras==2.2.5
+import tensorflow as tf
+```
+You want to see nothing but the interpreter prompt. If, instead, you see something like this:
+```
+/home/your-name-here/.local/lib/python3.6/site-packages/requests/__init__.py:104: RequestsDependencyWarning: urllib3 (1.26.7) or chardet (2.3.0)/charset_normalizer (2.0.7) doesn't match a supported version!
+  RequestsDependencyWarning)
+```
+Then quit Python and issue the following commands:
+```
+sudo pip3 uninstall urllib3
+sudo pip3 install urllib3==1.22
+
+sudo pip3 uninstall chardet
+sudo pip3 install chardet==3.0.2
 ```
 
-**Windows**:
-```
-pip install keras==2.2.5
-```
+Done for now.
 
-### [Mask-RCNN](https://github.com/matterport/Mask_RCNN)
+This gives you the boilerplate; additional requirements will be explained as each module requires them.
