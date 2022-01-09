@@ -55,6 +55,16 @@ Each enactment will have both a directory described above and a corresponding `*
 
 ## 3.0 - Enactment clean-up (if applicable or desirable)
 
+### edit_mask_artifacts.py
+
+Use an interactive sub-program to clean up the mask artifacts. You must specify an enactment and an instance within that enactment. This script will then iterate over all masks and frames containing this instance and allow you to inspect/edit mask artifacts for that instance.
+
+All changes are saved to an `*.editlist` file.
+
+### refine-dataset/Makefile
+
+This make-file builds the sub-programs called by the script above.
+
 ## 3.1 - Prepare training and validation sets
 
 ## 3.2 - Prepare training workspace
