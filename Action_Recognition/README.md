@@ -137,7 +137,7 @@ You want to see nothing but the interpreter prompt. If, instead, you see somethi
 /home/your-name-here/.local/lib/python3.6/site-packages/requests/__init__.py:104: RequestsDependencyWarning: urllib3 (1.26.7) or chardet (2.3.0)/charset_normalizer (2.0.7) doesn't match a supported version!
   RequestsDependencyWarning)
 ```
-Then quit Python and issue the following commands:
+then quit Python and issue the following commands:
 ```
 sudo pip3 uninstall urllib3
 sudo pip3 install urllib3==1.22
