@@ -67,6 +67,16 @@ This make-file builds the sub-programs called by the script above.
 
 ## 3.1 - Prepare training and validation sets
 
+### build_object_recog_dataset.py
+
+Build a dataset from enactments in preparation for training an object-detection network. Several objects typically appear in a single video frame. This script attempts to balance training and validation sets according to the given parameters, but must allocate frames entirely to one set or the other. We do not want to incur false false-positives!
+
+Outputs `training-set.txt` and `validation-set.txt`
+
+### convert_object_recog_dataset.py
+
+Convert the training and validation set files to formats expected by the TensorFlow Object-Detection API. This means creating two folders in the current working directory: `./training/images/train` and `./training/images/test`. This script will also generate `./training/annotations/label_map.pbtxt`. This script expects to find `./training-set.txt` and `./validation-set.txt`. It also expects to find the enactments referenced by these documents. This script will copy all images into the respective folders and generate one annotation XML per image. A single XML contains all detections in its frame.
+
 ## 3.2 - Prepare training workspace
 ```
 ./MyWorkingDirectory
