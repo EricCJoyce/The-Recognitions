@@ -14,20 +14,28 @@ def main():
 	if os.path.exists('./training/images/test'):
 		print('ERROR: a directory named \'./training/images/test\' already exists.')
 		return
+	if os.path.exists('./training/annotations'):
+		print('ERROR: a directory named \'./training/annotations\' already exists.')
+		return
 
 	os.makedirs('./training/images/train')							#  Make directories.
 	os.makedirs('./training/images/test')
+	os.makedirs('./training/annotations')
 
 	if params['verbose']:
 		print('>>> Created folders \'./training/images/train\' and \'./training/images/test\'')
 
 	train = {}														#  key: (image file path, w, h) ==> val: [ (object-name, bbox),
 	test = {}														#                                          (object-name, bbox), ...]
+	recognizable_objects_train = {}									#  key: recognizable object ==> val: True
+	recognizable_objects_test = {}									#  key: recognizable object ==> val: True
+	recognizable_objects = []										#  List of unique object names.
 
 	if params['verbose']:
 		print('>>> Scanning training-set.txt...')
 
 	fh = open('training-set.txt', 'r')								#  Scan the training set file...
+	ctr = 0															#  Count lines.
 	for line in fh.readlines():
 		if line[0] != '#':
 			arr = line.strip().split('\t')
@@ -41,12 +49,18 @@ def main():
 			if (img_path, width, height) not in train:
 				train[ (img_path, width, height) ] = []
 			train[ (img_path, width, height) ].append( (recognizable_object, bbox_str) )
+		elif ctr == 1:												#  The second header line contains all recognizable objects.
+			arr = line[1:].strip().split('\t')						#  Shave off leading pound sign.
+			for recog_object in arr:
+				recognizable_objects_train[recog_object] = True
+		ctr += 1
 	fh.close()
 
 	if params['verbose']:
 		print('>>> Scanning validation-set.txt...')
 
 	fh = open('validation-set.txt', 'r')							#  Scan the validation set file...
+	ctr = 0															#  Count lines.
 	for line in fh.readlines():
 		if line[0] != '#':
 			arr = line.strip().split('\t')
@@ -60,10 +74,35 @@ def main():
 			if (img_path, width, height) not in test:
 				test[ (img_path, width, height) ] = []
 			test[ (img_path, width, height) ].append( (recognizable_object, bbox_str) )
+		elif ctr == 1:												#  The second header line contains all recognizable objects.
+			arr = line[1:].strip().split('\t')						#  Shave off leading pound sign.
+			for recog_object in arr:
+				recognizable_objects_test[recog_object] = True
+		ctr += 1
 	fh.close()
+
+	if [x for x in sorted(recognizable_objects_train.keys())] != [y for y in sorted(recognizable_objects_test.keys())]:
+		print('>>> ERROR: The objects recognizable in the training set are not the same as the objects recognizable in the validation set.')
+		return
+	recognizable_objects = [x for x in sorted(recognizable_objects_train.keys())]
 
 	if params['verbose']:
 		print('')
+		print('>>> Writing \'./training/annotations/label_map.pbtxt\'...')
+
+	ctr = 1															#  IDs start from 1.
+	fh = open('./training/annotations/label_map.pbtxt', 'w')
+	for recog_object in recognizable_objects:
+		fh.write('item {\n')
+		fh.write('    id: ' + str(ctr) + '\n')
+		fh.write('    name: \'' + recog_object + '\'\n')
+		fh.write('}\n')
+		ctr += 1
+		if ctr < len(recognizable_objects):
+			fh.write('\n')
+	fh.close()
+
+	if params['verbose']:
 		print('>>> Populating \'./training/images/train\'...')
 
 	train_ctr = 1
@@ -213,6 +252,7 @@ def usage():
 	print('Convert the training and validation set files to formats expected by the TensorFlow Object-Detection API.')
 	print('This means creating two folders in the current working directory:')
 	print('  \'training/images/train\' and \'training/images/test\'.')
+	print('This script will also generate \'training/annotations/label_map.pbtxt\'.')
 	print('This script expects to find \'training-set.txt\' and \'validation-set.txt\'.')
 	print('It also expects to find the enactments referenced by these documents.')
 	print('This script will copy all images into the respective folders and generate one annotation XML per image.')
