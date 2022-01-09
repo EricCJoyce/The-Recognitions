@@ -46,10 +46,6 @@ sudo apt install python3.6-dev
 sudo apt install python3.6-venv
 wget https://bootstrap.pypa.io/get-pip.py
 sudo python3.6 get-pip.py
-
-sudo apt-get install -y build-essential cmake gfortran git pkg-config
-sudo apt-get install -y software-properties-common wget vim
-sudo apt-get autoremove
 ```
 
 **Windows**:
@@ -95,13 +91,10 @@ pip install h5py
 pip install opencv-python
 ```
 
-### Python Development Tools
+### Additional Tools
 
 **Ubuntu 16.04 LTS**:
-The development tools for Python should have already been handled by the call above that included
-```
-sudo apt-get install python-dev
-```
+The development tools for Python should have already been handled by the call above, `sudo apt install python3.6-dev`.
 
 You will need this library to compile the C code in `DTWmodule.c` into a Python library. Do this by running
 ```
@@ -109,6 +102,13 @@ python3.6 setup.py build
 ```
 
 This creates a folder named `build`. Inside, find a file named `DTW.cpython-36m-x86_64-linux-gnu.so` or something appropriately named, given your system specs. Copy this `*.so` file into the same directory as your other Recognition scripts.
+
+Additionally, you will need the following tools, if your system doesn't have them already:
+```
+sudo apt-get install -y build-essential cmake gfortran git pkg-config
+sudo apt-get install -y software-properties-common wget vim
+sudo apt-get autoremove
+```
 
 **Windows**:
 
