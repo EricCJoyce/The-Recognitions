@@ -8,9 +8,9 @@ This module involves several steps. You will need to:
 - Set up the TensorFlow Object Detection API.
 - Train the network.
 
-You have the opportunity to influence our future classifier's behavior by applying certain parameters during network training. During development of this system, we identified intermediate states for objects with hinges: doors, cabinets, and machinery that could be in an opened or closed state also had an intermediate "ajar" state. We later decided that the network did not need to be taught what "ajar" was, and that it would have to decide per frame whether a recognizable object in view were opened or closed. You can drop classes from the training set via the command line when calling `train_maskrcnn.py`.
+Before starting on any of these tasks, you may need to clean up your enactments, removing color-map artifacts and objects that "leak" through gaps in the environment mesh.
 
-## Inputs
+## Assumptions
 
 ### Each enactment is expected to be a directory with the following structure:
 ```
@@ -36,12 +36,22 @@ You have the opportunity to influence our future classifier's behavior by applyi
     |--- Labels.fvr
     `--- metadata.fvr
 ```
+### Your working directory contains your enactments.
 
-## Outputs
-
-Once training begins, this script will save all epochs with improved (lower) validation loss.
-
-### 
+Each enactment will have both a directory described above and a corresponding `*_props.txt` file:
+```
+./MyWorkingDirectory
+    |
+    |--- /Enactment1
+    |--- /Enactment2
+   ...
+    |--- /EnactmentN
+    |--- Enactment1_props.txt
+    |--- Enactment2_props.txt
+   ...
+    |
+    `--- EnactmentN_props.txt
+```
 
 ## Requirements
 - Python
