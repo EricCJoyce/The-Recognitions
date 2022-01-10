@@ -180,16 +180,26 @@ wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mob
 tar -xvf ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz
 ```
 
-Now copy the extracted model's `pipeline.config` file to a directory that we'll create in `./training/models` named after the model downloaded from the Zoo. Your case may vary, but here are the commands for this example:
+## 3.4 - Train
+
+Copy the extracted model's `pipeline.config` file from its source in `./training/pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8` to a directory that we'll create in `./training/models`. Let's name this new directory after the model downloaded from the Zoo. Your case may vary, but here are the commands for this example:
 ```
 cd ../..
 mkdir training/models/ssd_mobilenet_640x640
 cp training/pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8/pipeline.config training/models/ssd_mobilenet_640x640/
 ```
 
-We will edit this copy of `pipeline.config` to prepare for training on the new dataset. The first thing to do is change the number of classes the new detector will learn. Do this by changing the number (if applicable) following `num_classes:` in line 3 of `pipeline.config`. Next, change the batch size for training, if you want to. This is done by changing the number that follows `batch_size:` on line 135 of `pipeline.config`. Again, if you have decided to use a different model from the Zoo, then the line numbers in the file you will edit may differ.
+We will edit the copy of `pipeline.config` to prepare for training on the new dataset. Again, if you have decided to use a different model from the Zoo, then the line numbers in `pipeline.config` you will edit may differ. 
 
-## 3.4 - Train
+The first thing to do is change the number of classes the new detector will learn. Do this by changing the number (if applicable) following `num_classes:` in line 3 of `pipeline.config`. Next, change the batch size for training, if you want to. This is done by changing the number that follows `batch_size:` on line 135 of `pipeline.config`.
+
+Line 165 has a field named `fine_tune_checkpoint`. Replace the default string `PATH_TO_BE_CONFIGURED` with the path to the checkpoint index file of the original downloaded model. For us, this means entering `"pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8/checkpoint/ckpt-0"`. Yes, you should omit the `.index` extension.
+
+Line 171 contains `fine_tune_checkpoint_type:`. Change the value here to `"detection"`.
+
+Next, look for `label_map_path:` on line 175 under `train_input_reader`. Change this value to be `"annotations/label_map.pbtxt"`. Find `input_path:` on line 177. Change the following value to `"annotations/train.record"`.
+
+Finally, make similar changes to lines 185 and 189: `label_map_path` and `input_path` under the heading `eval_input_reader` should be likewise updated. Set the value for `label_map_path` to the same path to the label map, `"annotations/label_map.pbtxt"`, and set the value following `input_path` to `"annotations/test.record"`.
 
 ## Requirements
 - Python
