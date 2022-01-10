@@ -96,15 +96,27 @@ By the end of this process, your working directory should resemble this:
     |      |--- /annotations
     |      |       |
     |      |       `--- label_map.pbtxt
-    |      |--- /exported-models
+    |      |--- /exported-models     <--- Initially empty
     |      |--- /images
     |      |       |
-    |      |       |--- /train     <--- Enactment frames *copied* (not moved)
-    |      |       |                    from your enactments, and one *.xml per frame.
-    |      |       `--- /test      <--- Enactment frames *copied* (not moved)
-    |      |                            from your enactments, and one *.xml per frame.
-    |      |--- /models
-    |      `--- /pre-trained-models
+    |      |       |--- /train       <--- Enactment frames *copied* (not moved)
+    |      |       |       |              from your enactments, and one *.xml per frame.
+    |      |       |       |--- 1.png
+    |      |       |       |--- 1.xml
+    |      |       |       |--- 2.png
+    |      |       |       |--- 2.xml
+    |      |       |      ...
+    |      |       |
+    |      |       `--- /test        <--- Enactment frames *copied* (not moved)
+    |      |               |              from your enactments, and one *.xml per frame.
+    |      |       |       |--- 1.png
+    |      |       |       |--- 1.xml
+    |      |       |       |--- 2.png
+    |      |       |       |--- 2.xml
+    |      |       |      ...
+    |      |       |
+    |      |--- /models              <--- Initially empty
+    |      `--- /pre-trained-models  <--- Initially empty
     `--- EnactmentN_props.txt
 ```
 
