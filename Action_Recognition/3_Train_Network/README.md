@@ -5,7 +5,8 @@ The ground-truth masks created by module 1 can be used to train a deep network t
 This module involves several steps. You will need to:
 1. Prepare data sets and a network-training workspace.
 2. Set up the TensorFlow Object Detection (TFOD) API.
-3. Train the network.
+3. Download pre-trained models from the TensorFlow Model Zoo.
+4. Train the network.
 
 Before starting on any of these tasks, you may need to clean up your enactments, removing color-map artifacts and objects that "leak" through gaps in the environment mesh.
 
@@ -159,7 +160,18 @@ You may receive some errors after this last command, which you can likely ignore
 python3.6 object_detection/builders/model_builder_tf2_test.py
 ```
 
-## 3.3 - Train
+## 3.3 - Download a pre-trained model from the [TensorFlow Model Zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md)
+
+Peruse the Model Zoo and decide which pre-trained model you would like to work with. For our purposes, we will use [SSD MobileNet V2 FPNLite 640x640](http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz)
+
+From your working directory, make the following calls:
+```
+cd training/pre-trained-models/
+wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz
+tar -xvf ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz
+```
+
+## 3.4 - Train
 
 ## Requirements
 - Python
