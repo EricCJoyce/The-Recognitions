@@ -66,7 +66,7 @@ def main():
 				train[ (img_path, width, height) ] = []
 			train[ (img_path, width, height) ].append( (recognizable_object, bbox_str) )
 		elif ctr == 1:												#  The second header line contains all recognizable objects.
-			arr = line[1:].strip().split('\t')						#  Shave off leading pound sign.
+			arr = line[1:].strip().split()							#  Shave off leading pound sign.
 			for recog_object in arr:
 				recognizable_objects_train[recog_object] = True
 		ctr += 1
@@ -91,7 +91,7 @@ def main():
 				test[ (img_path, width, height) ] = []
 			test[ (img_path, width, height) ].append( (recognizable_object, bbox_str) )
 		elif ctr == 1:												#  The second header line contains all recognizable objects.
-			arr = line[1:].strip().split('\t')						#  Shave off leading pound sign.
+			arr = line[1:].strip().split()							#  Shave off leading pound sign.
 			for recog_object in arr:
 				recognizable_objects_test[recog_object] = True
 		ctr += 1
@@ -113,9 +113,9 @@ def main():
 		fh.write('    id: ' + str(ctr) + '\n')
 		fh.write('    name: \'' + recog_object + '\'\n')
 		fh.write('}\n')
-		ctr += 1
 		if ctr < len(recognizable_objects):
 			fh.write('\n')
+		ctr += 1
 	fh.close()
 
 	if params['verbose']:
@@ -128,7 +128,8 @@ def main():
 		height  = imgpath_w_h[2]
 		img_ext = imgpath.split('.')[-1]
 
-		xml_imgfilename = imgpath.split('/')[-1]
+		#xml_imgfilename = imgpath.split('/')[-1]
+		xml_imgfilename = str(train_ctr) + '.' + img_ext
 		xml_filename = './training/images/train/' + str(train_ctr) + '.xml'
 
 		fh_xml = open(xml_filename, 'w')
@@ -186,7 +187,8 @@ def main():
 		height  = imgpath_w_h[2]
 		img_ext = imgpath.split('.')[-1]
 
-		xml_imgfilename = imgpath.split('/')[-1]
+		#xml_imgfilename = imgpath.split('/')[-1]
+		xml_imgfilename = str(test_ctr) + '.' + img_ext
 		xml_filename = './training/images/test/' + str(test_ctr) + '.xml'
 
 		fh_xml = open(xml_filename, 'w')
