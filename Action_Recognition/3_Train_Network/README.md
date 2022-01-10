@@ -5,7 +5,7 @@ The ground-truth masks created by module 1 can be used to train a deep network t
 This module involves several steps. You will need to:
 1. Prepare training and validation sets, while setting aside an untouched test set.
 2. Prepare a network-training workspace.
-3. Set up the TensorFlow Object Detection API.
+3. Set up the TensorFlow Object Detection (TFOD) API.
 4. Train the network.
 
 Before starting on any of these tasks, you may need to clean up your enactments, removing color-map artifacts and objects that "leak" through gaps in the environment mesh.
@@ -102,7 +102,7 @@ Convert the training and validation set files to formats expected by the TensorF
     `--- EnactmentN_props.txt
 ```
 
-## 3.3 - Set up the TensorFlow Object Detection API
+## 3.3 - Set up the TensorFlow Object Detection (TFOD) API
 
 Make sure that you have `git` and `protoc` installed:
 ```
