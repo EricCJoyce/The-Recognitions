@@ -180,7 +180,7 @@ wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mob
 tar -xvf ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz
 ```
 
-## 3.4 - Train
+## 3.4 - Configure the training job
 
 Copy the extracted model's `pipeline.config` file from its source in `./training/pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8` to a directory that we'll create in `./training/models`. Let's name this new directory after the model downloaded from the Zoo. Your case may vary, but here are the commands for this example:
 ```
@@ -193,13 +193,28 @@ We will edit the copy of `pipeline.config` to prepare for training on the new da
 
 The first thing to do is change the number of classes the new detector will learn. Do this by changing the number (if applicable) following `num_classes:` in line 3 of `pipeline.config`. Next, change the batch size for training, if you want to. This is done by changing the number that follows `batch_size:` on line 135 of `pipeline.config`.
 
-Line 165 has a field named `fine_tune_checkpoint`. Replace the default string `PATH_TO_BE_CONFIGURED` with the path to the checkpoint index file of the original downloaded model. For us, this means entering `"pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8/checkpoint/ckpt-0"`. Yes, you should omit the `.index` extension.
+Line 165 has a field named `fine_tune_checkpoint`. Replace the default string `PATH_TO_BE_CONFIGURED` with the path to the checkpoint index file of the original downloaded model. For us, this means entering `"training/pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8/checkpoint/ckpt-0"`. Yes, you should omit the `.index` extension.
 
 Line 171 contains `fine_tune_checkpoint_type:`. Change the value here to `"detection"`.
 
-Next, look for `label_map_path:` on line 175 under `train_input_reader`. Change this value to be `"annotations/label_map.pbtxt"`. Find `input_path:` on line 177. Change the following value to `"annotations/train.record"`.
+Next, look for `label_map_path:` on line 175 under `train_input_reader`. Change this value to be `"training/annotations/label_map.pbtxt"`. Find `input_path:` on line 177. Change the following value to `"training/annotations/train.record"`.
 
-Finally, make similar changes to lines 185 and 189: `label_map_path` and `input_path` under the heading `eval_input_reader` should be likewise updated. Set the value for `label_map_path` to the same path to the label map, `"annotations/label_map.pbtxt"`, and set the value following `input_path` to `"annotations/test.record"`.
+Finally, make similar changes to lines 185 and 189: `label_map_path` and `input_path` under the heading `eval_input_reader` should be likewise updated. Set the value for `label_map_path` to the same path to the label map, `"training/annotations/label_map.pbtxt"`, and set the value following `input_path` to `"training/annotations/test.record"`.
+
+That takes care of configuring the training job. We are now ready to train.
+
+## 3.5 - Train
+
+The TFOD API we downloaded includes the script that drives training. Now that the job is configured, we can make a copy of this training script in the working directory so we have it at our fingertips:
+
+```
+cp models/research/object_detection/model_main_tf2.py .
+```
+
+Begin training by issuing the following command (which you should obviously alter for your specific project):
+```
+python3.6 model_main_tf2.py --model_dir=training/models/ssd_mobilenet_640x640 --pipeline_config_path=training/models/ssd_mobilenet_640x640/pipeline.config
+```
 
 ## Requirements
 - Python
