@@ -104,6 +104,37 @@ Convert the training and validation set files to formats expected by the TensorF
 
 ## 3.3 - Set up the TensorFlow Object Detection API
 
+Make sure that you have `git` and `protoc` installed:
+```
+git --version
+protoc --version
+```
+
+`git` fetches repositories from GitHub, and `protoc` is the Protocol Buffer Compiler. Protocol buffers, or "protobufs" are a binary file format developed by Google and used by the TensorFlow TFRecord type. We will need to compile our training and validation sets into this format so that the TFOD can read them.
+
+Make the following call to clone the TensorFlow Object-Detection API repository.
+```
+git clone https://github.com/tensorflow/models.git
+```
+
+Now, from your current working directory, make the following calls:
+```
+cd models/research
+protoc object_detection/protos/*.proto --python_out=.
+git clone https://github.com/cocodataset/cocoapi.git
+cd cocoapi/PythonAPI
+make
+cp -r pycocotools ../../models/research
+cd ../..
+cp object_detection/packages/tf2/setup.py .
+python3.6 -m pip install .
+```
+
+You may receive some errors, which you can probably ignore. The real test of whether this API installation succeeded is the following:
+```
+python3.6 object_detection/builders/model_builder_tf2_test.py
+```
+
 ## 3.4 - Train
 
 ## Requirements
