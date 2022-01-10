@@ -109,12 +109,12 @@ By the end of this process, your working directory should resemble this:
     |      |       |
     |      |       `--- /test        <--- Enactment frames *copied* (not moved)
     |      |               |              from your enactments, and one *.xml per frame.
-    |      |       |       |--- 1.png
-    |      |       |       |--- 1.xml
-    |      |       |       |--- 2.png
-    |      |       |       |--- 2.xml
-    |      |       |      ...
-    |      |       |
+    |      |               |--- 1.png
+    |      |               |--- 1.xml
+    |      |               |--- 2.png
+    |      |               |--- 2.xml
+    |      |              ...
+    |      |
     |      |--- /models              <--- Initially empty
     |      `--- /pre-trained-models  <--- Initially empty
     `--- EnactmentN_props.txt
