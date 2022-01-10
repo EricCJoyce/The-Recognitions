@@ -99,8 +99,10 @@ By the end of this process, your working directory should resemble this:
     |      |--- /exported-models
     |      |--- /images
     |      |       |
-    |      |       |--- /train     <--- Enactment frames *copied* (not moved) from your enactments, and one *.xml per frame.
-    |      |       `--- /test      <--- Enactment frames *copied* (not moved) from your enactments, and one *.xml per frame.
+    |      |       |--- /train     <--- Enactment frames *copied* (not moved)
+    |      |       |                    from your enactments, and one *.xml per frame.
+    |      |       `--- /test      <--- Enactment frames *copied* (not moved)
+    |      |                            from your enactments, and one *.xml per frame.
     |      |--- /models
     |      `--- /pre-trained-models
     `--- EnactmentN_props.txt
