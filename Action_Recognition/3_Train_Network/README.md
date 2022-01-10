@@ -180,6 +180,13 @@ wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mob
 tar -xvf ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz
 ```
 
+Now copy the extracted model's `pipeline.config` file to a directory that we'll create in `./training/models` named after the model downloaded from the zoo. Your case may vary, but here are the commands for this example:
+```
+cd ../..
+mkdir training/models/ssd_mobilenet_640x640
+cp training/pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8/pipeline.config training/models/ssd_mobilenet_640x640/
+```
+
 ## 3.4 - Train
 
 ## Requirements
