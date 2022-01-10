@@ -3,24 +3,40 @@ import shutil
 import sys
 
 def main():
-	params = get_command_line_params()								#  Collect parameters
+	params = get_command_line_params()								#  Collect parameters.
 	if params['helpme'] or not os.path.exists('training-set.txt') or not os.path.exists('validation-set.txt'):
 		usage()
 		return
-
+																	#  Check for existing directories.
+	if os.path.exists('./training/annotations'):
+		print('ERROR: a directory named \'./training/annotations\' already exists.')
+		return
+	if os.path.exists('./training/exported-models'):
+		print('ERROR: a directory named \'./training/exported-models\' already exists.')
+		return
 	if os.path.exists('./training/images/train'):
 		print('ERROR: a directory named \'./training/images/train\' already exists.')
 		return
 	if os.path.exists('./training/images/test'):
 		print('ERROR: a directory named \'./training/images/test\' already exists.')
 		return
-	if os.path.exists('./training/annotations'):
-		print('ERROR: a directory named \'./training/annotations\' already exists.')
+	if os.path.exists('./training/models'):
+		print('ERROR: a directory named \'./training/models\' already exists.')
+		return
+	if os.path.exists('./training/pre-trained-models'):
+		print('ERROR: a directory named \'./training/pre-trained-models\' already exists.')
 		return
 
-	os.makedirs('./training/images/train')							#  Make directories.
+	os.makedirs('./training/annotations')							#  Make directories.
+
+	os.makedirs('./training/exported-models')
+
+	os.makedirs('./training/images/train')
 	os.makedirs('./training/images/test')
-	os.makedirs('./training/annotations')
+
+	os.makedirs('./training/models')
+
+	os.makedirs('./training/pre-trained-models')
 
 	if params['verbose']:
 		print('>>> Created folders \'./training/images/train\' and \'./training/images/test\'')
