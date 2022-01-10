@@ -3,10 +3,9 @@
 The ground-truth masks created by module 1 can be used to train a deep network to recognize objects. We will take advantage of a pre-trained version of [MobileNet](https://arxiv.org/abs/1704.04861), transferring the learning already achieved in its lower layers to our new task.
 
 This module involves several steps. You will need to:
-1. Prepare training and validation sets, while setting aside an untouched test set.
-2. Prepare a network-training workspace.
-3. Set up the TensorFlow Object Detection (TFOD) API.
-4. Train the network.
+1. Prepare data sets and a network-training workspace.
+2. Set up the TensorFlow Object Detection (TFOD) API.
+3. Train the network.
 
 Before starting on any of these tasks, you may need to clean up your enactments, removing color-map artifacts and objects that "leak" through gaps in the environment mesh.
 
@@ -65,7 +64,7 @@ All changes are saved to an `*.editlist` file.
 
 This make-file builds the sub-programs called by the script above.
 
-## 3.1 - Prepare training and validation sets
+## 3.1 - Prepare training and validation sets, and prepare a training workspace
 
 ### build_object_recog_dataset.py
 
@@ -77,7 +76,8 @@ Outputs `training-set.txt` and `validation-set.txt`
 
 Convert the training and validation set files to formats expected by the TensorFlow Object-Detection API. This means creating two folders in the current working directory: `./training/images/train` and `./training/images/test`. This script will also generate `./training/annotations/label_map.pbtxt`. This script expects to find `./training-set.txt` and `./validation-set.txt`. It also expects to find the enactments referenced by these documents. This script will copy all images into the respective folders and generate one annotation XML per image. A single XML contains all detections in its frame.
 
-## 3.2 - Prepare training workspace
+By the end of this process, your working directory should resemble this:
+
 ```
 ./MyWorkingDirectory
     |
@@ -94,15 +94,19 @@ Convert the training and validation set files to formats expected by the TensorF
     |--- /training
     |      |
     |      |--- /annotations
+    |      |       |
+    |      |       `--- label_map.pbtxt
     |      |--- /exported-models
     |      |--- /images
+    |      |       |
+    |      |       |--- /train     <--- Enactment frames *copied* (not moved) from your enactments, and one *.xml per frame.
+    |      |       `--- /test      <--- Enactment frames *copied* (not moved) from your enactments, and one *.xml per frame.
     |      |--- /models
     |      `--- /pre-trained-models
-    |
     `--- EnactmentN_props.txt
 ```
 
-## 3.3 - Set up the TensorFlow Object Detection (TFOD) API
+## 3.2 - Set up the TensorFlow Object Detection (TFOD) API
 
 Make sure that you have `git` and `protoc` installed:
 ```
@@ -135,7 +139,7 @@ You may receive some errors, which you can probably ignore. The real test of whe
 python3.6 object_detection/builders/model_builder_tf2_test.py
 ```
 
-## 3.4 - Train
+## 3.3 - Train
 
 ## Requirements
 - Python
