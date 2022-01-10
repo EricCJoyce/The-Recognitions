@@ -216,6 +216,8 @@ Begin training by issuing the following command (which you should obviously alte
 python3.6 model_main_tf2.py --model_dir=training/models/ssd_mobilenet_640x640 --pipeline_config_path=training/models/ssd_mobilenet_640x640/pipeline.config
 ```
 
+[This tutorial](https://tensorflow-object-detection-api-tutorial.readthedocs.io/en/latest/training.html#create-tensorflow-records) goes into deeper detail than you'll find here. The dataset used for this research, however, precludes the image labeling and data partitioning that the *Read The Docs* authors describe.
+
 ## Requirements
 - Python
 - NumPy
