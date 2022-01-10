@@ -4,7 +4,7 @@ The ground-truth masks created by module 1 can be used to train a deep network t
 
 This module involves several steps. You will need to:
 1. Prepare data sets and a network-training workspace.
-2. Set up the TensorFlow Object Detection (TFOD) API.
+2. Install the TensorFlow Object Detection (TFOD) API.
 3. Download pre-trained models from the TensorFlow Model Zoo.
 4. Train the network.
 
@@ -120,7 +120,7 @@ By the end of this process, your working directory should resemble this:
            `--- /pre-trained-models  <--- Initially empty
 ```
 
-## 3.2 - Set up the TensorFlow Object Detection (TFOD) API
+## 3.2 - Install the TensorFlow Object Detection (TFOD) API
 
 Make sure that you have `git` and `protoc` installed:
 ```
@@ -158,6 +158,15 @@ python3.6 -m pip install .
 You may receive some errors after this last command, which you can likely ignore. The real test of whether this API installation succeeded is the following:
 ```
 python3.6 object_detection/builders/model_builder_tf2_test.py
+```
+
+Now you can convert the dataset you've prepared in the `./training` workspace to TFRecords.
+The script to perform this conversion can be copied from [here](https://tensorflow-object-detection-api-tutorial.readthedocs.io/en/latest/training.html#create-tensorflow-records). Simply save the Python code from the yellow box as a file in your working directory named `generate_tfrecord.py`.
+
+Then, make the following calls from your working directory:
+```
+python3.6 generate_tfrecord.py -x ./training/images/train -l ./training/annotations/label_map.pbtxt -o ./training/annotations/train.record
+python3.6 generate_tfrecord.py -x ./training/images/test -l ./training/annotations/label_map.pbtxt -o ./training/annotations/test.record
 ```
 
 ## 3.3 - Download a pre-trained model from the [TensorFlow Model Zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md)
