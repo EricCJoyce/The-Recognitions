@@ -180,12 +180,14 @@ wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mob
 tar -xvf ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8.tar.gz
 ```
 
-Now copy the extracted model's `pipeline.config` file to a directory that we'll create in `./training/models` named after the model downloaded from the zoo. Your case may vary, but here are the commands for this example:
+Now copy the extracted model's `pipeline.config` file to a directory that we'll create in `./training/models` named after the model downloaded from the Zoo. Your case may vary, but here are the commands for this example:
 ```
 cd ../..
 mkdir training/models/ssd_mobilenet_640x640
 cp training/pre-trained-models/ssd_mobilenet_v2_fpnlite_640x640_coco17_tpu-8/pipeline.config training/models/ssd_mobilenet_640x640/
 ```
+
+We will edit this copy of `pipeline.config` to prepare for training on the new dataset. The first thing to do is change the number of classes the new detector will learn. Do this by changing the number (if applicable) following `num_classes:` in line 3 of `pipeline.config`. Next, change the batch size for training, if you want to. This is done by changing the number that follows `batch_size:` on line 135 of `pipeline.config`. Again, if you have decided to use a different model from the Zoo, then the line numbers in the file you will edit may differ.
 
 ## 3.4 - Train
 
