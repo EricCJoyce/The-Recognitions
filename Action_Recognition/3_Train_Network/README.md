@@ -141,13 +141,20 @@ protoc object_detection/protos/*.proto --python_out=.
 git clone https://github.com/cocodataset/cocoapi.git
 cd cocoapi/PythonAPI
 make
-cp -r pycocotools ../../models/research
+```
+
+If the call to `make` fails, open the `Makefile` in a text editor and be sure that it calls the correct version of Python. You may need to change `python` in lines 3 and 8 to `python3` or `python3.6`.
+
+Moving on:
+
+```
+cp -r pycocotools ../..
 cd ../..
 cp object_detection/packages/tf2/setup.py .
 python3.6 -m pip install .
 ```
 
-You may receive some errors, which you can probably ignore. The real test of whether this API installation succeeded is the following:
+You may receive some errors after this last command, which you can likely ignore. The real test of whether this API installation succeeded is the following:
 ```
 python3.6 object_detection/builders/model_builder_tf2_test.py
 ```
