@@ -198,7 +198,7 @@ def usage():
 	print('')
 	print('Usage:  python3 assemble_enactment.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 assemble_enactment.py -e Enactment11 -e Enactment12 -v -render')
-	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _mask_rcnn_factual_0028_detections.txt -handsrc .IK-bbox.handposes -v -render')
+	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _ssd_mobilenet_640x640_detections.txt -handsrc .IK-bbox.handposes -v -render')
 	print('')
 	print('Flags:  -e        Following argument is path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -mu       Following three arguments are the three components of the Gaussian\'s mu for the gaze.')
