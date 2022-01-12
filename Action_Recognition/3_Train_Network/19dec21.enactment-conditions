@@ -1,0 +1,7 @@
+#  This is a conditions file for imposing rules on which parts of which enactments are suitable for training.
+#  Created 19dec21.
+#  USAGE:
+#    <enactment name>  INCLUDE  <time-stamp-from_1>  <time-stamp-to_1>  <time-stamp-from_2>  <time-stamp-to_2>  ...  <time-stamp-from_n>  <time-stamp-to_n>
+#    <enactment name>  EXCLUDE  <time-stamp-from_1>  <time-stamp-to_1>  <time-stamp-from_2>  <time-stamp-to_2>  ...  <time-stamp-from_n>  <time-stamp-to_n>
+Enactment7	INCLUDE	8.0	9.3	9.9	11.3	32.5	35.5	38.1	42.0	68.5	71.1	84.6	88.4	101.9	104.8	106.5	108.0	119.2	122.8
+Regulator1	EXCLUDE	289.9	inf
