@@ -60,14 +60,14 @@ def get_command_line_params():
 
 #  Explain usage of this script and its options to the user.
 def usage():
-	print('You\'ve already processed one or more enactments and now want to extract the hand poses from them.')
-	print('You would do this if you want to use the centroids of the Inverse-Kinematic hands without also')
+	print('You\'ve already processed one or more enactments and now want to extract the hand poses from them.')acceptable_pose_sources
+	print('You would do this if you want to use the centroids of the Inverse-Kinematic (IK) hands without also')
 	print('using ground-truth object detection.')
 	print('Write extracted hand poses to a separate file, then integrate this file with network detections')
 	print('in the script "detect_enactment.py".')
 	print('')
 	print('Usage:  python3 extract_hand_poses.py <parameters, preceded by flags>')
-	print(' e.g.:  python3 extract_hand_poses.py -src IK-bbox -e Enactment11 -e Enactment12 -v')
+	print(' e.g.:  python3 extract_hand_poses.py -src IK -e Enactment11 -e Enactment12 -v')
 	print('')
 	print('Flags:  -e    MUST HAVE AT LEAST ONE: Path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -src  Following string must be in {IK, sensor}.')
