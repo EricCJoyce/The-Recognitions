@@ -1,8 +1,11 @@
 from enactment import *
 
+acceptable_pose_sources = ['IK', 'sensor']
+
 def main():
+	global acceptable_pose_sources
 	params = get_command_line_params()								#  Collect parameters
-	if params['helpme'] or len(params['enactments']) == 0:
+	if params['helpme'] or len(params['enactments']) == 0 or params['pose-source'] not in acceptable_pose_sources:
 		usage()
 		return
 
@@ -29,10 +32,10 @@ def main():
 	return
 
 def get_command_line_params():
+	global acceptable_pose_sources
 	params = {}
 	params['enactments'] = []										#  List of file paths
 	params['pose-source'] = None
-	acceptable_pose_sources = ['IK', 'sensor']
 	params['verbose'] = False
 	params['helpme'] = False
 
@@ -60,6 +63,8 @@ def get_command_line_params():
 
 #  Explain usage of this script and its options to the user.
 def usage():
+	global acceptable_pose_sources
+
 	print('You\'ve already processed one or more enactments and now want to extract the hand poses from them.')acceptable_pose_sources
 	print('You would do this if you want to use the centroids of the Inverse-Kinematic (IK) hands without also')
 	print('using ground-truth object detection.')
@@ -70,7 +75,7 @@ def usage():
 	print(' e.g.:  python3 extract_hand_poses.py -src IK -e Enactment11 -e Enactment12 -v')
 	print('')
 	print('Flags:  -e    MUST HAVE AT LEAST ONE: Path to a directory of raw enactment materials: JSONs and color maps.')
-	print('        -src  Following string must be in {IK, sensor}.')
+	print('        -src  Following string must be in {' + ', '.join(acceptable_pose_sources) + '}.')
 	print('')
 	print('        -v    Enable verbosity')
 	print('        -?    Display this message')
