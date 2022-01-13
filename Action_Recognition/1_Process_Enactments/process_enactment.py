@@ -16,7 +16,7 @@ def main():
 																	#  so we won't have to comb over these twice.
 	#################################################################
 	#  First pass on the given enactments: check frame sizes;       #
-	#  check color channels; (optionally) render visual aides.      #
+	#  check color channels; (optionally) render visual aids.       #
 	#################################################################
 	if params['verbose']:
 		print('>>> Preparing the following enactments:')
