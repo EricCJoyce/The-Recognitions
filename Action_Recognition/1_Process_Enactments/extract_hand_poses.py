@@ -4,6 +4,7 @@ acceptable_pose_sources = ['IK', 'sensor']
 
 def main():
 	global acceptable_pose_sources
+
 	params = get_command_line_params()								#  Collect parameters
 	if params['helpme'] or len(params['enactments']) == 0 or params['pose-source'] not in acceptable_pose_sources:
 		usage()
@@ -33,6 +34,7 @@ def main():
 
 def get_command_line_params():
 	global acceptable_pose_sources
+
 	params = {}
 	params['enactments'] = []										#  List of file paths
 	params['pose-source'] = None
