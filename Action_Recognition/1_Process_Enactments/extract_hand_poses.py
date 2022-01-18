@@ -67,7 +67,7 @@ def get_command_line_params():
 def usage():
 	global acceptable_pose_sources
 
-	print('You\'ve already processed one or more enactments and now want to extract the hand poses from them.')acceptable_pose_sources
+	print('You\'ve already processed one or more enactments and now want to extract the hand poses from them.')
 	print('You would do this if you want to use the centroids of the Inverse-Kinematic (IK) hands without also')
 	print('using ground-truth object detection.')
 	print('Write extracted hand poses to a separate file, then integrate this file with network detections')
