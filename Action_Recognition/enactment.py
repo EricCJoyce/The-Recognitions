@@ -1722,6 +1722,10 @@ class Enactment():
 		frame_ctr = 0
 		fh = open(self.enactment_name + '_props.txt', 'w')			#  Create "<self.enactment_name>_props.txt"
 		fh.write('#  Enactment object-mask lookup-table, created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  WIDTH & HEIGHT:\n')
+		fh.write('#    ' + str(self.width) + '\t' + str(self.height) + '\n')
+		fh.write('#  FPS:\n')
+		fh.write('#    ' + str(self.fps) + '\n')
 		if self.object_detection_source is not None:
 			fh.write('#  OBJECT DETECTION SOURCE:\n')
 			fh.write('#    ' + self.object_detection_source + '\n')
