@@ -14,7 +14,7 @@ def main():
 		if params['verbose']:
 			print('\n>>> Reading ' + enactment_name + '\n')
 
-		e = Enactment(enactment_name, enactment_file=enactment_name + '_props.txt', verbose=params['verbose'])
+		e = Enactment(enactment_name, enactment_file=enactment_name + '.enactment', verbose=params['verbose'])
 																	#  Remember: the Enactment constructor already loads sensor hand poses.
 		if params['pose-source'] == 'sensor':
 			e.write_hand_pose_file(enactment_name + '.sensor')
