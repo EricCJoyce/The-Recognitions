@@ -638,6 +638,7 @@ class Enactment():
 			assert isinstance(kwargs['enactment_file'], str), 'Argument \'enactment_file\' passed to Enactment must be a string.'
 			fh = open(kwargs['enactment_file'], 'r')
 			reading_dimensions = False
+			reading_framerate = False
 			reading_object_detection_source = False
 			reading_recognizable_objects = False
 			for line in fh.readlines():
@@ -649,6 +650,13 @@ class Enactment():
 						self.width = int(arr[0])
 						self.height = int(arr[1])
 						reading_dimensions = False
+
+					if 'FPS' in line:								#  Next line contains frames-per-second.
+						reading_framerate = True
+					elif reading_framerate:
+						arr = line[1:].strip()
+						self.fps = int(arr)
+						reading_framerate = False
 
 					if 'OBJECT DETECTION SOURCE' in line:			#  Next line contains object-detection source.
 						reading_object_detection_source = True
