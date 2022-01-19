@@ -22,8 +22,14 @@ def main():
 		#                                                           #
 		#  Determine the enactment's source for object data:        #
 		#    ground-truth (*_props.txt) or                          #
-		#    network (e.g. *_mask_rcnn_factual_0028_detections.txt) #
+		#    network (e.g. *_ssd_mobilenet_640x640_detections.txt)  #
 		#  This is enactment_name + params['parse-suffix'].         #
+		#                                                           #
+		#  Do we want to use the action labels provided in the JSON #
+		#  or in some other source?                                 #
+		#  This is params['action-label-source'].                   #
+		#  If it is None, then use JSON. Otherwise, for each        #
+		#  enactment look for *.<params['action-label-source']>     #
 		#                                                           #
 		#  When handling objects, do we call their centroid the     #
 		#  average of all pixels in the mask or the bounding-box    #
@@ -44,6 +50,9 @@ def main():
 		#############################################################
 																	#  Read objects--possibly including GT hands.
 		e.load_parsed_objects(enactment_name + params['parse-suffix'], params['centroid-mode'])
+
+		if params['action-label-source'] is not None:				#  If we are taking action labels from a source other than the JSON files.
+			e.load_all_frame_labels(enactment_name + '.' + params['action-label-source'])
 
 		if params['hand-pose-src-file'] is None:					#  No external hand-pose source file:
 																	#  then consider whether we will use sensor poses or IK poses.
@@ -85,6 +94,7 @@ def get_command_line_params():
 	params['gaussian']['sigma-hand'] = (0.5, 0.5, 0.5)
 
 	params['parse-suffix'] = '_props.txt'							#  Suffix of source of object detections--possibly including hands.
+	params['action-label-source'] = None							#  By default, use the given JSON action labels.
 	params['centroid-mode'] = 'bbox'
 	params['hand-pose-mode'] = 'sensor-shutoff'
 	params['hand-pose-src-file'] = None
@@ -105,7 +115,7 @@ def get_command_line_params():
 																	#  Permissible setting flags
 	flags = ['-e', \
 	         '-mu', '-sigHead', '-sigHand', \
-	         '-suffix', '-centroid', '-handmode', '-handsrc', \
+	         '-suffix', '-action', '-centroid', '-handmode', '-handsrc', \
 	         '-render', '-color', '-colors', '-minpx', \
 	         '-v', '-?', '-help', '--help', \
 	         '-User', '-imgw', '-imgh', '-fontsize']
@@ -160,6 +170,8 @@ def get_command_line_params():
 
 				elif argtarget == '-suffix':
 					params['parse-suffix'] = argval
+				elif argtarget == '-action':
+					params['action-label-source'] = argval
 				elif argtarget == '-centroid':
 					params['centroid-mode'] = argval
 				elif argtarget == '-handmode':
@@ -198,7 +210,7 @@ def usage():
 	print('')
 	print('Usage:  python3 assemble_enactment.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 assemble_enactment.py -e Enactment11 -e Enactment12 -v -render')
-	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _ssd_mobilenet_640x640_detections.txt -handsrc .IK-bbox.handposes -v -render')
+	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _ssd_mobilenet_640x640_detections.txt -handsrc .IK-bbox.handposes -action labels -v -render')
 	print('')
 	print('Flags:  -e        Following argument is path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -mu       Following three arguments are the three components of the Gaussian\'s mu for the gaze.')
@@ -210,6 +222,8 @@ def usage():
 	print('        -suffix   Following string is the suffix of the file to be used as object-detection source.')
 	print('                  By default, this is "_props.txt", meaning the script expects to use ground-truth detections')
 	print('                  unless directed elsewhere.')
+	print('        -action   If given, the string following this flag is the file extension containing label lookups for')
+	print('                  each enactment. When omitted, enactments take action labels from their JSON files.')
 	print('        -centroid Following string in {avg, bbox} indicates how an object\'s centroid is computed.')
 	print('                  Default is "bbox".')
 	print('        -handmode Following string in {IK-bbox, IK-avg, sensor-shutoff, sensor} indicates how hand poses')
