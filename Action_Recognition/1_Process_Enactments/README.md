@@ -4,7 +4,7 @@ Enactments are annotated recordings of egocentric actions.
 
 ## process_enactment.py
 
-The main goal of `process_enactment.py` is to produce, for each enactment, a `*_props.txt` file, several pose files, and masks for all objects we wish to recognize downstream in the pipeline. An enactment's props file is a list of which objects are visible in which frames, where their masks are, and which (if any) action is being performed during that frame. Much of this information already exists in the enactment metadata; `process_enactment.py` organizes it into a single look-up table, generates masks according to the given rules, and--depending on which settings you give the script--renders several "sanity checks" like videos and 3D models (`*.ply` files) that plot the recording in space.
+The main goal of `process_enactment.py` is to produce, for each enactment, a `*_props.txt` file, a `*.labels` file, several pose files, and masks for all objects we wish to recognize downstream in the pipeline. An enactment's props file is a list of which objects are visible in which frames, where their masks are, and which (if any) action is being performed during that frame. Much of this information already exists in the enactment metadata; `process_enactment.py` organizes it into a single look-up table, generates masks according to the given rules, and--depending on which settings you give the script--renders several "sanity checks" like videos and 3D models (`*.ply` files) that plot the recording in space.
 
 ### Enactments are expected to be directories with the following structure:
 ```
@@ -69,6 +69,7 @@ total-histogram.png
 For each enactment, expect:
 ```
 *_props.txt
+*.labels
 *-histogram.png
 ```
 This script also adds a folder, `GT`, to each enactment's directory. Inside this new directory are all the masks referenced by `*_props.txt`.
