@@ -122,6 +122,7 @@ def main():
 
 		e.logical_parse(params['rules'])							#  Apply rules; parse objects.
 		e.render_parsed()											#  Save parsed objects' masks.
+		e.write_all_frame_labels()									#  Save an action-label lookup table.
 
 	fh.close()
 
