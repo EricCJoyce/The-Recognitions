@@ -29,7 +29,7 @@ def main():
 		#  or in some other source?                                 #
 		#  This is params['action-label-source'].                   #
 		#  If it is None, then use JSON. Otherwise, for each        #
-		#  enactment look for *.<params['action-label-source']>     #
+		#  enactment look for *<params['action-label-source']>      #
 		#                                                           #
 		#  When handling objects, do we call their centroid the     #
 		#  average of all pixels in the mask or the bounding-box    #
@@ -52,7 +52,7 @@ def main():
 		e.load_parsed_objects(enactment_name + params['parse-suffix'], params['centroid-mode'])
 
 		if params['action-label-source'] is not None:				#  If we are taking action labels from a source other than the JSON files.
-			e.load_all_frame_labels(enactment_name + '.' + params['action-label-source'])
+			e.load_all_frame_labels(enactment_name + params['action-label-source'])
 
 		if params['hand-pose-src-file'] is None:					#  No external hand-pose source file:
 																	#  then consider whether we will use sensor poses or IK poses.
@@ -80,8 +80,8 @@ def main():
 			if params['colors-file'] is not None:					#  Were we given a color look-up file?
 				e.load_color_lookup(params['colors-file'])
 
-			e.render_gaussian_weighted_video(g)
-			#e.render_annotated_video()
+			#e.render_gaussian_weighted_video(g)
+			e.render_annotated_video()
 
 	return
 
@@ -210,7 +210,7 @@ def usage():
 	print('')
 	print('Usage:  python3 assemble_enactment.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 assemble_enactment.py -e Enactment11 -e Enactment12 -v -render')
-	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _ssd_mobilenet_640x640_detections.txt -handsrc .IK-bbox.handposes -action labels -v -render')
+	print(' e.g.:  python3 assemble_enactment.py -e Enactment1 -suffix _ssd_mobilenet_640x640_detections.txt -handsrc .IK-bbox.handposes -action .labels -v -render')
 	print('')
 	print('Flags:  -e        Following argument is path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -mu       Following three arguments are the three components of the Gaussian\'s mu for the gaze.')
