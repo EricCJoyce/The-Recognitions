@@ -5,7 +5,6 @@ import time
 
 from enactment import *
 from object_detection.utils import label_map_util
-from object_detection.utils import visualization_utils
 
 def main():
 	params = get_command_line_params()								#  Collect parameters.
