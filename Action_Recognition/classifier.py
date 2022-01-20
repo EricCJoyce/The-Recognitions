@@ -894,7 +894,7 @@ class Classifier():
 
 	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label).
 	def confusion_matrix(self, predictions_truths):
-		labels = self.labels('train')								#  Only count the labels the classifier is equipped to recognize!
+		labels = self.labels()
 		num_classes = len(labels)
 
 		M = np.zeros((num_classes, num_classes), dtype='uint16')
