@@ -72,7 +72,7 @@ def main():
 
 		if params['render']:
 			e.render_composite_video()								#  Make a composite video to make sure that these sets of frames align.
-			e.render_annotated_video()								#  Make an annotated video; it's helpful to see.
+			#e.render_annotated_video()								#  Do not make an annotated video now; annotate with network detection overlays.
 
 			e.render_skeleton_poses()								#  Render centipedes (headframe and global).
 			e.render_action_poses()
