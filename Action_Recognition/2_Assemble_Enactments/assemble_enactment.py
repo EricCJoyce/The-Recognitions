@@ -80,8 +80,8 @@ def main():
 			if params['colors-file'] is not None:					#  Were we given a color look-up file?
 				e.load_color_lookup(params['colors-file'])
 
-			#e.render_gaussian_weighted_video(g)
-			e.render_annotated_video()
+			e.render_gaussian_weighted_video(g)
+			#e.render_annotated_video()
 
 	return
 
