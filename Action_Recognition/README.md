@@ -7,15 +7,15 @@ This repository contains the modules of a pipeline. The primordial inputs are la
 ## Roadmap
 
 ```
-[1]
- |
- |----->[3]
- |       |
- V       V
-[2]<----[4]
- |
- |
- |----->[5]------+
+[1]                         1. Process enactments: establish ground-truth from recordings.
+ |                          2. Assemble enactments: create *.enactment files.
+ |----->[3]                 3. Train a deep network to recognize objects.
+ |       |                  4. Use a trained network to detect objects in recordings.
+ V       V                  5. Use *.enactment files to atemporally match snippets.
+[2]<----[4]                 6. Build a database from *.enactment files.
+ |                          7. Compute probabilities using isotonic regression.
+ |                          8. Derive cutoff conditions to improve classification.
+ |----->[5]------+          9. Simulate real-time classification.
  |               |
  |               V
  |-------+-------+
