@@ -8,25 +8,25 @@ This repository contains the modules of a pipeline. The primordial inputs are la
 
 ```
 [1]                   1. Process enactments: establish ground-truth from recordings.
- |                    2. Assemble enactments: create *.enactment files.
- |----->[3]           3. Train a deep network to recognize objects.
- |       |            4. Use a trained network to detect objects in recordings.
- V       V            5. Use *.enactment files to atemporally match snippets.
-[2]<----[4]           6. Build a database from *.enactment files.
- |                    7. Compute probabilities using isotonic regression.
- |                    8. Derive cutoff conditions to improve classification.
- |----->[5]------+    9. Simulate real-time classification.
+ |
+ |----->[3]           2. Assemble enactments: create *.enactment files.
+ |       |            3. Train a deep network to recognize objects.
+ V       V            4. Use a trained network to detect objects in recordings.
+[2]<----[4]
+ |
+ |
+ |----->[5]------+    5. Use *.enactment files to atemporally match snippets.
  |               |
  |               V
  |-------+-------+
  |       |       |
  V       V       V
-[6]     [8]     [7]
- |       |       |
- +-------+-------+
+[6]     [8]     [7]   6. Build a database from *.enactment files.
+ |       |       |    7. Compute probabilities using isotonic regression.
+ +-------+-------+    8. Derive cutoff conditions to improve classification.
          |
          V
-        [9]
+        [9]           9. Simulate real-time classification.
 ```
 
 ## Requirements
