@@ -340,6 +340,12 @@ class Classifier():
 		else:
 			self.hands_coeff = 1.0
 
+		if 'hands_one_hot_coeff' in kwargs:							#  Were we given a coefficient for the one-hot hands-status-subvector?
+			assert isinstance(kwargs['hands_one_hot_coeff'], float), 'Argument \'hands_one_hot_coeff\' passed to Classifier must be a float.'
+			self.hands_one_hot_coeff = kwargs['hands_one_hot_coeff']
+		else:
+			self.hands_one_hot_coeff = 1.0
+
 		if 'props_coeff' in kwargs:									#  Were we given a props-subvector coefficient?
 			assert isinstance(kwargs['props_coeff'], float), 'Argument \'props_coeff\' passed to Classifier must be a float.'
 			self.props_coeff = kwargs['props_coeff']
@@ -789,15 +795,15 @@ class Classifier():
 		vec[0] *= self.hands_coeff									#  Weigh LH_x.
 		vec[1] *= self.hands_coeff									#  Weigh LH_y.
 		vec[2] *= self.hands_coeff									#  Weigh LH_z.
-																	#  Skip one-hot encoded LH_0.
-																	#  Skip one-hot encoded LH_1.
-																	#  Skip one-hot encoded LH_2.
+		vec[3] *= self.hands_one_hot_coeff							#  Weigh one-hot encoded LH_0.
+		vec[4] *= self.hands_one_hot_coeff							#  Weigh one-hot encoded LH_1.
+		vec[5] *= self.hands_one_hot_coeff							#  Weigh one-hot encoded LH_2.
 		vec[6] *= self.hands_coeff									#  Weigh RH_x.
 		vec[7] *= self.hands_coeff									#  Weigh RH_y.
 		vec[8] *= self.hands_coeff									#  Weigh RH_z.
-																	#  Skip one-hot encoded RH_0.
-																	#  Skip one-hot encoded RH_1.
-																	#  Skip one-hot encoded RH_2.
+		vec[9] *= self.hands_one_hot_coeff							#  Weigh one-hot encoded RH_0.
+		vec[10] *= self.hands_one_hot_coeff							#  Weigh one-hot encoded RH_1.
+		vec[11] *= self.hands_one_hot_coeff							#  Weigh one-hot encoded RH_2.
 		for i in range(12, len(vector)):							#  Weigh props_i.
 			vec[i] *= self.props_coeff
 
@@ -810,15 +816,15 @@ class Classifier():
 		vec[0] /= self.hands_coeff									#  Weigh LH_x.
 		vec[1] /= self.hands_coeff									#  Weigh LH_y.
 		vec[2] /= self.hands_coeff									#  Weigh LH_z.
-																	#  Skip one-hot encoded LH_0.
-																	#  Skip one-hot encoded LH_1.
-																	#  Skip one-hot encoded LH_2.
+		vec[3] /= self.hands_one_hot_coeff							#  Weigh one-hot encoded LH_0.
+		vec[4] /= self.hands_one_hot_coeff							#  Weigh one-hot encoded LH_1.
+		vec[5] /= self.hands_one_hot_coeff							#  Weigh one-hot encoded LH_2.
 		vec[6] /= self.hands_coeff									#  Weigh RH_x.
 		vec[7] /= self.hands_coeff									#  Weigh RH_y.
 		vec[8] /= self.hands_coeff									#  Weigh RH_z.
-																	#  Skip one-hot encoded RH_0.
-																	#  Skip one-hot encoded RH_1.
-																	#  Skip one-hot encoded RH_2.
+		vec[9] /= self.hands_one_hot_coeff							#  Weigh one-hot encoded RH_0.
+		vec[10] /= self.hands_one_hot_coeff							#  Weigh one-hot encoded RH_1.
+		vec[11] /= self.hands_one_hot_coeff							#  Weigh one-hot encoded RH_2.
 		for i in range(12, len(vector)):							#  Weigh props_i.
 			vec[i] /= self.props_coeff
 
