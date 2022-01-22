@@ -2003,6 +2003,17 @@ class AtemporalClassifier(Classifier):
 		self.drop_allocation_from_test(label)
 		return
 
+	#  Drop a specific action allocation (from whichever set contains it).
+	#  (Some action performances are just no good: usually when the important elements are obscured or occur off-screen.)
+	def drop_allocation(self, enactment_name, index):
+		keys = list(self.allocation.keys())
+		i = 0
+		while i < len(keys) and not (keys[i][0] == enactment_name and keys[i][1] == index):
+			i += 1
+		if i < len(keys):
+			del self.allocation[ keys[i] ]
+		return
+
 	#  Drop all instances of the given label from allocations to the training set.
 	def drop_allocations_from_train(self, label):
 		marked_for_death = []
