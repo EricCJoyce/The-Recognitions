@@ -8,7 +8,8 @@ This module involves several steps. You will need to:
 3. Download pre-trained models from the TensorFlow Model Zoo.
 4. Configure the training job.
 5. Train the network.
-6. Export a trained network.
+6. Evaluate your trained network.
+7. Export a trained network.
 
 Before starting on any of these tasks, you may need to clean up your enactments, removing color-map artifacts and objects that "leak" through gaps in the environment mesh.
 
@@ -218,7 +219,38 @@ Begin training by issuing the following command (which you should obviously alte
 python3.6 model_main_tf2.py --model_dir=training/models/ssd_mobilenet_640x640 --pipeline_config_path=training/models/ssd_mobilenet_640x640/pipeline.config
 ```
 
-## 3.6 Export a trained network
+## 3.6 Evaluate a trained network
+
+Training completed, but how well has your network learned? This is actually two concerns; we want to measure both network generalization and per-class accuracy. Validation-set error may have been driven down, but is network identification of some objects weaker than it is for others?
+
+To answer the first question, run the following command:
+
+```
+python3 model_main_tf2.py --model_dir=training/models/ssd_mobilenet_640x640 --pipeline_config_path=training/models/ssd_mobilenet_640x640/pipeline.config --checkpoint_dir=training/models/ssd_mobilenet_640x640
+```
+This tracks performance of your model on the test set found in `./training/annotations/test.record` and collects statistics. It creates a TensorFlow "event" file in `./training/models/ssd_mobilenet_640x640/eval`. If you run TensorBoard, you can see plots of the measurements recorded in these "event" files.
+
+Force-quit execution of `python3 model_main_tf2.py` once you see this message:
+```
+... Waiting for new checkpoint at training/models/ssd_mobilenet_640x640
+```
+This script will run indefinitely (occupying your GPU), waiting for a new network checkpoint to appear (presumably trained on another GPU.)
+
+Examine the IoU scores in the print-out or in TensorBoard to decide whether the network has generalized well.
+
+Notice that neither the report printed to screen nor the new "event" file showed us per-class accuracy. To find that out, we will need to run the same script but give it a new `*.config` file at the command line. Only one line of this file needs to change, so issue the following command to make a copy of the existing `*.config` file:
+```
+cp training/models/ssd_mobilenet_640x640/pipeline.config training/models/ssd_mobilenet_640x640/per_class.config
+```
+
+Open the newly-created `per_class.config` in your text editor of choice and find the attribute `metrics_set` inside the attribute `eval_config` (for the MobileNet model we are using, this is on line 181.) Change the value to `"pascal_voc_detection_metrics"` and save.
+
+Now issue the same command as above, but refer the script to this new `*.config` file:
+```
+python3 model_main_tf2.py --model_dir=training/models/ssd_mobilenet_640x640 --pipeline_config_path=training/models/ssd_mobilenet_640x640/per_class.config --checkpoint_dir=training/models/ssd_mobilenet_640x640
+```
+
+## 3.7 Export a trained network
 
 The TFOD API also includes an exporter script. Let's make a copy of this in the working directory so that we can call it from there.
 
