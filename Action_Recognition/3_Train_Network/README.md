@@ -245,10 +245,12 @@ cp training/models/ssd_mobilenet_640x640/pipeline.config training/models/ssd_mob
 
 Open the newly-created `per_class.config` in your text editor of choice and find the attribute `metrics_set` inside the attribute `eval_config` (for the MobileNet model we are using, this is on line 181.) Change the value to `"pascal_voc_detection_metrics"` and save.
 
-Now issue the same command as above, but refer the script to this new `*.config` file:
+Now issue the same command as above, but refer the script to this new `per_class.config` file:
 ```
 python3 model_main_tf2.py --model_dir=training/models/ssd_mobilenet_640x640 --pipeline_config_path=training/models/ssd_mobilenet_640x640/per_class.config --checkpoint_dir=training/models/ssd_mobilenet_640x640
 ```
+
+As before, this prints information to the screen and creates a new "event" file you can view in TensorBoard. The print-out is sufficient to let us know which classes are underperforming. Again, you'll have to force-quit the script once it tells you it's waiting for new checkpoints.
 
 ## 3.7 Export a trained network
 
