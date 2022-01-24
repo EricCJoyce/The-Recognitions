@@ -282,7 +282,7 @@ def build_dataset(classes, params):
 
 	fh = open('recommended_weights.txt', 'w')
 	fh.write('#  Per-class weights recommended for Object Recognition dataset created ' + dataset_timestamp + '\n')
-	fh.write('#  Let 1.0 be the maximum weight a class may have.')
+	fh.write('#  Let 1.0 be the maximum weight a class may have.\n')
 	fh.write('#  Learnable-object    Weight\n')
 	for classname, weight in sorted(recommended_weights.items()):
 		fh.write(classname + '\t' + str(weight) + '\n')
