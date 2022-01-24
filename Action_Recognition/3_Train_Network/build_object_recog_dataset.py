@@ -375,7 +375,7 @@ def usage():
 	print('')
 	print('Usage:  python3 build_object_recog_dataset.py <parameters, preceded by flags>')
 	print(' e.g.   ')
-	print('        python3 build_object_recog_dataset.py -e BackBreaker1 -e Enactment1 -e Enactment2 -e Enactment3 -e Enactment4 -e Enactment5 -e Enactment6 -e Enactment7 -e Enactment9 -e Enactment10 -e MainFeederBox1 -e Regulator1 -e Regulator2 -v -minpx 400')
+	print('        python3 build_object_recog_dataset.py -e BackBreaker1 -e Enactment1 -e Enactment2 -e Enactment3 -e Enactment4 -e Enactment5 -e Enactment6 -e Enactment7 -e Enactment9 -e Enactment10 -e MainFeederBox1 -e Regulator1 -e Regulator2 -v -minpx 200 -cond 19dec21.enactment-conditions')
 	print(' e.g.   Drop intermediate-state objects, balance sets:')
 	print('        python3 build_object_recog_dataset.py -e BackBreaker1 -e Enactment1 -e Enactment2 -e Enactment3 -e Enactment4 -e Enactment5 -e Enactment6 -e Enactment7 -e Enactment9 -e Enactment10 -e MainFeederBox1 -e Regulator1 -e Regulator2 -x AuxiliaryFeederBox_Unknown -x BackBreaker_Unknown -x Disconnect_Unknown -x MainFeederBox_Unknown -x Regulator_Unknown -x SafetyPlank_Unknown -x TransferFeederBox_Unknown -v -minpx 200 -b')
 	print(' e.g.   Run in background:')
