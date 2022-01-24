@@ -265,6 +265,29 @@ def build_dataset(classes, params):
 		fh.write(imagefilename + '\t' + dimensions + '\t' + enactment + '\t' + classpresent + '\t' + bbox_str + '\t' + maskpath + '\n')
 	fh.close()
 
+	max_class = 0													#  First identify the most numerous class count.
+	for classname in classes:
+		if counts_train[classname] > max_class:
+			max_class = counts_train[classname]
+
+	proportions = sorted([ (float(counts_train[classname]) / float(max_class), classname) for classname in classes])
+	sorted_proportions = [x[0] for x in proportions]				#  Proportions, in ascending order.
+	sorted_classnames = [x[1] for x in proportions]					#  Class names, in order of ascending proportion.
+	reversed_sorted_proportions = reversed(sorted_proportions)		#  Reversed proportions.
+	recommended_weights = {}										#  key: class-name ==> val: real in (0.0, 1.0]
+	ctr = 0
+	for proportion in reversed_sorted_proportions:
+		recommended_weights[ sorted_classnames[ctr] ] = proportion
+		ctr += 1
+
+	fh = open('recommended_weights.txt', 'w')
+	fh.write('#  Per-class weights recommended for Object Recognition dataset created ' + dataset_timestamp + '\n')
+	fh.write('#  Let 1.0 be the maximum weight a class may have.')
+	fh.write('#  Learnable-object    Weight\n')
+	for classname, weight in sorted(recommended_weights.items()):
+		fh.write(classname + '\t' + str(weight) + '\n')
+	fh.close()
+
 	return
 
 def get_command_line_params():
