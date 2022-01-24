@@ -4,7 +4,8 @@ import sys
 
 def main():
 	params = get_command_line_params()								#  Collect parameters.
-	if params['helpme'] or not os.path.exists('training-set.txt') or not os.path.exists('validation-set.txt'):
+	if params['helpme'] or not os.path.exists('training-set.txt') or not os.path.exists('validation-set.txt') or \
+	   params['use-recommended-weights'] and not os.path.exists('recommended_weights.txt'):
 		usage()
 		return
 																	#  Check for existing directories.
@@ -118,6 +119,17 @@ def main():
 		ctr += 1
 	fh.close()
 
+	if params['use-recommended-weights']:
+		if params['verbose']:
+			print('>>> Loading per-class weights from "recommended_weights.txt".')
+		weights_lookup = {}
+		fh = open('recommended_weights.txt', 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				weights_lookup[ arr[0] ] = float(arr[1])
+		fh.close()
+
 	if params['verbose']:
 		print('>>> Populating \'./training/images/train\'...')
 
@@ -168,6 +180,9 @@ def main():
 			fh_xml.write('\t\t\t<xmax>' + xmax + '</xmax>\n')
 			fh_xml.write('\t\t\t<ymax>' + ymax + '</ymax>\n')
 			fh_xml.write('\t\t</bndbox>\n')
+																	#  Using weights? Add them here.
+			if params['use-recommended-weights'] and recog_obj_label in weights_lookup:
+				fh_xml.write('\t\t<weight>' + '{:.16f}'.format(weights_lookup[recog_obj_label]) + '</weight>\n')
 			fh_xml.write('\t</object>\n')
 		fh_xml.write('</annotation>')
 		fh_xml.close()
@@ -227,6 +242,7 @@ def main():
 			fh_xml.write('\t\t\t<xmax>' + xmax + '</xmax>\n')
 			fh_xml.write('\t\t\t<ymax>' + ymax + '</ymax>\n')
 			fh_xml.write('\t\t</bndbox>\n')
+																	#  No weights for the test set.
 			fh_xml.write('\t</object>\n')
 		fh_xml.write('</annotation>')
 		fh_xml.close()
@@ -240,17 +256,19 @@ def main():
 def get_command_line_params():
 	params = {}
 
+	params['use-recommended-weights'] = False						#  Whether to expect and apply the contents of "recommended_weights.txt".
 	params['imgd'] = 3												#  We expect three channels: red, green, blue.
-
 	params['verbose'] = False
 	params['helpme'] = False
 
 	argtarget = None												#  Current argument to be set.
 																	#  Permissible setting flags.
-	flags = ['-v', '-?', '-help', '--help']
+	flags = ['-w', '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
 		if sys.argv[i] in flags:
-			if sys.argv[i] == '-v':
+			if sys.argv[i] == '-w':
+				params['use-recommended-weights'] = True
+			elif sys.argv[i] == '-v':
 				params['verbose'] = True
 			elif sys.argv[i] == '-?' or sys.argv[i] == '-help' or sys.argv[i] == '--help':
 				params['helpme'] = True
@@ -279,8 +297,9 @@ def usage():
 	print(' e.g.   ')
 	print('        python3 convert_object_recog_dataset.py -v')
 	print('')
-	print('Flags:  -v      Enable verbosity')
-	print('        -?      Display this message')
+	print('Flags:  -w  Look for "recommended_weights.txt" and apply those weights to their classes.')
+	print('        -v  Enable verbosity.')
+	print('        -?  Display this message.')
 	return
 
 if __name__ == '__main__':
