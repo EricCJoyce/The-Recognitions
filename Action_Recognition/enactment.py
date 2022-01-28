@@ -778,15 +778,45 @@ class Enactment():
 		#  Load ground-truth action labels into the object.         #
 		#############################################################
 
-		prev_ctr = 0
-		fixes = []
-		for i in range(0, len(labels['list'])):
-			action = labels['list'][i]
-			action_start_time = action['startTime']
-			action_end_time = action['endTime']
-			label = action['stepDescription']
+		fixes = []													#  Prepare to detect and correct label conflicts and overlaps.
 
-			self.actions.append( Action(action_start_time, action_end_time, label=label) )
+		if os.path.exists(self.enactment_name + '/labels.txt'):		#  If an explicit frame-labeling file exists, use that.
+			if self.verbose:
+				print('>>> Found ' + self.enactment_name + '/labels.txt')
+			fh = open(self.enactment_name + '/labels.txt', 'r')
+			current_label = None
+			start_time = None
+			end_time = None
+			for line in fh.readlines():
+				if line[0] != '#':
+					arr = line.strip().split('\t')					#  timestamp    frame-path    label
+					time_stamp = float(arr[0])
+					label = arr[2]
+
+					if label == '*' and current_label is None:
+						current_label = label
+
+					if label != current_label:						#  A change!
+						if current_label != '*':					#  Something other than nothing has ended.
+							end_time = time_stamp
+							self.actions.append( Action(start_time, end_time, label=current_label) )
+						start_time = time_stamp
+						current_label = label
+			fh.close()
+
+			if current_label != '*':								#  An action ran all the way to the end of the enactment; close it!
+				end_time = time_stamp
+				self.actions.append( Action(start_time, end_time, label=current_label) )
+		else:														#  Otherwise, use the JSON.
+			if self.verbose:
+				print('>>> Reading labels from JSON')
+			for i in range(0, len(labels['list'])):
+				action = labels['list'][i]
+				action_start_time = action['startTime']
+				action_end_time = action['endTime']
+				label = action['stepDescription']
+
+				self.actions.append( Action(action_start_time, action_end_time, label=label) )
 																	#  Sort temporally
 		self.actions = sorted(self.actions, key=lambda x: x.start_time)
 
@@ -799,6 +829,7 @@ class Enactment():
 				mid = self.actions[i + 1].start_time - (self.actions[i].end_time - self.actions[i + 1].start_time) * 0.5
 				self.actions[i].end_time = mid						#  Short the end of the out-going action
 				self.actions[i + 1].start_time = mid				#  Postpone the beginning of the in-coming action
+
 																	#  Potential conflicts have been resolved.
 		for i in range(0, len(self.actions)):						#  Now sync time stamps with frames.
 																	#  Find the frame that minimizes (squared) difference between
