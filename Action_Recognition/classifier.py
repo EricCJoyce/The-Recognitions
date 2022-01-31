@@ -2254,8 +2254,8 @@ class AtemporalClassifier(Classifier):
 			q_mask_canvas = np.zeros((self.height, self.width, 3), dtype='uint8')
 			t_mask_canvas = np.zeros((self.height, self.width, 3), dtype='uint8')
 
-			if self.object_detection_source == 'GT':
-				fh = open(q_enactment + '_props.txt', 'r')
+			if self.object_detection_source == 'GT':				#  If detections come from Ground-Truth, then look to *_props.txt for overlays.
+				fh = open(q_enactment.split('/')[-1] + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
 				for line in lines:									#  Find all lines itemizing masks for the current query frame.
@@ -2277,7 +2277,7 @@ class AtemporalClassifier(Classifier):
 								q_mask_canvas += mask				#  Add mask to mask accumulator.
 								q_mask_canvas[q_mask_canvas > 255] = 255
 
-				fh = open(t_enactment + '_props.txt', 'r')
+				fh = open(t_enactment.split('/')[-1] + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
 				for line in lines:									#  Find all lines itemizing masks for the current template frame.
@@ -2298,7 +2298,50 @@ class AtemporalClassifier(Classifier):
 								mask[:, :, 2] *= int(round(self.robject_colors[ object_name ][0]))
 								t_mask_canvas += mask				#  Add mask to mask accumulator.
 								t_mask_canvas[t_mask_canvas > 255] = 255
-			#else:
+			else:													#  If detections come from elsewhere, then look to *_detections.txt for overlays.
+				fh = open(q_enactment.split('/')[-1] + '_' + self.object_detection_source.split('/')[-1] + '_detections.txt', 'r')
+				lines = fh.readlines()
+				fh.close()
+				for line in lines:									#  Find all lines itemizing masks for the current query frame.
+					if line[0] != '#':
+						arr = line.strip().split('\t')				#  In this pass, we are only interested in the masks;
+																	#  which are affected by transparency.
+						if q_index is not None and arr[1] == q_frames[q_index]:
+							object_name = arr[3]
+							if object_name not in ['LeftHand', 'RightHand']:
+								mask_path = arr[7]
+								mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
+								mask[mask > 1] = 1					#  Knock all values down to 1
+																	#  Extrude to three channels.
+								mask = mask[:, :, None] * np.ones(3, dtype='uint8')[None, None, :]
+																	#  Convert this to a graphical overlay.
+								mask[:, :, 0] *= int(round(self.robject_colors[ object_name ][2]))
+								mask[:, :, 1] *= int(round(self.robject_colors[ object_name ][1]))
+								mask[:, :, 2] *= int(round(self.robject_colors[ object_name ][0]))
+								q_mask_canvas += mask				#  Add mask to mask accumulator.
+								q_mask_canvas[q_mask_canvas > 255] = 255
+
+				fh = open(t_enactment.split('/')[-1] + '_' + self.object_detection_source.split('/')[-1] + '_detections.txt', 'r')
+				lines = fh.readlines()
+				fh.close()
+				for line in lines:									#  Find all lines itemizing masks for the current template frame.
+					if line[0] != '#':
+						arr = line.strip().split('\t')				#  In this pass, we are only interested in the masks;
+																	#  which are affected by transparency.
+						if t_index is not None and arr[1] == t_frames[t_index]:
+							object_name = arr[3]
+							if object_name not in ['LeftHand', 'RightHand']:
+								mask_path = arr[7]
+								mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
+								mask[mask > 1] = 1					#  Knock all values down to 1
+																	#  Extrude to three channels.
+								mask = mask[:, :, None] * np.ones(3, dtype='uint8')[None, None, :]
+																	#  Convert this to a graphical overlay.
+								mask[:, :, 0] *= int(round(self.robject_colors[ object_name ][2]))
+								mask[:, :, 1] *= int(round(self.robject_colors[ object_name ][1]))
+								mask[:, :, 2] *= int(round(self.robject_colors[ object_name ][0]))
+								t_mask_canvas += mask				#  Add mask to mask accumulator.
+								t_mask_canvas[t_mask_canvas > 255] = 255
 
 			q_img = cv2.addWeighted(q_img, 1.0, q_mask_canvas, 0.7, 0)
 			q_img = cv2.cvtColor(q_img, cv2.COLOR_RGBA2RGB)			#  Flatten alpha
@@ -2306,8 +2349,8 @@ class AtemporalClassifier(Classifier):
 			t_img = cv2.addWeighted(t_img, 1.0, t_mask_canvas, 0.7, 0)
 			t_img = cv2.cvtColor(t_img, cv2.COLOR_RGBA2RGB)			#  Flatten alpha
 
-			if self.object_detection_source == 'GT':
-				fh = open(q_enactment + '_props.txt', 'r')
+			if self.object_detection_source == 'GT':				#  If detections come from Ground-Truth, then look to *_props.txt for overlays.
+				fh = open(q_enactment.split('/')[-1] + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
 				for line in lines:									#  Find those same lines again for the query frame.
@@ -2327,7 +2370,7 @@ class AtemporalClassifier(Classifier):
 								                                                        self.robject_colors[ object_name ][1], \
 								                                                        self.robject_colors[ object_name ][0]), 3)
 
-				fh = open(t_enactment + '_props.txt', 'r')
+				fh = open(t_enactment.split('/')[-1] + '_props.txt', 'r')
 				lines = fh.readlines()
 				fh.close()
 				for line in lines:									#  Find those same lines again for the template frame.
@@ -2346,7 +2389,46 @@ class AtemporalClassifier(Classifier):
 								cv2.circle(t_img, (center_bbox[0], center_bbox[1]), 5, (self.robject_colors[ object_name ][2], \
 								                                                        self.robject_colors[ object_name ][1], \
 								                                                        self.robject_colors[ object_name ][0]), 3)
-			#else:
+			else:													#  If detections come from elsewhere, then look to *_detections.txt for overlays.
+				fh = open(q_enactment.split('/')[-1] + '_' + self.object_detection_source.split('/')[-1] + '_detections.txt', 'r')
+				lines = fh.readlines()
+				fh.close()
+				for line in lines:									#  Find those same lines again for the query frame.
+					if line[0] != '#':
+						arr = line.strip().split('\t')				#  In this pass, we are interested in the bounding boxes and centroids.
+						if q_index is not None and arr[1] == q_frames[q_index]:
+							object_name = arr[3]
+							if object_name not in ['LeftHand', 'RightHand']:
+								bbox_arr = arr[6].split(';')
+								bbox = tuple([int(x) for x in bbox_arr[0].split(',')] + [int(x) for x in bbox_arr[1].split(',')])
+								center_bbox = (int(round(float(bbox[0] + bbox[2]) * 0.5)), \
+								               int(round(float(bbox[1] + bbox[3]) * 0.5)))
+								cv2.rectangle(q_img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (self.robject_colors[ object_name ][2], \
+								                                                              self.robject_colors[ object_name ][1], \
+								                                                              self.robject_colors[ object_name ][0]), 1)
+								cv2.circle(q_img, (center_bbox[0], center_bbox[1]), 5, (self.robject_colors[ object_name ][2], \
+								                                                        self.robject_colors[ object_name ][1], \
+								                                                        self.robject_colors[ object_name ][0]), 3)
+
+				fh = open(t_enactment.split('/')[-1] + '_' + self.object_detection_source.split('/')[-1] + '_detections.txt', 'r')
+				lines = fh.readlines()
+				fh.close()
+				for line in lines:									#  Find those same lines again for the template frame.
+					if line[0] != '#':
+						arr = line.strip().split('\t')				#  In this pass, we are interested in the bounding boxes and centroids.
+						if t_index is not None and arr[1] == t_frames[t_index]:
+							object_name = arr[3]
+							if object_name not in ['LeftHand', 'RightHand']:
+								bbox_arr = arr[6].split(';')
+								bbox = tuple([int(x) for x in bbox_arr[0].split(',')] + [int(x) for x in bbox_arr[1].split(',')])
+								center_bbox = (int(round(float(bbox[0] + bbox[2]) * 0.5)), \
+								               int(round(float(bbox[1] + bbox[3]) * 0.5)))
+								cv2.rectangle(t_img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (self.robject_colors[ object_name ][2], \
+								                                                              self.robject_colors[ object_name ][1], \
+								                                                              self.robject_colors[ object_name ][0]), 1)
+								cv2.circle(t_img, (center_bbox[0], center_bbox[1]), 5, (self.robject_colors[ object_name ][2], \
+								                                                        self.robject_colors[ object_name ][1], \
+								                                                        self.robject_colors[ object_name ][0]), 3)
 
 			q_img = cv2.resize(q_img, (half_width, half_height), interpolation=cv2.INTER_AREA)
 			t_img = cv2.resize(t_img, (half_width, half_height), interpolation=cv2.INTER_AREA)
@@ -2362,7 +2444,7 @@ class AtemporalClassifier(Classifier):
 			                    (self.side_by_side_label_super['x'], self.side_by_side_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 			                    self.side_by_side_label_super['fontsize'], (0, 255, 0), 2)
 			if q_index is not None:									#  Superimpose enactment source and frame file name.
-				cv2.putText(canvas, 'From ' + q_enactment + ', ' + q_frames[q_index].split('/')[-1], \
+				cv2.putText(canvas, 'From ' + q_enactment.split('/')[-1] + ', ' + q_frames[q_index].split('/')[-1], \
 				                    (self.side_by_side_source_super['x'], self.side_by_side_source_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 				                    self.side_by_side_source_super['fontsize'], (255, 255, 255), 2)
 
@@ -2379,7 +2461,7 @@ class AtemporalClassifier(Classifier):
 				                    (self.side_by_side_label_super['x'] + half_width, self.side_by_side_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 				                    self.side_by_side_label_super['fontsize'], (0, 0, 255), 2)
 			if t_index is not None:									#  Superimpose enactment source and frame file name.
-				cv2.putText(canvas, 'From ' + t_enactment + ', ' + t_frames[t_index].split('/')[-1], \
+				cv2.putText(canvas, 'From ' + t_enactment.split('/')[-1] + ', ' + t_frames[t_index].split('/')[-1], \
 				                    (self.side_by_side_source_super['x'] + half_width, self.side_by_side_source_super['y']), cv2.FONT_HERSHEY_SIMPLEX, \
 				                    self.side_by_side_source_super['fontsize'], (255, 255, 255), 2)
 			vid.write(canvas)
