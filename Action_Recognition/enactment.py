@@ -2929,13 +2929,7 @@ class Enactment():
 
 	#  Make color-coded "centipedes".
 	def render_action_poses(self, stem_verbs=True):
-		all_actions = np.unique([x['stepDescription'] for x in self.load_json_action_labels()['list']])
-		if stem_verbs:
-			reduction = {}
-			for act in all_actions:
-				act = act.split('(')[0]
-				reduction[act] = True
-			all_actions = sorted(reduction.keys())
+		all_actions = self.labels()
 
 		colors = np.array([ [int(x * 255)] for x in np.linspace(0.0, 1.0, len(all_actions)) ], np.uint8)
 		colors = cv2.applyColorMap(colors, cv2.COLORMAP_JET)
@@ -3003,9 +2997,8 @@ class Enactment():
 
 		lines = []
 		ctroffset = 0
-		for k, v in frames_p.items():								#  For every LABEL...
+		for act, v in frames_p.items():								#  For every LABEL...
 			ctr = 0
-			act = k.split('(')[0]									#  ACT, derived from LABEL, determines COLOR
 			for pose in v:
 				fh.write(str(pose['head'][0]) + ' ' + str(pose['head'][1]) + ' ' + str(pose['head'][2]) + ' ' + ' '.join([str(x) for x in action_colors[act]]) + '\n')
 
@@ -3048,9 +3041,8 @@ class Enactment():
 
 		lines = []
 		ctroffset = 0
-		for k, v in frames_p.items():								#  For every LABEL...
+		for act, v in frames_p.items():								#  For every LABEL...
 			ctr = 0
-			act = k.split('(')[0]									#  ACT, derived from LABEL, determines COLOR
 			for pose in v:
 				fh.write(str(pose['head'][0]) + ' ' + str(pose['head'][1]) + ' ' + str(pose['head'][2]) + ' ' + ' '.join([str(x) for x in action_colors[act]]) + '\n')
 
