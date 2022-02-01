@@ -1797,7 +1797,7 @@ class Enactment():
 
 				center = detection.center('avg')
 																	#  In meters
-				d = self.min_depth + (float(depthmap[center[1], center[0]]) / 255.0) * (self.max_depth - self.min_depth)
+				d = self.min_depth + (float(depthmap[min(center[1], self.height), min(center[0], self.width)]) / 255.0) * (self.max_depth - self.min_depth)
 				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
 				centroid *= d										#  Scale by known depth (meters from head)
 				pt = np.dot(flip, centroid)							#  Flip point
@@ -1807,7 +1807,7 @@ class Enactment():
 
 				center = detection.center('bbox')
 																	#  In meters
-				d = self.min_depth + (float(depthmap[center[1], center[0]]) / 255.0) * (self.max_depth - self.min_depth)
+				d = self.min_depth + (float(depthmap[min(center[1], self.height), min(center[0], self.width)]) / 255.0) * (self.max_depth - self.min_depth)
 				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
 				centroid *= d										#  Scale by known depth (meters from head)
 				pt = np.dot(flip, centroid)							#  Flip point
@@ -1879,7 +1879,7 @@ class Enactment():
 
 				center = detection.center('avg')
 																	#  In meters
-				d = self.min_depth + (float(depthmap[center[1], center[0]]) / 255.0) * (self.max_depth - self.min_depth)
+				d = self.min_depth + (float(depthmap[min(center[1], self.height), min(center[0], self.width)]) / 255.0) * (self.max_depth - self.min_depth)
 				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
 				centroid *= d										#  Scale by known depth (meters from head)
 				pt = np.dot(flip, centroid)							#  Flip point
@@ -1889,7 +1889,7 @@ class Enactment():
 
 				center = detection.center('bbox')
 																	#  In meters
-				d = self.min_depth + (float(depthmap[center[1], center[0]]) / 255.0) * (self.max_depth - self.min_depth)
+				d = self.min_depth + (float(depthmap[min(center[1], self.height), min(center[0], self.width)]) / 255.0) * (self.max_depth - self.min_depth)
 				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
 				centroid *= d										#  Scale by known depth (meters from head)
 				pt = np.dot(flip, centroid)							#  Flip point
