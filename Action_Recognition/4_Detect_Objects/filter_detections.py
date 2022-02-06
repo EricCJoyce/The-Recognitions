@@ -46,16 +46,23 @@ def main():
 				classname        = arr[3]
 				detection_src    = arr[4]
 				confidence       = arr[5]
-				bounding_box     = arr[6]
+				bounding_box_str = arr[6]
 				maskfilename     = arr[7]
 				centroid_3d_avg  = arr[8]
 				centroid_3d_bbox = arr[9]
 
-				if float(confidence) >= params['score-threshold']:
+				bounding_box_arr = bounding_box_str.split(';')
+				bounding_box_upper_left = [int(x) for x in bounding_box_arr[0].split(',')]
+				bounding_box_lower_right = [int(x) for x in bounding_box_arr[1].split(',')]
+				bounding_box_width = bounding_box_lower_right[0] - bounding_box_upper_left[0]
+				bounding_box_height = bounding_box_lower_right[1] - bounding_box_upper_left[1]
+				bounding_box_area = bounding_box_width * bounding_box_height
+
+				if float(confidence) >= params['score-threshold'] and bounding_box_area >= params['minpx']:
 					new_maskfilename = detection_directory_dst + '/mask_' + str(mask_ctr) + '.png'
 					shutil.copyfile(maskfilename, new_maskfilename)
 					fh.write(timestamp + '\t' + imgfilename + '\t' + instance + '\t' + classname + '\t' + detection_src + '\t' + confidence + '\t' + \
-					         bounding_box + '\t' + new_maskfilename + '\t' + centroid_3d_avg + '\t' + centroid_3d_bbox + '\n')
+					         bounding_box_str + '\t' + new_maskfilename + '\t' + centroid_3d_avg + '\t' + centroid_3d_bbox + '\n')
 					mask_ctr += 1
 
 		fh.close()
