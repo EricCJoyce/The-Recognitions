@@ -157,6 +157,7 @@ python3 setup.py build
 On my machine (Ubuntu 16.04), this compiles `DTWmodule.c` into `./build/lib.linux-x86_64-3.6/DTW.cpython-36m-x86_64-linux-gnu.so`. The file name and path for your compiled `*.so` will depend on your machine's configuration. Move this `*.so` file into the project directory where `classifier.py` can reach it. You can throw away the `./build/` directory.
 
 **Windows**:
+
 ???
 
 ### Done for now.
