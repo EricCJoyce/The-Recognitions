@@ -145,7 +145,16 @@ sudo pip3 install urllib3==1.22
 sudo pip3 uninstall chardet
 sudo pip3 install chardet==3.0.2
 ```
+### Dynamic Time Warping
 
-Done for now.
+Included in this repository is a Python binding for an implementation of Dynamic Time Warping (DTW) written in C. To build a shared library for your machine, make the following call:
+```
+python3 setup.py build
+```
+On my machine (Ubuntu 16.04), this compiles `DTWmodule.c` into `./build/lib.linux-x86_64-3.6/DTW.cpython-36m-x86_64-linux-gnu.so`. The file name and path for your compiled `*.so` will depend on your machine's configuration. Move this `*.so` file into the project directory where `classifier.py` can reach it. You can throw away the `./build/` directory.
+
+DTW matches temporal snippets, allowing that instances of the same action may take more or less time to perform.
+
+### Done for now.
 
 This gives you the boilerplate; additional requirements will be explained as each module requires them.
