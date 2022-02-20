@@ -6,7 +6,7 @@ import sys
 import time
 
 '''
-db = Database(enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
+db = Database(enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
 '''
 class Database():
 	def __init__(self, **kwargs):
@@ -518,17 +518,16 @@ class Database():
 	#  Return the average of all magnitudes.
 	#  Vector encoding is [0]LH_x [1]LH_y [2]LH_z [3]LH_0 [4]LH_1 [5]LH_2 [6]RH_x [7]RH_y [8]RH_z [9]RH_0 [10]RH_1 [11]RH_2 [12]Prop_1 ...
 	#  'snippet' is (enactment, start time, start frame, end time, end frame).
-	def mean_signal_strength(self, snippet, hands_coeff=1.0, props_coeff=1.0):
+	def mean_signal_strength(self, snippet, hands_coeff=1.0, one_hot_coeff=1.0, props_coeff=1.0):
 		sequence = self.vectors(snippet)
 		magnitudes = []
 		for vector in sequence:
 			props_vec = [props_coeff * vector[12:][i] for i in range(0, len(self.recognizable_objects)) \
 			                                           if self.protected_vector[ self.recognizable_objects[i] ] == True]
-			#vec = [hands_coeff * x for x in vector[:3]]  + \
-			#      [hands_coeff * x for x in vector[6:9]] + \
-			#      [props_coeff * x for x in vector[12:]]
 			vec = [hands_coeff * x for x in vector[:3]]  + \
+			      [one_hot_coeff * x for x in vector[3:6]] + \
 			      [hands_coeff * x for x in vector[6:9]] + \
+			      [one_hot_coeff * x for x in vector[9:12]] + \
 			      props_vec
 
 			magnitudes.append( np.linalg.norm(vec) )
