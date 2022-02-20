@@ -6,7 +6,7 @@ import sys
 import time
 
 '''
-db = Database(enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
+db = Database(enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
 '''
 class Database():
 	def __init__(self, **kwargs):
@@ -114,20 +114,9 @@ class Database():
 						sys.stdout.flush()
 				ctr += 1
 
-		for label, actions in self.Xy.items():						#  Track the original lengths so we can compute reduction.
-			self.original_counts[label] = len(actions['actions'])
-			for ctr in range(0, len(actions['actions'])):			#  Initially, set everything to be kept.
-				self.protected[ (label, ctr) ] = True
-
-		for label, actions in self.Xy.items():						#  Whether or not we intend to prune them, sort actions/labels by mean signal strength.
-			sorted_actions = sorted(list(zip(actions['mean-signal-strength'], \
-			                                 actions['left-hand-strength'],   \
-			                                 actions['right-hand-strength'],  \
-			                                 actions['actions'])), key=lambda x: x[0], reverse=True)
-			self.Xy[label]['actions']              = [x[3] for x in sorted_actions]
-			self.Xy[label]['mean-signal-strength'] = [x[0] for x in sorted_actions]
-			self.Xy[label]['left-hand-strength']   = [x[1] for x in sorted_actions]
-			self.Xy[label]['right-hand-strength']  = [x[2] for x in sorted_actions]
+		self.keep_all()												#  Initially, set everything to be kept.
+		self.count()												#  (Re)count.
+		self.sort()													#  Sort by mean signal strength.
 
 		return
 
@@ -315,6 +304,26 @@ class Database():
 			reduced_set = [x for x in range(0, len(actions['actions'])) if (label, x) in self.protected]
 			print(label + ': ' + str(len(reduced_set)) + ' / ' + str(self.original_counts[label]))
 
+	#  Track the original lengths so we can compute reduction.
+	def count(self):
+		self.original_counts = {}
+		for label, actions in self.Xy.items():
+			self.original_counts[label] = len(actions['actions'])
+		return
+
+	#  Sort self.Xy[*]['actions'] by mean signal strength.
+	def sort(self):
+		for label, actions in self.Xy.items():						#  Whether or not we intend to prune them, sort actions/labels by mean signal strength.
+			sorted_actions = sorted(list(zip(actions['mean-signal-strength'], \
+			                                 actions['left-hand-strength'],   \
+			                                 actions['right-hand-strength'],  \
+			                                 actions['actions'])), key=lambda x: x[0], reverse=True)
+			self.Xy[label]['actions']              = [x[3] for x in sorted_actions]
+			self.Xy[label]['mean-signal-strength'] = [x[0] for x in sorted_actions]
+			self.Xy[label]['left-hand-strength']   = [x[1] for x in sorted_actions]
+			self.Xy[label]['right-hand-strength']  = [x[2] for x in sorted_actions]
+		return
+
 	#  Report how far reduced the database is since we called 'commit().'
 	#  If a target_label is passed, then only report the reduction achieved for that label's snippets.
 	#  Otherwise, report the reduction of the entire database.
@@ -353,12 +362,12 @@ class Database():
 		if label is None:
 			for k, v in self.Xy.items():
 				for ctr in range(0, len(v['actions'])):
-					protected[ (label, ctr) ] = True
+					protected[ (k, ctr) ] = True
 		else:
 			for k, v in self.Xy.items():
 				if k == label:
 					for ctr in range(0, len(v['actions'])):
-						protected[ (label, ctr) ] = True
+						protected[ (k, ctr) ] = True
 		self.protected = protected
 		return
 
@@ -402,26 +411,47 @@ class Database():
 			self.protected_vector[object_label] = False
 		return
 
+	#  Find all instances of 'old_label' and rename them under 'new_label'.
+	#  Relabeling can also merge labels:
+	#  e.g. Both "OpenDoor("TargetBackBreaker")" and "OpenDoor("Target2BackBreaker")" become "Open (BB)".
 	def relabel(self, old_label, new_label):
 		Xy = {}
-		original_counts = {}
 		protected = {}
 
-		for label, actions in self.Xy.items():
-			if label == old_label:
-				Xy[new_label] = actions
-				original_counts[new_label] = self.original_counts[label]
-				for key in [x for x in self.protected.keys() if x[0] == label]:
-					protected[ (new_label, key[1]) ] = True
-			else:
-				Xy[label] = actions
-				original_counts[label] = self.original_counts[label]
-				for key in [x for x in self.protected.keys() if x[0] == label]:
-					protected[ (label, key[1]) ] = True
+		if old_label in self.Xy:									#  Don't bother if it's not here.
 
-		self.Xy = Xy
-		self.original_counts = original_counts
-		self.protected = protected
+			if new_label in self.Xy:								#  Merge 'old_label' into existing 'new_label'.
+																	#  Copy over everything EXCEPT the label to be relabeled.
+				for label, action_data in [x for x in self.Xy.items() if x[0] != old_label]:
+					Xy[label] = action_data
+					for key in [x for x in self.protected.keys() if x[0] == label]:
+						protected[ key ] = True
+
+				offset = len(self.Xy[new_label]['actions'])
+
+				Xy[new_label]['actions']              += self.Xy[old_label]['actions']
+				Xy[new_label]['mean-signal-strength'] += self.Xy[old_label]['mean-signal-strength']
+				Xy[new_label]['left-hand-strength']   += self.Xy[old_label]['left-hand-strength']
+				Xy[new_label]['right-hand-strength']  += self.Xy[old_label]['right-hand-strength']
+
+				for key in [x for x in self.protected.keys() if x[0] == old_label]:
+					protected[ (new_label, offset + key[1]) ] = True
+			else:													#  Simply relabel 'old_label' as 'new_label'.
+				for label, action_data in self.Xy.items():
+					if label == old_label:
+						Xy[new_label] = action_data
+						for key in [x for x in self.protected.keys() if x[0] == label]:
+							protected[ (new_label, key[1]) ] = True
+					else:
+						Xy[label] = action_data
+						for key in [x for x in self.protected.keys() if x[0] == label]:
+							protected[ key ] = True
+
+			self.Xy = Xy											#  Replace attributes.
+			self.protected = protected
+
+			self.count()
+			self.sort()
 
 		return
 
