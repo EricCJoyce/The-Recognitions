@@ -1,4 +1,4 @@
-from classifier import ProcessedEnactment, Classifier
+from classifier import ProcessedEnactment
 import cv2
 import numpy as np
 import os
@@ -46,23 +46,7 @@ class Database():
 
 	#  Parse the ProcessedEnactments allocated to this database.
 	def commit(self):
-		recognizable_objects_alignment = {}
-		vector_length_alignment = {}
-		for enactment in self.enactments:
-			e = ProcessedEnactment(enactment, verbose=False)
-			recognizable_objects_alignment[ tuple(e.recognizable_objects) ] = True
-			vector_length_alignment[e.vector_length] = True
-			recognizable_objects = e.recognizable_objects
-		if len(recognizable_objects_alignment.keys()) > 1:
-			print('ERROR: The given enactments differ in which objects are recognized and are therefore incompatible.')
-			return
-		if len(vector_length_alignment.keys()) > 1:
-			print('ERROR: The given enactments differ in their vector lengths and are therefore incompatible.')
-			return
-		self.recognizable_objects = [x for x in recognizable_objects_alignment.keys()][0]
-		for recognizable_object in self.recognizable_objects:		#  Initially mark all recognizable objects as included.
-			self.protected_vector[recognizable_object] = True
-		self.vector_length = [x for x in vector_length_alignment.keys()][0]
+		assert self.align_recognizable_objects(), 'The given enactments must recognize the same objects and have the same vector length.'
 
 		self.Xy = {}												#  Putative training set, keyed by labels.
 		self.original_counts = {}									#  key:label ==>
@@ -78,6 +62,7 @@ class Database():
 																	#       key:'right-hand-strength'  ==> val:[ strength, strength, ... strength ]
 		if self.verbose:											#      }
 			print('>>> Computing mean signal strengths of subvectors.')
+
 		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
 		num = 0
 		for enactment in self.enactments:
@@ -236,6 +221,7 @@ class Database():
 
 				elif reading_enactments:							#  Read the enactments that were used to build this database.
 					self.enactments = line[1:].strip().split('\t')
+					assert self.align_recognizable_objects(), 'The given enactments must recognize the same objects and have the same vector length.'
 					reading_enactments = False
 				elif reading_actions:								#  Read the actions this database can classify.
 					self.Xy = {}
@@ -288,6 +274,8 @@ class Database():
 					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num - 1) * 100.0))) + '%]')
 					sys.stdout.flush()
 			ctr += 1
+
+		self.keep_all()												#  Initially, set everything to be kept.
 
 		return
 
@@ -435,13 +423,34 @@ class Database():
 		return
 
 	#################################################################
-	#  Remove columns from all snippets.                            #
+	#  Editing.                                                     #
 	#################################################################
 	#  Really just marks the given 'object_label' for omission from outputs and vector means.
 	def remove_column(self, object_label):
 		if object_label in self.recognizable_objects:
 			self.protected_vector[object_label] = False
 		return
+
+	#  Make sure that all the enactments we were given identify the same objects.
+	def align_recognizable_objects(self):
+		recognizable_objects_alignment = {}
+		vector_length_alignment = {}
+		for enactment in self.enactments:
+			e = ProcessedEnactment(enactment, verbose=False)
+			recognizable_objects_alignment[ tuple(e.recognizable_objects) ] = True
+			vector_length_alignment[e.vector_length] = True
+			recognizable_objects = e.recognizable_objects
+		if len(recognizable_objects_alignment.keys()) > 1:
+			print('ERROR: The given enactments differ in which objects are recognized and are therefore incompatible.')
+			return False
+		if len(vector_length_alignment.keys()) > 1:
+			print('ERROR: The given enactments differ in their vector lengths and are therefore incompatible.')
+			return False
+		self.recognizable_objects = [x for x in recognizable_objects_alignment.keys()][0]
+		for recognizable_object in self.recognizable_objects:		#  Initially mark all recognizable objects as included.
+			self.protected_vector[recognizable_object] = True
+		self.vector_length = [x for x in vector_length_alignment.keys()][0]
+		return True
 
 	#  Find all instances of 'old_label' and rename them under 'new_label'.
 	#  Relabeling can also merge labels:
