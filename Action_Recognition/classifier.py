@@ -1361,6 +1361,8 @@ class AtemporalClassifier(Classifier):
 		self.train_sample_lookup = {}								#  Allow ourselves the possibility of looking up which snippets were matched.
 		self.test_sample_lookup = {}								#  key: index into X_train ==> val: (enactment, start time, start frame,
 																	#                                               end time,   end frame)
+																	#  key: index into X_test  ==> val: (enactment, start time, start frame,
+																	#                                               end time,   end frame)
 		#############################################################
 		#  Load ProcessedEnactments from the given enactment names. #
 		#############################################################
@@ -2184,6 +2186,74 @@ class AtemporalClassifier(Classifier):
 			i += 1
 		if i < len(keys):
 			self.allocation[ keys[i] ] = dst_set
+		return
+
+	#  Load a database file to the test set.
+	def load_db_to_test(self, db_file):
+		self.X_test = []											#  Reset.
+		self.y_test = []
+
+		reading_recognizable_objects = False
+		reading_vector_length = False
+		reading_snippet_size = False
+		reading_stride = False
+
+		fh = open(db_file, 'r')
+		lines = fh.readlines()
+		fh.close()
+
+		sample_ctr = 0
+		for line in lines:
+			if line[0] == '#':
+				if 'RECOGNIZABLE OBJECTS:' in line:
+					reading_recognizable_objects = True
+				elif reading_recognizable_objects:
+					recognizable_objects = line[1:].strip().split('\t')
+					assert recognizable_objects == self.recognizable_objects, 'ERROR: the recognizable objects for the test-set database do not match this classifier\'s recognizable objects.'
+					reading_recognizable_objects = False
+
+				elif 'VECTOR LENGTH:' in line:
+					reading_vector_length = True
+				elif reading_vector_length:
+					vector_length = int(line[1:].strip())
+					assert vector_length == self.vector_length, 'ERROR: the vector length for the test-set database does not match this classifier\'s vector length.'
+					reading_vector_length = False
+
+				elif 'SNIPPET SIZE:' in line:
+					reading_snippet_size = True
+				elif reading_snippet_size:
+					db_snippet_size = int(line[1:].strip())
+																	#  Atemporal: mind the self.window_size.
+					assert db_snippet_size == self.window_size, 'ERROR: the snippet size for the test-set database does not match this classifier\'s window size.'
+					reading_snippet_size = False
+
+				elif 'STRIDE:' in line:
+					reading_stride = True
+				elif reading_stride:
+					db_stride = int(line[1:].strip())
+																	#  Atemporal: mind the self.stride.
+					assert db_stride == self.stride, 'ERROR: the stride for the test-set database does not match this classifier\'s stride.'
+					reading_stride = False
+			else:
+				if line[0] == '\t':
+					vector = [float(x) for x in line.strip().split('\t')]
+					if self.hand_schema == 'strong-hand':
+						vector = self.strong_hand_encode(vector)
+					self.X_test[-1].append( self.apply_vector_coefficients(vector) )
+				else:
+					action_arr = line.strip().split('\t')
+					label                     = action_arr[0]
+					db_entry_enactment_source = action_arr[1]
+					db_entry_start_time       = float(action_arr[2])
+					db_entry_start_frame      = action_arr[3]
+					db_entry_end_time         = float(action_arr[4])
+					db_entry_end_frame        = action_arr[5]
+					self.y_test.append( label )
+					self.X_test.append( [] )
+																	#  Be able to lookup the frames of a matched database sample.
+					self.test_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
+					                                                                  db_entry_end_time,   db_entry_end_frame)
+					sample_ctr += 1
 		return
 
 	#################################################################
