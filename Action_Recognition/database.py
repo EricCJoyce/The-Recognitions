@@ -40,9 +40,9 @@ class Database():
 		self.recognizable_objects = []								#  Initially empty; this must be determined by the given (processed) enactments.
 		self.Xy = {}
 		self.original_counts = {}
-		self.protected = {}											#  key: (label, index) ==> val: True
-
-		self.protected_vector = {}									#  key: object-label ==> val: True
+		self.dropped_actions = {}									#  For actions. key: (enactment, index) ==> val: True
+		self.protected = {}											#  For snippets. key: (label, index) ==> val: True
+		self.protected_vector = {}									#  For elements of the props subvector. key: object-label ==> val: True
 
 	#  Parse the ProcessedEnactments allocated to this database.
 	def commit(self):
@@ -61,7 +61,7 @@ class Database():
 																	#       key:'left-hand-strength'   ==> val:[ strength, strength, ... strength ]
 																	#       key:'right-hand-strength'  ==> val:[ strength, strength, ... strength ]
 		if self.verbose:											#      }
-			print('>>> Computing mean signal strengths of subvectors.')
+			print('>>> Parsing source enactments into snippets.')
 
 		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
 		num = 0
@@ -72,25 +72,63 @@ class Database():
 		ctr = 0
 		for enactment in self.enactments:
 			e = ProcessedEnactment(enactment, verbose=False)
+			action_ctr = 0
 			for action in e.snippets_from_action(self.snippet_size, self.stride):
 				label       = action[0]
 				start_time  = action[1]
 				start_frame = action[2]
 				end_time    = action[3]
 				end_frame   = action[4]
-				if label not in self.Xy:
-					self.Xy[label] = {}
-					self.Xy[label]['actions'] = []
-					self.Xy[label]['mean-signal-strength'] = []
-					self.Xy[label]['left-hand-strength'] = []
-					self.Xy[label]['right-hand-strength'] = []
+																	#  If we are not wholesale omitting this action (several snippets), this enactment.
+				if (label, action_ctr) not in self.dropped_actions:
 
-				action_tuple = (e.enactment_name, start_time, start_frame, end_time, end_frame)
+					if label not in self.Xy:
+						self.Xy[label] = {}
+						self.Xy[label]['actions'] = []
+						self.Xy[label]['mean-signal-strength'] = []
+						self.Xy[label]['left-hand-strength'] = []
+						self.Xy[label]['right-hand-strength'] = []
 
-				self.Xy[label]['actions'].append( action_tuple )
-				self.Xy[label]['mean-signal-strength'].append( self.mean_signal_strength(action_tuple)       )
-				self.Xy[label]['left-hand-strength'].append(   self.left_hand_signal_strength(action_tuple)  )
-				self.Xy[label]['right-hand-strength'].append(  self.right_hand_signal_strength(action_tuple) )
+					action_tuple = (e.enactment_name, start_time, start_frame, end_time, end_frame)
+
+					self.Xy[label]['actions'].append( action_tuple )
+																	#  Computing signal strengths takes time!
+																	#  Only do it if requested.
+					self.Xy[label]['mean-signal-strength'].append(0.0)
+					self.Xy[label]['left-hand-strength'].append(0.0)
+					self.Xy[label]['right-hand-strength'].append(0.0)
+
+				if self.verbose:
+					if int(round(float(ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+						prev_ctr = int(round(float(ctr) / float(num - 1) * float(max_ctr)))
+						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num - 1) * 100.0))) + '%]')
+						sys.stdout.flush()
+
+				action_ctr += 1
+				ctr += 1
+
+		self.keep_all()												#  Initially, set everything to be kept.
+		self.count()												#  (Re)count.
+
+		return
+
+	def compute_signal_strength(self, include_dropped=False):
+		if self.verbose:
+			print('>>> Computing mean signal strengths of subvectors.')
+
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+		num = 0
+		for label, action_data in self.Xy.items():
+			num += len(action_data['actions'])
+		prev_ctr = 0
+		ctr = 0
+
+		for label, action_data in self.Xy.items():
+			for i in range(0, len(action_data['actions'])):
+				if (label, i) in self.protected or include_dropped:	#  Ordinarily, don't bother about dropped snippets.
+					self.Xy[label]['mean-signal-strength'][i] = self.mean_signal_strength( action_data['actions'][i] )
+					self.Xy[label]['left-hand-strength'][i] =   self.left_hand_signal_strength( action_data['actions'][i] )
+					self.Xy[label]['right-hand-strength'][i] =  self.right_hand_signal_strength( action_data['actions'][i] )
 
 				if self.verbose:
 					if int(round(float(ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
@@ -99,10 +137,7 @@ class Database():
 						sys.stdout.flush()
 				ctr += 1
 
-		self.keep_all()												#  Initially, set everything to be kept.
-		self.count()												#  (Re)count.
 		self.sort()													#  Sort by mean signal strength.
-
 		return
 
 	#  Write the contents of this database to file.
@@ -133,8 +168,12 @@ class Database():
 		fh.write('#  VECTOR LENGTH:\n')
 		fh.write('#    ' + str(12 + len([x for x in self.recognizable_objects if self.protected_vector[x] == True])) + '\n')
 		fh.write('#  ITEMIZATION:\n')
+		longest_action_str = 0
 		for key in sorted([x for x in self.Xy.keys() if self.current_size(x) > 0]):
-			fh.write('#    ' + key + '\t' + str(self.current_size(key)) + ' snippets\n')
+			if len(key) > longest_action_str:
+				longest_action_str = len(key)
+		for key in sorted([x for x in self.Xy.keys() if self.current_size(x) > 0]):
+			fh.write('#    ' + key + ' '*(longest_action_str - len(key)) + ' ' + str(self.current_size(key)) + ' snippets\n')
 		fh.write('#  SNIPPET SIZE:\n')
 		fh.write('#    ' + str(self.snippet_size) + '\n')
 		fh.write('#  STRIDE:\n')
@@ -361,6 +400,62 @@ class Database():
 			print('    Originally ' + str(self.original_counts[label]))
 			print('    Currently  ' + str(len(reduced_set)))
 			print('    Reduction  ' + "{:.2f}".format(float(self.original_counts[label] - len(reduced_set)) / float(self.original_counts[label]) * 100.0) +  '%')
+		return
+
+	#################################################################
+	#  Mark actions for wholesale inclusion or omission.            #
+	#  One action likely yields several snippets.                   #
+	#################################################################
+	#  Prevent the index-th action in 'enactment_name' from generating any snippets.
+	#  (Some actions are just no good, from head to tail.)
+	def drop_enactment_action(self, enactment_name, index):
+		self.dropped_actions[ (enactment_name, index) ] = True
+		return
+
+	#  "No! Wait! I changed my mind!"
+	def keep_enactment_action(self, enactment_name, index):
+		if (enactment_name, index) in self.dropped_actions:
+			del self.dropped_actions[ (enactment_name, index) ]
+		return
+
+	def itemize_actions(self, elist=None):
+		if elist is None:
+			elist = self.enactments[:]
+
+		for enactment in elist:
+			print('\n' + enactment + ':')
+			print('='*(len(enactment) + 1))
+
+			maxlen_label = 0
+			maxlen_timestamp = 0
+			maxlen_filepath = 0
+
+			e = ProcessedEnactment(enactment, verbose=False)
+			maxlen_index = len(str(len(e.actions) - 1))
+			for action in e.actions:
+				maxlen_label = max(maxlen_label, len(action[0]))
+				maxlen_timestamp = max(maxlen_timestamp, len(str(action[1])), len(str(action[3])))
+				maxlen_filepath = max(maxlen_filepath, len(action[2].split('/')[-1]), len(action[4].split('/')[-1]))
+
+			i = 0
+			for action in e.actions:								#  Print all nice and tidy like.
+
+				if (enactment, i) in self.dropped_actions:			#  If we are wholesale omitting this action (several snippets), this enactment.
+					print('- [' + str(i) + ' '*(maxlen_index - len(str(i))) + ']: ' + \
+					      action[0] + ' '*(maxlen_label - len(action[0])) + ': incl. ' + \
+					      str(action[1]) + ' '*(maxlen_timestamp - len(str(action[1]))) + ' ' + \
+					      action[2].split('/')[-1] + ' '*(maxlen_filepath - len(action[2].split('/')[-1])) + ' --> excl. ' + \
+					      str(action[3]) + ' '*(maxlen_timestamp - len(str(action[3]))) + ' ' + \
+					      action[4].split('/')[-1] + ' '*(maxlen_filepath - len(action[4].split('/')[-1])) )
+				else:												#  We are NOT wholesale omitting this action, this enactment.
+					print('+ [' + str(i) + ' '*(maxlen_index - len(str(i))) + ']: ' + \
+					      action[0] + ' '*(maxlen_label - len(action[0])) + ': incl. ' + \
+					      str(action[1]) + ' '*(maxlen_timestamp - len(str(action[1]))) + ' ' + \
+					      action[2].split('/')[-1] + ' '*(maxlen_filepath - len(action[2].split('/')[-1])) + ' --> excl. ' + \
+					      str(action[3]) + ' '*(maxlen_timestamp - len(str(action[3]))) + ' ' + \
+					      action[4].split('/')[-1] + ' '*(maxlen_filepath - len(action[4].split('/')[-1])) )
+				i += 1
+
 		return
 
 	#################################################################
