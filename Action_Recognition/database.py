@@ -431,27 +431,6 @@ class Database():
 			self.protected_vector[object_label] = False
 		return
 
-	#  Make sure that all the enactments we were given identify the same objects.
-	def align_recognizable_objects(self):
-		recognizable_objects_alignment = {}
-		vector_length_alignment = {}
-		for enactment in self.enactments:
-			e = ProcessedEnactment(enactment, verbose=False)
-			recognizable_objects_alignment[ tuple(e.recognizable_objects) ] = True
-			vector_length_alignment[e.vector_length] = True
-			recognizable_objects = e.recognizable_objects
-		if len(recognizable_objects_alignment.keys()) > 1:
-			print('ERROR: The given enactments differ in which objects are recognized and are therefore incompatible.')
-			return False
-		if len(vector_length_alignment.keys()) > 1:
-			print('ERROR: The given enactments differ in their vector lengths and are therefore incompatible.')
-			return False
-		self.recognizable_objects = [x for x in recognizable_objects_alignment.keys()][0]
-		for recognizable_object in self.recognizable_objects:		#  Initially mark all recognizable objects as included.
-			self.protected_vector[recognizable_object] = True
-		self.vector_length = [x for x in vector_length_alignment.keys()][0]
-		return True
-
 	#  Find all instances of 'old_label' and rename them under 'new_label'.
 	#  Relabeling can also merge labels:
 	#  e.g. Both "OpenDoor("TargetBackBreaker")" and "OpenDoor("Target2BackBreaker")" become "Open (BB)".
@@ -510,6 +489,30 @@ class Database():
 				self.relabel(old_label, new_label)
 		fh.close()
 		return
+
+	#################################################################
+	#  Utilities.                                                   #
+	#################################################################
+	#  Make sure that all the enactments we were given identify the same objects.
+	def align_recognizable_objects(self):
+		recognizable_objects_alignment = {}
+		vector_length_alignment = {}
+		for enactment in self.enactments:
+			e = ProcessedEnactment(enactment, verbose=False)
+			recognizable_objects_alignment[ tuple(e.recognizable_objects) ] = True
+			vector_length_alignment[e.vector_length] = True
+			recognizable_objects = e.recognizable_objects
+		if len(recognizable_objects_alignment.keys()) > 1:
+			print('ERROR: The given enactments differ in which objects are recognized and are therefore incompatible.')
+			return False
+		if len(vector_length_alignment.keys()) > 1:
+			print('ERROR: The given enactments differ in their vector lengths and are therefore incompatible.')
+			return False
+		self.recognizable_objects = [x for x in recognizable_objects_alignment.keys()][0]
+		for recognizable_object in self.recognizable_objects:		#  Initially mark all recognizable objects as included.
+			self.protected_vector[recognizable_object] = True
+		self.vector_length = [x for x in vector_length_alignment.keys()][0]
+		return True
 
 	#  Fetch the vectors of the given snippet.
 	def vectors(self, snippet):
