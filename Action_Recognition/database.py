@@ -112,34 +112,6 @@ class Database():
 
 		return
 
-	def compute_signal_strength(self, include_dropped=False):
-		if self.verbose:
-			print('>>> Computing mean signal strengths of subvectors.')
-
-		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
-		num = 0
-		for label, action_data in self.Xy.items():
-			num += len(action_data['actions'])
-		prev_ctr = 0
-		ctr = 0
-
-		for label, action_data in self.Xy.items():
-			for i in range(0, len(action_data['actions'])):
-				if (label, i) in self.protected or include_dropped:	#  Ordinarily, don't bother about dropped snippets.
-					self.Xy[label]['mean-signal-strength'][i] = self.mean_signal_strength( action_data['actions'][i] )
-					self.Xy[label]['left-hand-strength'][i] =   self.left_hand_signal_strength( action_data['actions'][i] )
-					self.Xy[label]['right-hand-strength'][i] =  self.right_hand_signal_strength( action_data['actions'][i] )
-
-				if self.verbose:
-					if int(round(float(ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
-						prev_ctr = int(round(float(ctr) / float(num - 1) * float(max_ctr)))
-						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num - 1) * 100.0))) + '%]')
-						sys.stdout.flush()
-				ctr += 1
-
-		self.sort()													#  Sort by mean signal strength.
-		return
-
 	#  Write the contents of this database to file.
 	def output(self, db_filename=None):
 		if db_filename is None:
@@ -402,6 +374,34 @@ class Database():
 			print('    Reduction  ' + "{:.2f}".format(float(self.original_counts[label] - len(reduced_set)) / float(self.original_counts[label]) * 100.0) +  '%')
 		return
 
+	def compute_signal_strength(self, include_dropped=False):
+		if self.verbose:
+			print('>>> Computing mean signal strengths of subvectors.')
+
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+		num = 0
+		for label, action_data in self.Xy.items():
+			num += len(action_data['actions'])
+		prev_ctr = 0
+		ctr = 0
+
+		for label, action_data in self.Xy.items():
+			for i in range(0, len(action_data['actions'])):
+				if (label, i) in self.protected or include_dropped:	#  Ordinarily, don't bother about dropped snippets.
+					self.Xy[label]['mean-signal-strength'][i] = self.mean_signal_strength( action_data['actions'][i] )
+					self.Xy[label]['left-hand-strength'][i] =   self.left_hand_signal_strength( action_data['actions'][i] )
+					self.Xy[label]['right-hand-strength'][i] =  self.right_hand_signal_strength( action_data['actions'][i] )
+
+				if self.verbose:
+					if int(round(float(ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+						prev_ctr = int(round(float(ctr) / float(num - 1) * float(max_ctr)))
+						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num - 1) * 100.0))) + '%]')
+						sys.stdout.flush()
+				ctr += 1
+
+		self.sort()													#  Sort by mean signal strength.
+		return
+
 	#################################################################
 	#  Mark actions for wholesale inclusion or omission.            #
 	#  One action likely yields several snippets.                   #
@@ -457,6 +457,16 @@ class Database():
 				i += 1
 
 		return
+
+	def which_enactment_has_action(self, query_action):
+		elist = []
+		for enactment in self.enactments:
+			e = ProcessedEnactment(enactment, verbose=False)
+			for action in e.actions:
+				if action[0] == query_action:
+					if enactment not in elist:
+						elist.append(enactment)
+		return elist
 
 	#################################################################
 	#  Mark snippets for inclusion or omission.                     #
