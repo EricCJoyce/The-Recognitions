@@ -6,7 +6,7 @@ import sys
 import time
 
 '''
-db = Database(enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
+db = Database(enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
 '''
 class Database():
 	def __init__(self, **kwargs):
@@ -124,17 +124,32 @@ class Database():
 	def output(self, db_filename=None):
 		if db_filename is None:
 			db_filename = str(self.snippet_size) + 'f.db'
+
+		if self.verbose:
+			print('>>> Writing "' + db_filename + '".')
+
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+		num = 0
+		for label, actions in sorted(self.Xy.items()):
+			for ctr in range(0, len(actions['actions'])):
+				if (label, ctr) in self.protected:
+					num += 1
+		prev_ctr = 0
+		complete_ctr = 0
+
 		fh = open(db_filename, 'w')
 		fh.write('#  Action recognition database made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  ENACTMENTS:\n')
 		fh.write('#    ' + '\t'.join(self.enactments) + '\n')
 		fh.write('#  ACTIONS:\n')
-		fh.write('#    ' + '\t'.join(sorted([x for x in self.Xy.keys()])) + '\n')
+		fh.write('#    ' + '\t'.join(sorted([x for x in self.Xy.keys() if self.current_size(x) > 0])) + '\n')
 		fh.write('#  RECOGNIZABLE OBJECTS:\n')
 		fh.write('#    ' + '\t'.join( [x for x in self.recognizable_objects if self.protected_vector[x]] ) + '\n')
 		fh.write('#  VECTOR LENGTH:\n')
 		fh.write('#    ' + str(12 + len([x for x in self.recognizable_objects if self.protected_vector[x] == True])) + '\n')
-		#fh.write('#    ' + str(self.vector_length) + '\n')
+		fh.write('#  ITEMIZATION:\n')
+		for key in sorted([x for x in self.Xy.keys() if self.current_size(x) > 0]):
+			fh.write('#    ' + key + '\t' + str(self.current_size(key)) + ' snippets\n')
 		fh.write('#  SNIPPET SIZE:\n')
 		fh.write('#    ' + str(self.snippet_size) + '\n')
 		fh.write('#  STRIDE:\n')
@@ -160,8 +175,15 @@ class Database():
 						for i in range(0, len(self.recognizable_objects)):
 							if self.protected_vector[ self.recognizable_objects[i] ] == True:
 								vec.append( props_subvec[i] )
-
 						fh.write('\t' + '\t'.join([str(x) for x in vec]) + '\n')
+
+					if self.verbose:
+						if int(round(float(complete_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+							prev_ctr = int(round(float(complete_ctr) / float(num - 1) * float(max_ctr)))
+							sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(complete_ctr) / float(num - 1) * 100.0))) + '%]')
+							sys.stdout.flush()
+
+					complete_ctr += 1
 				ctr += 1
 		fh.close()
 		return
@@ -180,6 +202,12 @@ class Database():
 
 		lines = fh.readlines()
 		fh.close()
+
+		self.recognizable_objects = []								#  Reset everything.
+		self.Xy = {}
+		self.original_counts = {}
+		self.protected = {}
+		self.protected_vector = {}
 
 		if self.verbose:
 			print('>>> Loading database "' + db_filename + '".')
@@ -220,6 +248,9 @@ class Database():
 					reading_actions = False
 				elif reading_recognizable_objects:					#  Read the objects this database has been built to recognize.
 					self.recognizable_objects = line[1:].strip().split('\t')
+																	#  Initially mark all recognizable objects as included.
+					for recognizable_object in self.recognizable_objects:
+						self.protected_vector[recognizable_object] = True
 					reading_recognizable_objects = False
 				elif reading_vector_length:							#  Read the encoded vector length.
 					self.vector_length = int(line[1:].strip())
@@ -399,7 +430,8 @@ class Database():
 		lim = int(round(float(len(indices)) * portion))
 		for ctr in range(lim, len(indices)):
 			key = (label, ctr)
-			del self.protected[key]
+			if key in self.protected:
+				del self.protected[key]
 		return
 
 	#################################################################
@@ -602,16 +634,21 @@ class Database():
 			magnitudes.append( np.linalg.norm(vec) )
 		return np.mean(magnitudes)
 
-	def	original_size(self):
-		return sum([x for x in self.original_counts.values()])
-		self.Xy = {}
-		self.original_counts = {}
+	def	original_size(self, label_size=None):
+		if label_size is None:
+			return sum([x for x in self.original_counts.values()])
+		return self.original_counts[label_size]
 
-	def current_size(self):
+	def current_size(self, label_size=None):
 		s = []
-		for label, actions in self.Xy.items():
-			reduced_set = [x for x in range(0, len(actions['actions'])) if (label, x) in self.protected]
-			s.append(len(reduced_set))
+
+		if label_size is None:
+			for label, actions in self.Xy.items():
+				reduced_set = [x for x in range(0, len(actions['actions'])) if (label, x) in self.protected]
+				s.append(len(reduced_set))
+		else:
+			s.append( len( [x for x in range(0, len(self.Xy[label_size]['actions'])) if (label_size, x) in self.protected] ) )
+
 		return sum(s)
 
 	#  Show me.
