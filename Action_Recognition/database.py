@@ -406,6 +406,22 @@ class Database():
 	#  Mark actions for wholesale inclusion or omission.            #
 	#  One action likely yields several snippets.                   #
 	#################################################################
+	#  The AtemporalClassifier class can load and export train-test splits.
+	def load_action_split(self, split_file_name, split_set):
+		fh = open(split_file_name, 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				enactment_name = arr[0]
+				action_index = int(arr[1])
+				action_label = arr[2]
+				set_name = arr[3]
+
+				if set_name != split_set:
+					self.drop_enactment_action(enactment_name, action_index)
+		fh.close()
+		return
+
 	#  Prevent the index-th action in 'enactment_name' from generating any snippets.
 	#  (Some actions are just no good, from head to tail.)
 	def drop_enactment_action(self, enactment_name, index):
