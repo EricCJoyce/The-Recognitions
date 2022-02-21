@@ -304,7 +304,7 @@ class Database():
 	#  Otherwise, itemize all labels' snippets.
 	def itemize(self, target_label=None):
 		if target_label is None:
-			itemization = [x for x in self.Xy.items()]
+			itemization = [x for x in sorted(self.Xy.items())]
 		else:
 			itemization = [x for x in self.Xy.items() if x[0] == target_label]
 
