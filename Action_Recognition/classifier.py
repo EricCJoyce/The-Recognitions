@@ -1,6 +1,7 @@
 import cv2
 import datetime
-import DTW															#  DTW.cpython-36m-x86_64-linux-gnu.so
+																	#  python3 setup.py build
+import DTW															#    produces DTW.cpython-36m-x86_64-linux-gnu.so
 from enactment import Enactment, Gaussian
 import matplotlib.pyplot as plt
 import numpy as np
@@ -431,7 +432,7 @@ class Classifier():
 	#################################################################
 
 	#  Load a database from file. This loads directly into X_train and y_train. No "allocations."
-	#  Rearrange according to schems and apply subvector coefficients before saving internally to the "training set."
+	#  Rearrange according to schema and apply subvector coefficients before saving internally to the "training set."
 	def load_db(self, db_file):
 		self.X_train = []											#  Reset.
 		self.y_train = []
@@ -1276,7 +1277,7 @@ In the interpreter:
   atemporal.load_db('10f.db')
 
 Or this:
-  atemporal = AtemporalClassifier(window_size=10, stride=2, db_file='10f.db', test=['Enactment11', 'Enactment12'], hand_schema='strong-hand', props_coeff=30.0, verbose=True, render=True)
+  atemporal = AtemporalClassifier(window_size=10, stride=2, db_file='10f.db', test=['Enactment11', 'Enactment12'], hand_schema='strong-hand', props_coeff=27.0, hands_one_hot_coeff=17.0, verbose=True)
   atemporal.relabel_allocations_from_file('relabels.txt')
   atemporal.commit()
 
@@ -2472,7 +2473,7 @@ class AtemporalClassifier(Classifier):
 Give this classifier a database file and enactment files.
 The database becomes the training set, self.X_train, and the enactments will be marched through in simulated real time.
 Buffers-full of vectors from the enactments are given to the classification engine.
-This constitutes "temporal" classification because sequence boundaries are not known a priori.
+This constitutes "temporal" classification because sequence boundaries are NOT known a priori.
 
 In the interpreter:
 temporal = TemporalClassifier(rolling_buffer_length=10, rolling_buffer_stride=2, db_file='10f.db', relabel='relabels.txt', inputs=['Enactment11', 'Enactment12'], verbose=True)
