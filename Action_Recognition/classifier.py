@@ -398,6 +398,7 @@ class Classifier():
 																	#  This parent class only has X_train, so clearing out columns in the
 																	#  training set happens here. Child classes must each handle clearing columns
 																	#  from their respective X_test lists themselves.
+		self.relabelings = {}										#  key: old-label ==> val: new-label
 		self.timing = {}											#  Really only used by the derived classes.
 
 		self.epsilon = 0.000001										#  Prevent divisions by zero.
@@ -523,7 +524,12 @@ class Classifier():
 					db_entry_start_frame      = action_arr[3]
 					db_entry_end_time         = float(action_arr[4])
 					db_entry_end_frame        = action_arr[5]
-					self.y_train.append( label )
+
+					if label in self.relabelings:					#  Apply relabelings.
+						self.y_train.append( self.relabelings[label] )
+					else:
+						self.y_train.append( label )
+
 					self.X_train.append( [] )
 																	#  Be able to lookup the frames of a matched database sample.
 					self.train_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
@@ -1746,6 +1752,7 @@ class AtemporalClassifier(Classifier):
 
 	#  "Snippets" are already in X_train and/or X_test.
 	def relabel_snippets(self, old_label, new_label):
+		self.relabelings[old_label] = new_label						#  Save internally.
 		for i in range(0, len(self.y_train)):
 			if self.y_train[i] == old_label:
 				self.y_train[i] = new_label
@@ -1770,6 +1777,8 @@ class AtemporalClassifier(Classifier):
 	#  This applies to allocations--NOT to snippets.
 	#  Replace all old labels with new labels in both training and test sets.
 	def relabel_allocations(self, old_label, new_label):
+		self.relabelings[old_label] = new_label						#  Save internally.
+
 		reverse_allocation = {}										#  key:string in {train, test} ==> [ (enactment-name, action-index, action-label),
 		reverse_allocation['train'] = []							#                                    (enactment-name, action-index, action-label),
 		reverse_allocation['test'] = []								#                                                          ...
@@ -2618,7 +2627,7 @@ class TemporalClassifier(Classifier):
 
 		if 'min_bbox' in kwargs:									#  Were we given a minimum bounding box area for recognized objects?
 			assert isinstance(kwargs['min_bbox'], int) and kwargs['min_bbox'] > 0, \
-			  'Argument \'\' passed to TemporalClassifier must be an integer greater than 0.'
+			  'Argument \'min_bbox\' passed to TemporalClassifier must be an integer greater than 0.'
 			self.minimum_bbox_area = kwargs['min_bbox']
 		else:
 			self.minimum_bbox_area = 400
@@ -2854,16 +2863,16 @@ class TemporalClassifier(Classifier):
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['dtw-classification'].append(t1_stop - t1_start)
 
-					#################################################
-					#  matching_costs: key: label ==> val: cost     #
-					#  confidences:    key: label ==> val: score    #
-					#  probabilities:  key: label ==> val: prob.    #
-					#  metadata:       key: label ==>               #
-					#                    val: {query-indices,       #
-					#                          template-indices,    #
-					#                          db-index}            #
-					#################################################
-					if fair or not skip_unfair:
+						#############################################
+						#  matching_costs: key: label ==> val: cost #
+						#  confidences:    key: label ==> val: score#
+						#  probabilities:  key: label ==> val: prob.#
+						#  metadata:       key: label ==>           #
+						#                    val: {query-indices,   #
+						#                          template-indices,#
+						#                          db-index}        #
+						#############################################
+
 						t1_start = time.process_time()				#  Start timer.
 						least_cost = float('inf')					#  Tentative prediction always determined by least matching cost.
 						for k, v in matching_costs.items():
@@ -2919,8 +2928,8 @@ class TemporalClassifier(Classifier):
 						prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
-																	#  Only measure performance when conditions are fair.
-				if self.full() and self.uniform() and self.fair():
+
+				if fair:											#  Only measure performance when conditions are fair.
 					ground_truth_label = self.buffer_labels[0]
 					if prediction == ground_truth_label:
 						classification_stats[ground_truth_label]['tp'] += 1
