@@ -906,8 +906,8 @@ class Classifier():
 	#################################################################
 
 	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label).
-	def confusion_matrix(self, predictions_truths):
-		labels = self.labels()
+	def confusion_matrix(self, predictions_truths, sets='both'):
+		labels = self.labels(sets)
 		num_classes = len(labels)
 
 		M = np.zeros((num_classes, num_classes), dtype='uint16')
@@ -915,7 +915,8 @@ class Classifier():
 		for pred_gt in predictions_truths:
 			prediction = pred_gt[0]
 			ground_truth_label = pred_gt[1]
-			if prediction is not None:
+
+			if prediction is not None and prediction in labels:
 				i = labels.index(prediction)
 				if ground_truth_label in labels:
 					j = labels.index(ground_truth_label)
@@ -924,14 +925,14 @@ class Classifier():
 		return M
 
 	#  Write the confusion matrix to file.
-	def write_confusion_matrix(self, predictions_truths, file_timestamp=None):
+	def write_confusion_matrix(self, predictions_truths, file_timestamp=None, sets='both'):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
-		num_classes = self.num_labels()
-		labels = self.labels()
+		num_classes = self.num_labels(sets)
+		labels = self.labels(sets)
 
-		M = self.confusion_matrix(predictions_truths)
+		M = self.confusion_matrix(predictions_truths, sets)
 
 		fh = open('confusion-matrix-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier confusion matrix made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
@@ -2922,6 +2923,7 @@ class TemporalClassifier(Classifier):
 						smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
 					t1_start = time.process_time()					#  Start timer.
+					tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
 					if smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] > self.threshold:
 						prediction = tentative_prediction
 					else:
@@ -3317,12 +3319,12 @@ class TemporalClassifier(Classifier):
 			while i < self.rolling_buffer_length and self.rolling_buffer[i] is not None:
 				i += 1
 			self.rolling_buffer[i] = vector[:]
-			if self.is_rolling_buffer_full():
-				self.rolling_buffer_filling = False
 		else:
 			if None not in self.rolling_buffer:
 				self.rolling_buffer = self.rolling_buffer[self.rolling_buffer_stride:] + [None for i in range(0, self.rolling_buffer_stride)]
 			self.rolling_buffer[ self.rolling_buffer.index(None) ] = vector[:]
+
+		self.rolling_buffer_filling = not self.is_rolling_buffer_full()
 		return
 
 	#  Add the given ground-truth label to the ground-truth buffer, kicking out old labels if necessary.
@@ -3345,12 +3347,12 @@ class TemporalClassifier(Classifier):
 			while i < self.temporal_buffer_length and self.temporal_buffer[i] is not None:
 				i += 1
 			self.temporal_buffer[i] = distribution[:]
-			if self.is_temporal_buffer_full():
-				self.temporal_buffer_filling = False
 		else:
 			if None not in self.temporal_buffer:
 				self.temporal_buffer = self.temporal_buffer[self.temporal_buffer_stride:] + [None for i in range(0, self.temporal_buffer_stride)]
 			self.temporal_buffer[ self.temporal_buffer.index(None) ] = distribution[:]
+
+		self.temporal_buffer_filling = not self.is_temporal_buffer_full()
 		return
 
 	def is_rolling_buffer_full(self):
