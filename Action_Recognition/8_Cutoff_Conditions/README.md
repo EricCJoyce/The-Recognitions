@@ -34,7 +34,3 @@ SwitchStick is non-zero in every frame of Ungrab (S.Stick)
 Regulator_Closed is non-zero in every frame of Work (Reg)
 ```
 The first line makes sense: one cannot close a disconnect without using the switch stick. The last line is misleading. If a user is working on a regulator, then the regulator must be open. The vector element for closed regulators is always non-zero because regulators appear in banks of three, and there always happens to be a closed regulator near whichever opened one the user is operating. We therefore do not want to make the presence of a closed regulator a condition for considering the action "Work(Regulator)".
-
-## Requirements
-- Python
-- NumPy
