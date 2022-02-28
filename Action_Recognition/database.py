@@ -549,6 +549,19 @@ class Database():
 				del self.protected[key]
 		return
 
+	#  Keep the highest 'portion' of actions under 'label'.
+	#  'portion' is in [0.0, 1.0].
+	#  (Idunno, what would you call the opposite of "cull()"?)
+	def endorse(self, label, portion):
+		assert isinstance(portion, float) and portion >= 0.0 and portion <= 1.0, \
+		       'Argument \'portion\' passed to Database.endorse() must be a float in [0.0, 1.0].'
+		indices = [x for x in range(0, len(self.Xy[label]['actions']))]
+		lim = int(round(float(len(indices)) * portion))
+		for ctr in range(0, lim):
+			key = (label, ctr)
+			self.protected[key] = True
+		return
+
 	#################################################################
 	#  Editing.                                                     #
 	#################################################################
@@ -661,10 +674,21 @@ class Database():
 	#  given the layout of the classroom, state-transitions are really more instances of new state appearances.
 	#  Meaning, what you actually want to look for are sequences were a particular signal goes from 0.0 to something > 0.0.
 	#  One door may open, but the signal for closed doors will not go away because adjacent doors in view remain closed.
-	#  Example:
+	#
+	#  Example: identify all "Close Disconnect (MFB)" snippets that contain a downturn for Disconnect_Open or Disconnect_Unknown.
 	#    db.lambda_identify( db.snippets('Close Disconnect (MFB)'),
 	#                       (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Open') + 12) or
-	#                                    db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Unknown') + 12)) ))
+	#                                    db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Unknown') + 12)) )
+	#
+	#  Example: identify all "Release (Meter)" snippets that contain a change in either hand's status from 1=grabbing
+	#                                                                 to either 0=open or 2=pointing (or disappeared).
+	#    db.lambda_identify( db.snippets('Release (Meter)'),
+	#                        lambda seq: db.contains_hand_status_change_from(seq, 1) )
+	#
+	#  Example: identify all "Grab (Meter)" snippets that contain a change in either hand's status from either 0=open or 2=pointing (or disappeared)
+	#                                                                                              to 1=grabbing.
+	#    db.lambda_identify( db.snippets('Grab (Meter)'),
+	#                        lambda seq: db.contains_hand_status_change_to(seq, 1) )
 	def lambda_identify(self, snippets, condition):
 		passing_indices = []
 		index = 0
@@ -712,6 +736,103 @@ class Database():
 
 		if len(compressed) == 2 and compressed[0] == True:			#  If, after flattening, we have a state > 0.0
 			return True												#  followed by a state not > 0.0, and no more. This is what we want.
+
+		return False												#  No other pattern will do.
+
+	#  Given a sequence and a hand-status, determine whether the sequence starts with either hand's one-hot
+	#  subvector IN the state and then changes OUT of that state exactly ONCE.
+	#  No other pattern will do: we cannot never leave the status, and we cannot reach leave and return to the status.
+	#
+	#  Recall that there are three values for hand status: {0: open; 1: grasping; 2: pointing}.
+	#  When a hand is not visible on screen, its subvector is the zero vector.
+	#
+	#  Also notice that *sometimes*, all we care about is that a hand is NOT in some state.
+	#  This becomes relevant when you recall that the hands are controlled by paddle buttons, and that a user may
+	#  accidentally point when merely wishing to cease clutching an object.
+	def contains_hand_status_change_from(self, sequence, status):
+		bool_vec_lh = []
+		bool_vec_rh = []
+
+		if isinstance(status, int):									#  Accept ints, but wrap them in lists.
+			status = [status]
+
+		for vector in sequence:										#  For each frame, is the target signal greater than zero?
+			lh = [x for x in range(0, 3) if vector[3:6][x] > 0.0]	#  Left Hand One-hot = [3:5] = [3:6)
+			rh = [x for x in range(0, 3) if vector[9:12][x] > 0.0]	#  Right Hand One-hot = [9:11] = [9:12)
+
+			if len(lh) > 0:											#  Is left hand even visible? (Exists any element > 0?)
+				bool_vec_lh.append( len(list(set(lh).intersection(status))) > 0 )
+			else:
+				bool_vec_lh.append(False)							#  Not in any state.
+			if len(rh) > 0:											#  Is right hand even visible? (Exists any element > 0?)
+				bool_vec_rh.append( len(list(set(rh).intersection(status))) > 0 )
+			else:
+				bool_vec_rh.append(False)							#  Not in any state.
+
+		current_lh = bool_vec_lh[0]									#  Now "flatten" the lists of Booleans.
+		current_rh = bool_vec_rh[0]
+
+		compressed_lh = [current_lh]
+		compressed_rh = [current_rh]
+
+		for b in bool_vec_lh:
+			if b != current_lh:
+				compressed_lh.append(b)
+				current_lh = b
+
+		for b in bool_vec_rh:
+			if b != current_rh:
+				compressed_rh.append(b)
+				current_rh = b
+																	#  If, after flattening, we have for either hand, a True state
+																	#  followed by a False state, and no more. This is what we want.
+		if (len(compressed_lh) == 2 and compressed_lh[0] == True) or \
+		   (len(compressed_rh) == 2 and compressed_rh[0] == True):
+			return True
+
+		return False												#  No other pattern will do.
+
+	#  Similar to above, but reversed: return true if the sequence starts OUT of 'status' and enters 'status'.
+	def contains_hand_status_change_to(self, sequence, status):
+		bool_vec_lh = []
+		bool_vec_rh = []
+
+		if isinstance(status, int):									#  Accept ints, but wrap them in lists.
+			status = [status]
+
+		for vector in sequence:										#  For each frame, is the target signal greater than zero?
+			lh = [x for x in range(0, 3) if vector[3:6][x] > 0.0]	#  Left Hand One-hot = [3:5] = [3:6)
+			rh = [x for x in range(0, 3) if vector[9:12][x] > 0.0]	#  Right Hand One-hot = [9:11] = [9:12)
+
+			if len(lh) > 0:											#  Is left hand even visible? (Exists any element > 0?)
+				bool_vec_lh.append( len(list(set(lh).intersection(status))) == 0 )
+			else:
+				bool_vec_lh.append(True)							#  Not in any state means not in the target state.
+			if len(rh) > 0:											#  Is right hand even visible? (Exists any element > 0?)
+				bool_vec_rh.append( len(list(set(rh).intersection(status))) == 0 )
+			else:
+				bool_vec_rh.append(True)							#  Not in any state means not in the target state.
+
+		current_lh = bool_vec_lh[0]									#  Now "flatten" the lists of Booleans.
+		current_rh = bool_vec_rh[0]
+
+		compressed_lh = [current_lh]
+		compressed_rh = [current_rh]
+
+		for b in bool_vec_lh:
+			if b != current_lh:
+				compressed_lh.append(b)
+				current_lh = b
+
+		for b in bool_vec_rh:
+			if b != current_rh:
+				compressed_rh.append(b)
+				current_rh = b
+																	#  If, after flattening, we have for either hand, a True state
+																	#  followed by a False state, and no more. This is what we want.
+		if (len(compressed_lh) == 2 and compressed_lh[0] == True) or \
+		   (len(compressed_rh) == 2 and compressed_rh[0] == True):
+			return True
 
 		return False												#  No other pattern will do.
 
