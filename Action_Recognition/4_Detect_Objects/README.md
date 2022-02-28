@@ -2,6 +2,16 @@
 
 This is the deep-learning version of module 1. Rather than use color-maps and object-combination rules to establish which objects are visible in each frame, we use a deep network. The products of this module are similar to those of module 1. Instead of writing a `*_props.txt` file per enactment, we write a `*_<network-name>_detections.txt` file named after the network that made the predictions.
 
+## detect_enactment.py
+
+There are several parameters to tune in this script. Code comments and the usage print out will tell you more.
+
+e.g. The following call will process Enactments 1 and 2 using the trained version of MobileNet.
+
+```
+python3 detect_enactment.py -model training/exported-models/ssd_mobilenet_640x640 -e Enactment1 -e Enactment2 -v -render
+```
+
 ## Inputs
 
 ### Enactments as directories with the expected structure:
@@ -100,3 +110,15 @@ The TensorFlow Model Zoo provides several pretrained object detectors. Your file
 ```
 
 The created file `*_<network-name>_detections.txt` provides indices into the directory `EnactmentName/<network-name>`.
+
+## filter_detections.py
+
+This is a time-saving auxiliary script. You will likely want to try different object-detector thresholds: too strict, and too many objects will never be noticed; too lenient, and detection will probably admit hallucinations.
+
+Rather than re-running `detect_enactment.py` with different thresholds, run it once with a threshold of 0.0. Then use `filter_detections.py` to take subsets according to detection scores.
+
+e.g. The following call will apply an a posteriori threshold of 0.3 to detections made in Enactments 1 and 2 by MobileNet (with an original threshold of zero).
+
+```
+python3 filter_detections.py -th 0.3 -src _ssd_mobilenet_640x640-th0.0 -e Enactment1 -e Enactment2 -v
+```
