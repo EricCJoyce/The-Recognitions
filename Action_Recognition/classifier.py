@@ -294,7 +294,7 @@ class ProcessedEnactment():
 		return snippet_actions
 
 '''
-The Classifier object really serves as a repository for attributes and functions used by both its derived classes:
+The Classifier object really serves as a home for attributes and functions used by both its derived classes:
   TemporalClassifier (simulating a real-time system)
   AtemporalClassifier (which has prior knowledge about where sequences begin and end.)
 '''
