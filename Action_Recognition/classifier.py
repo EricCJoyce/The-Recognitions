@@ -3296,7 +3296,9 @@ class TemporalClassifier(Classifier):
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
 
-				if self.full() and self.uniform() and self.fair():	#  Only measure performance when conditions are fair.
+																	#  Only measure performance when conditions are fair.
+																	#  (Unless directed otherwise.)
+				if (self.full() and self.uniform() and self.fair()) or not skip_unfair:
 					ground_truth_label = self.buffer_labels[0]
 					if prediction == ground_truth_label:
 						classification_stats[ground_truth_label]['tp'] += 1
