@@ -15,6 +15,10 @@ from sklearn.preprocessing import StandardScaler
 import sys
 import time
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'							#  Suppress TensorFlow barf.
+import tensorflow as tf
+from object_detection.utils import label_map_util					#  Works with TensorFlow Object-Model Zoo's model library.
+
 '''
 
 '''
@@ -2633,6 +2637,13 @@ class TemporalClassifier(Classifier):
 		else:
 			self.minimum_bbox_area = 400
 
+		if 'detection_confidence' in kwargs:						#  Were we given a detection confidence threshold for recognized objects?
+			assert isinstance(kwargs['detection_confidence'], float) and kwargs['detection_confidence'] >= 0.0 and kwargs['detection_confidence'] <= 1.0, \
+			  'Argument \'detection_confidence\' passed to TemporalClassifier must be an integer greater than 0.'
+			self.detection_confidence = kwargs['detection_confidence']
+		else:
+			self.detection_confidence = 0.0
+
 		if 'render_modes' in kwargs:								#  Were we given render modes?
 			assert isinstance(kwargs['render_modes'], list), \
 			       'Argument \'render_modes\' passed to TemporalClassifier must be a list of zero or more strings in {rolling-buffer, confidence, probabilities, smoothed}.'
@@ -2839,6 +2850,7 @@ class TemporalClassifier(Classifier):
 			#########################################################
 			#  Pseudo-boot-up is over. March through the buffer.    #
 			#########################################################
+			rolling_offset_ctr = 0
 			for frame_ctr in range(0, num):							#  March through vector_buffer.
 				self.push_rolling( vector_buffer[frame_ctr] )		#  Push vector to rolling buffer.
 																	#  Push G.T. label to rolling G.T. buffer.
@@ -3021,7 +3033,14 @@ class TemporalClassifier(Classifier):
 		return classification_stats
 
 	#  THIS is the really real real-time method.
-	def classify(self, model):
+	#
+	def classify(self, model, skip_unfair=True):
+		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
+
+		gpus = tf.config.experimental.list_physical_devices('GPU')	#  List all GPUs on this system.
+		for gpu in gpus:
+			tf.config.experimental.set_memory_growth(gpu, True)		#  For each GPU, limit memory use.
+
 		classification_stats = {}
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
 		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
@@ -3039,13 +3058,23 @@ class TemporalClassifier(Classifier):
 
 		self.initialize_timers()									#  (Re)set.
 
+		if self.verbose:
+			print('>>> Bootup: loading object-detection model "' + model + '"')
+
+		t1_start = time.process_time()								#  Start timer.
+																	#  Load saved model and build detection function.
+		detect_function = tf.saved_model.load(model + '/saved_model')
+		label_path = '/'.join(model.split('/')[:-2] + ['annotations', 'label_map.pbtxt'])
+		recognizable_objects = label_map_util.create_category_index_from_labelmap(label_path, use_display_name=True)
+		t1_stop = time.process_time()								#  Stop timer.
+		self.timing['load-model'] = t1_stop - t1_start
+
+		if self.verbose:
+			print('    Done')
+
 		t0_start = time.process_time()								#  Start timer.
 		for enactment_input in self.enactment_inputs:				#  Treat each input enactment as a separate slice of time.
 			e = Enactment(enactment_input, enactment_file=enactment_input + '.enactment')
-
-			#########################################################  THIS IS A CHEAT!
-			e.load_parsed_objects()
-			#########################################################  JUST TEMPORARY!
 
 			metadata = e.load_metadata()
 			min_depth = metadata['depthImageRange']['x']			#  Save the current enactment's minimum and maximum depths.
@@ -3068,6 +3097,9 @@ class TemporalClassifier(Classifier):
 			frame_path_buffer = []									#  Store file paths (NormalViewCameraFrames) for reference.
 			depth_map_path_buffer = []								#  Store file paths (DepthMapCameraFrames) for reference.
 
+			if self.verbose:
+				print('>>> Bootup: caching hand subvectors for "' + enactment_input + '"')
+
 			t1_start = time.process_time()							#  Start timer.
 			fh = open(enactment_input + '.enactment', 'r')			#  Read in the input-enactment.
 			lines = fh.readlines()
@@ -3082,7 +3114,11 @@ class TemporalClassifier(Classifier):
 					ground_truth_label = arr[2]						#  Save the true label (these include the nothing-labels.)
 					vector = [float(x) for x in arr[3:]]
 
-					hand_vector_buffer.append(vector[:12])
+					if self.hand_schema == 'strong-hand':			#  Apply hand-schema (if applicable.)
+																	#  (Must be a list so it can be joined with the props subvector.)
+						vector = list(self.strong_hand_encode(vector))
+																	#  But we will not actually use the entire enactment vector here: only the
+					hand_vector_buffer.append(vector[:12])			#  hands are assumed to be given to us; object detection must happen in real time.
 
 					if ground_truth_label in self.relabelings:		#  Is this ground-truth label to be relabeled?
 						ground_truth_buffer.append( self.relabelings[ground_truth_label] )
@@ -3096,11 +3132,17 @@ class TemporalClassifier(Classifier):
 			t1_stop = time.process_time()							#  Stop timer.
 			self.timing['load-enactment'].append(t1_stop - t1_start)
 
+			if self.verbose:
+				print('    Done')
+
 			num = len(time_stamp_buffer)
 			prev_ctr = 0
 			max_ctr = os.get_terminal_size().columns - 7			#  Leave enough space for the brackets, space, and percentage.
 			if self.verbose:
-				print('>>> Classifying from "' + enactment_input + '" in real time.')
+				if skip_unfair:
+					print('>>> Classifying from "' + enactment_input + '" in real time (unfair tests will not be skipped but will not be counted.)')
+				else:
+					print('>>> Classifying from "' + enactment_input + '" in real time.')
 
 			tentative_prediction = None								#  Initially nothing.
 			prediction = None
@@ -3111,50 +3153,53 @@ class TemporalClassifier(Classifier):
 			for frame_ctr in range(0, num):							#  March through vector_buffer.
 				t1_start = time.process_time()						#  Start timer.
 				t2_start = t1_start									#  Duplicate timer.
-																	#  Open frame image.
-				frame_img = cv2.imread(frame_path_buffer[frame_ctr], cv2.IMREAD_UNCHANGED)
+																	#  Openg frame image.
+				frame_img = cv2.imread(frame_path_buffer[frame_ctr], cv2.IMREAD_COLOR)
+				frame_img = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
+				imgt = tf.convert_to_tensor(frame_img)				#  Convert image to tensor.
+				input_tensor = imgt[tf.newaxis, ...]
 																	#  Open depth map.
 				depth_map = cv2.imread(depth_map_path_buffer[frame_ctr], cv2.IMREAD_UNCHANGED)
+
 				t1_stop = time.process_time()						#  Stop timer.
 				self.timing['image-open'].append(t1_stop - t1_start)
 
 				t1_start = time.process_time()						#  Start timer.
-				#####################################################
-				del frame_img
-				results = e.frames[ time_stamp_buffer[frame_ctr] ].detections
-				#results = model.detect([frame_img], verbose=0)		#  Model makes prediction(s)
-				#####################################################
+				detections = detect_function(input_tensor)			#  DETECT!
 				t1_stop = time.process_time()						#  Stop timer.
 				self.timing['object-detection'].append(t1_stop - t1_start)
+
+				num_detections = int(detections.pop('num_detections'))
+				detections = {key: val[0, :num_detections].numpy() for key, val in detections.items()}
+				detections['num_detections'] = num_detections
+				detections['detection_classes'] = detections['detection_classes'].astype(np.int64)
 
 				hands_subvector = hand_vector_buffer[frame_ctr]		#  We already have the hands subvector.
 																	#  Initialize the props subvector to zero.
 				props_subvector = [0.0 for i in self.recognizable_objects]
-
-				#for i in range(0, len(results[0]['rois'])):			#  For every detection...
-				for i in range(0, len(results)):					#  For every detection...
-					bbox = results[i].bounding_box
-					#bbox = (results[0]['rois'][i][1], results[0]['rois'][i][0], \
-					#        results[0]['rois'][i][3], results[0]['rois'][i][2])
+																	#  For every detection...
+				for i in range(0, detections['num_detections']):	#  SSD MOBILE-NET:
+																	#    detection_classes, detection_multiclass_scores, detection_anchor_indices,
+					detection_class = recognizable_objects[ detections['detection_classes'][i] ]['name']
+																	#    detection_boxes, raw_detection_boxes,
+					detection_box   = detections['detection_boxes'][i]
+																	#    detection_scores, raw_detection_scores,
+					detection_score = float(detections['detection_scores'][i])
+																	#    num_detections
+					bbox = ( int(round(detection_box[1] * e.width)), int(round(detection_box[0] * e.height)), \
+					         int(round(detection_box[3] * e.width)), int(round(detection_box[2] * e.height)) )
 					bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-					bbox_centroid = (bbox[0] + int(round((bbox[2] - bbox[0]) * 0.5)), bbox[1] + int(round((bbox[3] - bbox[1]) * 0.5)))
-					confidence = results[i].confidence
-					#confidence = float(results[0]['scores'][i])		#  Convert from numpy float32.
 
-					#if bbox_area > self.minimum_bbox_area:			#  BEWARE! Mask-RCNN is capable of predicting bounding boxes empty of pixels!
-					if bbox_area > self.minimum_bbox_area and results[i].object_name not in ['LeftHand', 'RightHand']:
-						object_index = self.recognizable_objects.index(results[i].object_name)
-						#object_index = results[0]['class_ids'][i] - 1
+					if detection_score >= self.detection_confidence and bbox_area >= self.minimum_bbox_area:
+						bbox_centroid = (bbox[0] + int(round((bbox[2] - bbox[0]) * 0.5)), bbox[1] + int(round((bbox[3] - bbox[1]) * 0.5)))
+						object_index = detections['detection_classes'][i]
 
 						t1_start = time.process_time()				#  Start timer.
 																	#  In meters.
-						#'''
 						d = min_depth + (float(depth_map[bbox_centroid[1], bbox_centroid[0]]) / 255.0) * (max_depth - min_depth)
 						centroid = np.dot(K_inv, np.array([bbox_centroid[0], bbox_centroid[1], 1.0]))
 						centroid *= d								#  Scale by known depth (meters from head).
 						centroid_3d = np.dot(flip, centroid)		#  Flip point.
-						#'''
-
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['centroid-computation'].append(t1_stop - t1_start)
 																	#  If hands are not present, then they cannot influence object weights.
@@ -3166,14 +3211,12 @@ class TemporalClassifier(Classifier):
 							rh_centroid = hands_subvector[6:9]
 						else:
 							rh_centroid = None
-
+																	#  Each recognizable object's slot receives the maximum signal for that prop.
 						props_subvector[object_index] = max(props_subvector[object_index], self.gaussian.weigh(centroid_3d, lh_centroid, rh_centroid))
 
-				del depth_map										#  Free the memory!
+				#del depth_map										#  Free the memory!
 
 				vector = tuple(hands_subvector + props_subvector)	#  Assemble the vector.
-				if self.hand_schema == 'strong-hand':				#  Apply hand-schema (if applicable.)
-					vector = self.strong_hand_encode(vector)
 				vector = self.apply_vector_coefficients(vector)		#  Apply coefficients (if applicable.)
 				self.push_rolling( vector )							#  Push vector to rolling buffer.
 																	#  Push G.T. label to rolling G.T. buffer.
@@ -3234,48 +3277,44 @@ class TemporalClassifier(Classifier):
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
 
-					#################################################
-					#  Smooth the contents of the temporal buffer   #
-					#  and make a prediction (or abstain from       #
-					#  predicting).                                 #
-					#################################################
-
+				#####################################################
+				#  Smooth the contents of the temporal buffer and   #
+				#  make a prediction (or abstain from predicting).  #
+				#####################################################
+				if len([x for x in self.temporal_buffer if x is not None]) > 0:
 					t1_start = time.process_time()					#  Start timer.
 					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
 					t1_start = time.process_time()					#  Start timer.
+					tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
 					if smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] > self.threshold:
 						prediction = tentative_prediction
 					else:
 						prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
-																	#  Only measure performance when conditions are fair.
-					if self.full() and self.uniform() and self.fair():
-						ground_truth_label = self.buffer_labels[0]
-						if prediction == ground_truth_label:
-							classification_stats[ground_truth_label]['tp'] += 1
-						elif prediction is not None:
-							classification_stats[prediction]['fp']  += 1
-							classification_stats[ground_truth_label]['fn'] += 1
 
-						classification_stats['_tests'].append( (prediction, ground_truth_label) )
-						classification_stats['_conf'].append( tentative_confidence )
+				if self.full() and self.uniform() and self.fair():	#  Only measure performance when conditions are fair.
+					ground_truth_label = self.buffer_labels[0]
+					if prediction == ground_truth_label:
+						classification_stats[ground_truth_label]['tp'] += 1
+					elif prediction is not None:
+						classification_stats[prediction]['fp']  += 1
+						classification_stats[ground_truth_label]['fn'] += 1
 
-					t2_stop = time.process_time()					#  Stop per-frame timer.
-																	#  Save per-frame time: Note that this has been placed inside the
-																	#  "if buffer full" block even though t2_start is outside the block.
-																	#  This is because otherwise we artificially drive down the per-
-																	#  frame mean and drive up the per-frame standard deviation.
-					self.timing['per-frame'].append(t2_stop - t2_start)
+					classification_stats['_tests'].append( (prediction, ground_truth_label) )
+					classification_stats['_conf'].append( tentative_confidence )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
 						prev_ctr = int(round(float(frame_ctr) / float(num - 1) * float(max_ctr)))
 						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(frame_ctr) / float(num - 1) * 100.0))) + '%]')
 						sys.stdout.flush()
+
+				t2_stop = time.process_time()						#  Stop per-frame timer.
+				self.timing['per-frame'].append(t2_stop - t2_start)	#  Save per-frame time.
 
 		t0_stop = time.process_time()
 		self.timing['total'] = t0_stop - t0_start
@@ -3314,6 +3353,8 @@ class TemporalClassifier(Classifier):
 
 	#  Add the given vector to the rolling buffer, kicking out old vectors if necessary.
 	def push_rolling(self, vector):
+		self.rolling_buffer_filling = not self.is_rolling_buffer_full()
+
 		if self.rolling_buffer_filling:
 			i = 0
 			while i < self.rolling_buffer_length and self.rolling_buffer[i] is not None:
@@ -3323,8 +3364,6 @@ class TemporalClassifier(Classifier):
 			if None not in self.rolling_buffer:
 				self.rolling_buffer = self.rolling_buffer[self.rolling_buffer_stride:] + [None for i in range(0, self.rolling_buffer_stride)]
 			self.rolling_buffer[ self.rolling_buffer.index(None) ] = vector[:]
-
-		self.rolling_buffer_filling = not self.is_rolling_buffer_full()
 		return
 
 	#  Add the given ground-truth label to the ground-truth buffer, kicking out old labels if necessary.
@@ -3342,6 +3381,8 @@ class TemporalClassifier(Classifier):
 
 	#  Add the given probability distribution to the temporal buffer, kicking out old distributions if necessary.
 	def push_temporal(self, distribution):
+		self.temporal_buffer_filling = not self.is_temporal_buffer_full()
+
 		if self.temporal_buffer_filling:
 			i = 0
 			while i < self.temporal_buffer_length and self.temporal_buffer[i] is not None:
@@ -3351,8 +3392,6 @@ class TemporalClassifier(Classifier):
 			if None not in self.temporal_buffer:
 				self.temporal_buffer = self.temporal_buffer[self.temporal_buffer_stride:] + [None for i in range(0, self.temporal_buffer_stride)]
 			self.temporal_buffer[ self.temporal_buffer.index(None) ] = distribution[:]
-
-		self.temporal_buffer_filling = not self.is_temporal_buffer_full()
 		return
 
 	def is_rolling_buffer_full(self):
