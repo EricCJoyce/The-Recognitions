@@ -223,7 +223,7 @@ def main():
 		if params['verbose']:
 			print('')
 
-		e.render_detected(model_name)								#  Save detected objects to file.
+		e.render_detected(model_name, params)						#  Save detected objects to file.
 
 		if params['render']:
 			if params['colors'] is None:							#  No colors? Make random ones.
@@ -247,7 +247,7 @@ def get_command_line_params():
 	params['enactments'] = []										#  List of file paths.
 	params['model'] = None											#  Detection model.
 	params['score-threshold'] = 0.6									#  Detection score must be greater than this in order to register.
-	params['minpx'] = 400											#  Minimum number of pixels for something to be considered visible.
+	params['minpx'] = 1												#  Minimum number of pixels for something to be considered visible.
 	params['colors'] = None											#  Optional color lookup table.
 	params['render'] = False										#  Whether to render stuff.
 	params['verbose'] = False
@@ -281,7 +281,7 @@ def get_command_line_params():
 				elif argtarget == '-th':
 					params['score-threshold'] = max(0.0, float(argval))
 				elif argtarget == '-minpx':
-					params['minpx'] = max(0, int(argval))
+					params['minpx'] = max(1, int(argval))
 				elif argtarget == '-color' or argtarget == '-colors':
 					params['colors'] = argval
 				elif argtarget == '-User':
@@ -298,13 +298,13 @@ def usage():
 	print('and finally to apply a trained object-detection model to determine what is visible.')
 	print('')
 	print('Usage:  python3 detect_enactment.py <parameters, preceded by flags>')
-	print(' e.g.:  python3 detect_enactment.py -model training/exported-models/ssd_mobilenet_640x640 -e BackBreaker1 -e Enactment1 -v -render')
+	print(' e.g.:  python3 detect_enactment.py -model training/exported-models/ssd_mobilenet_640x640 -th 0.0 -e BackBreaker1 -e Enactment1 -v')
 	print('')
 	print('Flags:  -e       MUST HAVE AT LEAST ONE: Path to a directory of raw enactment materials: JSONs and color maps.')
 	print('        -model   MUST HAVE EXACTLY ONE: Path to a model that can perform object recognition.')
 	print('')
 	print('        -th      Following real number in [0.0, 1.0] is the threshold, above which detections must score in order to count.')
-	print('        -minpx   Following integer in [0, inf) is the minimum bounding box area in pixels for a detection to count.')
+	print('        -minpx   Following integer in [1, inf) is the minimum bounding box area in pixels for a detection to count.')
 	print('')
 	print('        -render  Generate illustrations (videos, 3D representations) for all given enactments.')
 	print('        -v       Enable verbosity')
