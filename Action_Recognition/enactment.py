@@ -1829,7 +1829,7 @@ class Enactment():
 		return
 
 	#  Write all detected RObjects (masks already exist) to a mask lookup-table, "<self.enactment_name>_<detector_name>_detections.txt"
-	def render_detected(self, detector_name=None):
+	def render_detected(self, detector_name=None, params=None):
 		K = self.K()												#  Retrieve camera matrix
 		K_inv = np.linalg.inv(K)									#  Build inverse K-matrix
 																	#  Build the flip matrix
@@ -1849,6 +1849,11 @@ class Enactment():
 		fh.write('#    ' + str(self.width) + '\t' + str(self.height) + '\n')
 		fh.write('#  FPS:\n')
 		fh.write('#    ' + str(self.fps) + '\n')
+		if params is not None:
+			fh.write('#  THRESHOLD:\n')								#  If they were passed to this method, write the detection parameters to the file header.
+			fh.write('#    ' + str(params['score-threshold']) + '\n')
+			fh.write('#  MINIMUM PIXELS:\n')
+			fh.write('#    ' + str(params['minpx']) + '\n')
 		if self.object_detection_source is not None:
 			fh.write('#  OBJECT DETECTION SOURCE:\n')
 			fh.write('#    ' + self.object_detection_source + '\n')
