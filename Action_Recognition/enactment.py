@@ -883,6 +883,7 @@ class Enactment():
 			fh.write(str(time_stamp) + '\t')
 			fh.write(frame.fullpath() + '\t')
 			fh.write(frame.ground_truth_label + '\t')
+
 			if frame.left_hand_pose is not None:					#  Write the LEFT-HAND subvector
 				fh.write(str(frame.left_hand_pose[0]) + '\t')
 				fh.write(str(frame.left_hand_pose[1]) + '\t')
@@ -895,8 +896,11 @@ class Enactment():
 					fh.write('0.0\t0.0\t1.0\t')
 				else:												#  This case should never happen, but be prepared!
 					fh.write('0.0\t0.0\t0.0\t')
+				lh = np.array(frame.left_hand_pose[:3])				#  Left hand influences Gaussian weight.
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+				lh = None											#  No left hand influence on Gaussian weight.
+
 			if frame.right_hand_pose is not None:					#  Write the RIGHT-HAND subvector
 				fh.write(str(frame.right_hand_pose[0]) + '\t')
 				fh.write(str(frame.right_hand_pose[1]) + '\t')
@@ -909,20 +913,14 @@ class Enactment():
 					fh.write('0.0\t0.0\t1.0\t')
 				else:												#  This case should never happen, but be prepared!
 					fh.write('0.0\t0.0\t0.0\t')
+				rh = np.array(frame.right_hand_pose[:3])			#  Right hand influences Gaussian weight.
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
+				rh = None											#  No right hand influence on Gaussian weight.
 
 			props_subvector = [0.0 for i in range(0, len(self.recognizable_objects))]
 			for detection in frame.detections:
 				if detection.enabled:
-					if frame.left_hand_pose is not None:
-						lh = np.array(frame.left_hand_pose[:3])
-					else:
-						lh = None
-					if frame.right_hand_pose is not None:
-						rh = np.array(frame.right_hand_pose[:3])
-					else:
-						rh = None
 					g = gaussian.weigh(np.array(detection.centroid), lh, rh)
 					props_subvector[ self.recognizable_objects.index(detection.object_name) ] = max(g, props_subvector[ self.recognizable_objects.index(detection.object_name) ])
 
