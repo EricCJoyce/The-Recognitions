@@ -99,7 +99,7 @@ def get_command_line_params():
 	params['hand-pose-mode'] = 'sensor-shutoff'
 	params['hand-pose-src-file'] = None
 
-	params['min-pixels'] = 400										#  I decided this was a good default minimum.
+	params['min-pixels'] = 1										#  By default, admit everything.
 	params['colors-file'] = None
 	params['render'] = False										#  Whether to render stuff.
 
@@ -217,7 +217,7 @@ def usage():
 	print('        -sigHead  Following three arguments are the three components of the Gaussian\'s sigma for the gaze.')
 	print('        -sigHand  Following three arguments are the three components of the Gaussian\'s sigma for the hands.')
 	print('        -minpx    Following argument is the minimum number of pixels an object needs to occupy to be admitted')
-	print('                  to the *.enactment file. The default is 400.')
+	print('                  to the *.enactment file. The default is 1.')
 	print('')
 	print('        -suffix   Following string is the suffix of the file to be used as object-detection source.')
 	print('                  By default, this is "_props.txt", meaning the script expects to use ground-truth detections')
