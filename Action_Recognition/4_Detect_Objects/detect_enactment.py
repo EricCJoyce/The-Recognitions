@@ -186,11 +186,13 @@ def main():
 
 			for i in range(0, detections['num_detections']):		#  SSD MOBILE-NET:
 																	#    detection_classes, detection_multiclass_scores, detection_anchor_indices,
-				detection_class = recognizable_objects[ detections['detection_classes'][i] ]['name']
-				detection_box   = detections['detection_boxes'][i]	#    detection_boxes, raw_detection_boxes,
+																	#    detection_boxes, raw_detection_boxes,
 																	#    detection_scores, raw_detection_scores,
-				detection_score = float(detections['detection_scores'][i])
 																	#    num_detections
+				detection_class = recognizable_objects[ detections['detection_classes'][i] ]['name']
+				detection_box   = detections['detection_boxes'][i]
+				detection_score = float(detections['detection_scores'][i])
+
 				bbox = ( int(round(detection_box[1] * e.width)), int(round(detection_box[0] * e.height)), \
 				         int(round(detection_box[3] * e.width)), int(round(detection_box[2] * e.height)) )
 				bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
@@ -209,7 +211,6 @@ def main():
 					                                 mask_path=maskpath, \
 					                                 bounding_box=bbox, \
 					                                 confidence=detection_score) )
-
 					maskfilectr += 1								#  Increment counter.
 
 			if params['verbose']:
@@ -246,7 +247,7 @@ def get_command_line_params():
 	params = {}
 	params['enactments'] = []										#  List of file paths.
 	params['model'] = None											#  Detection model.
-	params['score-threshold'] = 0.6									#  Detection score must be greater than this in order to register.
+	params['score-threshold'] = 0.0									#  Detection score must be greater than this in order to register.
 	params['minpx'] = 1												#  Minimum number of pixels for something to be considered visible.
 	params['colors'] = None											#  Optional color lookup table.
 	params['render'] = False										#  Whether to render stuff.
@@ -304,8 +305,9 @@ def usage():
 	print('        -model   MUST HAVE EXACTLY ONE: Path to a model that can perform object recognition.')
 	print('')
 	print('        -th      Following real number in [0.0, 1.0] is the threshold, above which detections must score in order to count.')
+	print('                 Default is 0.0.')
 	print('        -minpx   Following integer in [1, inf) is the minimum bounding box area in pixels for a detection to count.')
-	print('')
+	print('                 Default is 1.')
 	print('        -render  Generate illustrations (videos, 3D representations) for all given enactments.')
 	print('        -v       Enable verbosity')
 	print('        -?       Display this message')
