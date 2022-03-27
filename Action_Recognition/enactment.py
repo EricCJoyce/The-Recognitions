@@ -899,7 +899,7 @@ class Enactment():
 				lh = np.array(frame.left_hand_pose[:3])				#  Left hand influences Gaussian weight.
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
-				lh = None											#  No left hand influence on Gaussian weight.
+				lh = None											#  No left-hand influence on Gaussian weight.
 
 			if frame.right_hand_pose is not None:					#  Write the RIGHT-HAND subvector
 				fh.write(str(frame.right_hand_pose[0]) + '\t')
@@ -916,7 +916,7 @@ class Enactment():
 				rh = np.array(frame.right_hand_pose[:3])			#  Right hand influences Gaussian weight.
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
-				rh = None											#  No right hand influence on Gaussian weight.
+				rh = None											#  No right-hand influence on Gaussian weight.
 
 			props_subvector = [0.0 for i in range(0, len(self.recognizable_objects))]
 			for detection in frame.detections:
@@ -1833,7 +1833,7 @@ class Enactment():
 																	#  Build the flip matrix
 		flip = np.array([[-1.0,  0.0, 0.0], \
 		                 [ 0.0, -1.0, 0.0], \
-		                 [ 0.0,  0.0, 1.0]], dtype='float64')
+		                 [ 0.0,  0.0, 1.0]], dtype=np.float32)
 
 		mask_ctr = 0
 		frame_ctr = 0
@@ -1883,22 +1883,20 @@ class Enactment():
 				center = detection.center('avg')
 																	#  In meters
 				d = self.min_depth + (float(depthmap[min(center[1], self.height - 1), min(center[0], self.width - 1)]) / 255.0) * (self.max_depth - self.min_depth)
-				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
+				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0], dtype=np.float32))
 				centroid *= d										#  Scale by known depth (meters from head)
-				pt = np.dot(flip, centroid)							#  Flip point
-				detection.set_centroid( (pt[0], pt[1], pt[2]) )
+				centroid_3d = np.dot(flip, centroid)				#  Flip point
 																	#  Write the 3D centroid (determined by pixels' average)
-				fh.write(str(detection.centroid[0]) + ',' + str(detection.centroid[1]) + ',' + str(detection.centroid[2]) + '\t')
+				fh.write(str(centroid_3d[0]) + ',' + str(centroid_3d[1]) + ',' + str(centroid_3d[2]) + '\t')
 
 				center = detection.center('bbox')
 																	#  In meters
 				d = self.min_depth + (float(depthmap[min(center[1], self.height - 1), min(center[0], self.width - 1)]) / 255.0) * (self.max_depth - self.min_depth)
 				centroid = np.dot(K_inv, np.array([center[0], center[1], 1.0]))
 				centroid *= d										#  Scale by known depth (meters from head)
-				pt = np.dot(flip, centroid)							#  Flip point
-				detection.set_centroid( (pt[0], pt[1], pt[2]) )
+				centroid_3d = np.dot(flip, centroid)				#  Flip point
 																	#  Write the 3D centroid (determined by bounding box)
-				fh.write(str(detection.centroid[0]) + ',' + str(detection.centroid[1]) + ',' + str(detection.centroid[2]) + '\n')
+				fh.write(str(centroid_3d[0]) + ',' + str(centroid_3d[1]) + ',' + str(centroid_3d[2]) + '\n')
 
 				mask_ctr += 1
 
@@ -3466,7 +3464,7 @@ class Enactment():
 	def K(self):
 		Kmat = np.array([[self.focal_length, 0.0,              self.width  * 0.5], \
 		                 [      0.0,        self.focal_length, self.height * 0.5], \
-		                 [      0.0,         0.0,                 1.0           ]])
+		                 [      0.0,         0.0,                 1.0           ]], dtype=np.float32)
 		return Kmat
 
 	def load_colormap(self):
