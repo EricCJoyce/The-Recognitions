@@ -67,7 +67,7 @@ def main():
 		             sigma_gaze=params['gaussian']['sigma-gaze'], \
 		             sigma_hand=params['gaussian']['sigma-hand'])
 
-		if params['min-pixels'] > 0:								#  Kill scrub detections.
+		if params['min-pixels'] > 1:								#  Kill scrub detections.
 			e.disable_detections( (lambda detection: detection.get_mask_area() < params['min-pixels']) )
 
 																	#  Do the following disablings AFTER computing IK poses!
