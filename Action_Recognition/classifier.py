@@ -909,7 +909,7 @@ class Classifier():
 	#  Reporting.                                                   #
 	#################################################################
 
-	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label).
+	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label, is fair).
 	def confusion_matrix(self, predictions_truths, sets='both'):
 		labels = self.labels(sets)
 		num_classes = len(labels)
@@ -919,8 +919,9 @@ class Classifier():
 		for pred_gt in predictions_truths:
 			prediction = pred_gt[0]
 			ground_truth_label = pred_gt[1]
+			fair = pred_gt[2]
 
-			if prediction is not None and prediction in labels:
+			if prediction is not None and prediction in labels and fair:
 				i = labels.index(prediction)
 				if ground_truth_label in labels:
 					j = labels.index(ground_truth_label)
@@ -959,6 +960,7 @@ class Classifier():
 		pred_gt = [x[0] for x in pred_gt_conf]						#  Now separate them again.
 		conf = [x[1] for x in pred_gt_conf]
 
+		'''
 		fh = open('confidences-winners-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  Winning labels only.\n')
@@ -968,34 +970,43 @@ class Classifier():
 			c = conf[i]
 			prediction = pred_gt[i][0]
 			ground_truth_label = pred_gt[i][1]
+			fair = pred_gt[i][2]
 
-			if prediction is not None:
+			if prediction == ground_truth_label:
 				fh.write(str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
-			else:
-				fh.write(str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
-		fh.close()
 
-		fh = open('confidences-all-' + file_timestamp + '.txt', 'w')
+		fh.close()
+		'''
+
+		#fh = open('confidences-all-' + file_timestamp + '.txt', 'w')
+		fh = open('confidences-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  All labels.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  Confidence    Predicted-Label    Ground-Truth-Label\n')
+		fh.write('#  {fair, UNFAIR}    Confidence    Predicted-Label    Ground-Truth-Label\n')
 		for i in range(0, len(pred_gt)):
 			c = conf[i]
 			prediction = pred_gt[i][0]
 			ground_truth_label = pred_gt[i][1]
+			fair = pred_gt[i][2]
 
-			if prediction is not None:
-				fh.write(str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+			if fair:
+				if prediction is not None:
+					fh.write('fair\t' + str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+				else:
+					fh.write('fair\t' + str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
 			else:
-				fh.write(str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+				if prediction is not None:
+					fh.write('UNFAIR\t' + str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+				else:
+					fh.write('UNFAIR\t' + str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
 		fh.close()
 
 		return
 
 	#  Avoid repeating time-consuming experiments. Save results to file.
-	#  'stats' is dictionary with key:'_tests' ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
-	#                             key:'_conf'  ==> val:[ confidence,                 confidence,                ... ]
+	#  'stats' is dictionary with key:'_tests' ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
+	#                             key:'_conf'  ==> val:[ confidence,                       confidence,                      ... ]
 	#                             key:<label>  ==> val:{key:'tp'      ==> val: true positive count for <label>,
 	#                                                   key:'fp'      ==> val: false positive count for <label>,
 	#                                                   key:'fn'      ==> val: false negative count for <label>,
@@ -1529,6 +1540,10 @@ class AtemporalClassifier(Classifier):
 		for i in range(0, len(self.y_test)):
 			query = self.X_test[i]									#  Bookmark the query and ground-truth label
 			ground_truth_label = self.y_test[i]
+			if ground_truth_label in self.labels('train'):			#  Is this label "fair" to the classifier?
+				fair = True
+			else:
+				fair = False
 			t1_start = time.process_time()							#  Start timer.
 																	#  Call the parent class's core matching engine.
 			matching_costs, confidences, probabilities, metadata = super(AtemporalClassifier, self).classify(query)
@@ -1562,7 +1577,7 @@ class AtemporalClassifier(Classifier):
 				classification_stats[prediction]['fp']         += 1
 				classification_stats[ground_truth_label]['fn'] += 1
 																	#  Add this prediction-truth tuple to our list.
-			classification_stats['_tests'].append( (prediction, ground_truth_label) )
+			classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
 
 			if self.render:											#  Put the query and the template side by side.
 				if prediction is not None:							#  If there's no prediction, there is nothing to render.
@@ -2702,7 +2717,7 @@ class TemporalClassifier(Classifier):
 			  'Argument \'min_bbox\' passed to TemporalClassifier must be an integer greater than 0.'
 			self.minimum_bbox_area = kwargs['min_bbox']
 		else:
-			self.minimum_bbox_area = 400
+			self.minimum_bbox_area = 1
 
 		if 'detection_confidence' in kwargs:						#  Were we given a detection confidence threshold for recognized objects?
 			assert isinstance(kwargs['detection_confidence'], float) and kwargs['detection_confidence'] >= 0.0 and kwargs['detection_confidence'] <= 1.0, \
@@ -2812,6 +2827,9 @@ class TemporalClassifier(Classifier):
 	#  And, yes, this is "simulated real time," but if we know we won't save the results of a test, then why perform that test?
 	#  This is what the 'skip_unfair' parameter is for: check the accumulated ground-truth labels first BEFORE running DTW.
 	#  Save time; run more tests.
+	#  A noteworthy caveat of this method is that IF YOUR TEMPORAL BUFFER LENGTH IS > 1, THEN SKIPPING UNFAIR TESTS WILL
+	#  CREATE DISCONTINUITIES IN THE TEMPORAL BUFFER: there may be gaps between the last outgoing fair probability distribution
+	#  and the next incoming probability distribution. USE THIS METHOD WITH CAUTION!
 	def simulated_classify(self, skip_unfair=True):
 		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
 
@@ -2893,6 +2911,8 @@ class TemporalClassifier(Classifier):
 					print('>>> Classifying from "' + enactment_input + '" in simulated real time (skipping unfair tests.)')
 				else:
 					print('>>> Classifying from "' + enactment_input + '" in simulated real time.')
+				print('    Minimum detection area:       ' + str(self.minimum_bbox_area))
+				print('    Minimum detection confidence: ' + str(self.detection_confidence))
 
 			tentative_prediction = None								#  Initially nothing.
 			prediction = None
@@ -2996,7 +3016,7 @@ class TemporalClassifier(Classifier):
 						if ground_truth_label != '*':
 							classification_stats[ground_truth_label]['fn'] += 1
 
-					classification_stats['_tests'].append( (prediction, ground_truth_label) )
+					classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
 					classification_stats['_conf'].append( tentative_confidence )
 
 				#####################################################
@@ -3187,6 +3207,8 @@ class TemporalClassifier(Classifier):
 					print('>>> Classifying from "' + enactment_input + '" in real time (unfair tests will not be skipped but will not be counted.)')
 				else:
 					print('>>> Classifying from "' + enactment_input + '" in real time.')
+				print('    Minimum detection area:       ' + str(self.minimum_bbox_area))
+				print('    Minimum detection confidence: ' + str(self.detection_confidence))
 
 			prediction = None										#  Initially nothing.
 
@@ -3346,8 +3368,8 @@ class TemporalClassifier(Classifier):
 							if ground_truth_label != '*':
 								classification_stats[ground_truth_label]['fn'] += 1
 
-						classification_stats['_tests'].append( (prediction, ground_truth_label) )
-						classification_stats['_conf'].append( tentative_confidence )
+					classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
+					classification_stats['_conf'].append( tentative_confidence )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
