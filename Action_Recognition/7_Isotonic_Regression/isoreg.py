@@ -4,7 +4,7 @@ from sklearn.isotonic import IsotonicRegression
 import sys
 
 def main():
-	params = get_command_line_params()								#  Collect parameters
+	params = get_command_line_params()								#  Collect parameters.
 	if params['helpme'] or params['src'] is None:
 		usage()
 		return
@@ -13,8 +13,8 @@ def main():
 	lines = fh.readlines()
 	fh.close()
 
-	X = []															#  Confidences
-	y = []															#  1 if we correctly matched; 0 else
+	X = []															#  Confidences.
+	y = []															#  1 if we correctly matched; 0 else.
 
 	for line in lines:
 		if line[0] != '#':
@@ -23,18 +23,18 @@ def main():
 			conf = float(arr[1])
 			pred = arr[2]
 			gt = arr[3]
-			X.append(conf)											#  Add confidence
+			X.append(conf)											#  Add confidence.
 			if pred == gt:											#  Add correctness:
 				y.append(1)											#    right
 			else:
 				y.append(0)											#    wrong
 
-	stem = params['src'].split('-')[-1].split('.')[0]				#  Save the stem
+	stem = params['src'].split('-')[-1].split('.')[0]				#  Save the stem.
 
-	X.reverse()														#  Make increasing
-	y.reverse()														#  (This, too)
+	X.reverse()														#  Make increasing.
+	y.reverse()														#  (This, too).
 
-	iso_reg = IsotonicRegression(out_of_bounds='clip').fit(X, y)	#  Fit
+	iso_reg = IsotonicRegression(out_of_bounds='clip').fit(X, y)	#  Fit.
 
 	fake_X = np.linspace(0.0, X[-1], num=1000)
 	fake_y = iso_reg.predict(fake_X)
@@ -45,26 +45,27 @@ def main():
 	plt.xlabel('Confidence')
 	plt.ylabel('Probability')
 	plt.savefig('isoreg-' + stem + '.png')
+																	#  key:isotonic probability ==> val:{key:'min' ==> val:confidence,
+	buckets = {}													#                                    key:'max' ==> val:confidence}
 
-	buckets = {}													#  key:isotonic probability ==> val:{key:'min' ==> val:confidence,
-																	#                                    key:'max' ==> val:confidence}
-	for i in range(0, len(X)):
+	for i in range(0, len(X)):										#  Initialize.
 		if pred_y[i] not in buckets:
 			buckets[pred_y[i]] = {}
 			buckets[pred_y[i]]['min'] = float('inf')
 			buckets[pred_y[i]]['max'] = float('-inf')
+
 	for i in range(0, len(X)):
 		if i == 0:
 			buckets[pred_y[i]]['min'] = float('-inf')
 			buckets[pred_y[i]]['max'] = max(buckets[pred_y[i]]['max'], X[i])
 		elif i == len(X) - 1:
-			buckets[pred_y[i]]['min'] = min(buckets[pred_y[i]]['min'], X[i])
+			buckets[pred_y[i]]['min'] = min(buckets[pred_y[i]]['min'], X[i - 1])
 			buckets[pred_y[i]]['max'] = float('inf')
 		else:
-			buckets[pred_y[i]]['min'] = min(buckets[pred_y[i]]['min'], X[i])
-			buckets[pred_y[i]]['max'] = max(buckets[pred_y[i]]['max'], X[i + 1])
+			buckets[pred_y[i]]['min'] = min(buckets[pred_y[i]]['min'], X[i - 1])
+			buckets[pred_y[i]]['max'] = max(buckets[pred_y[i]]['max'], X[i])
 
-	fh = open(stem + '.isoreg', 'w')
+	fh = open(stem + '.isomap', 'w')
 	fh.write('#  Step-Lower-Bound    Step-Upper-Bound    Probability\n')
 	fh.write('#  First lower bound and last upper bound are "*", which stands for "unbounded."\n')
 	for k, v in sorted(buckets.items()):
