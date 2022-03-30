@@ -948,9 +948,8 @@ class Classifier():
 
 		return
 
-	#  Writes two files: "confidences-winners-<time stamp>.txt" and "confidences-all-<time stamp>.txt".
-	#  The former writes only the confidence scores for predictions.
-	#  The latter writes the confidence scores for all labels, even those that were not selected by nearest-neighbor.
+	#  Writes file: "confidences-<time stamp>.txt".
+	#  This contains the confidence scores, predictions, and an indication of whether the test was "fair".
 	def write_confidences(self, predictions_truths, confidences, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
@@ -1000,6 +999,42 @@ class Classifier():
 					fh.write('UNFAIR\t' + str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
 				else:
 					fh.write('UNFAIR\t' + str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+		fh.close()
+
+		return
+
+	#  Writes file: "probabilities-<time stamp>.txt".
+	#  This contains the probability of the best match, regardless of whether the system actually made a decision.
+	def write_probabilities(self, predictions_truths, probabilities, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+																	#  Zip these up so we can sort them DESCENDING by confidence.
+		pred_gt_prob = sorted(list(zip(predictions_truths, probabilities)), key=lambda x: x[1], reverse=True)
+		pred_gt = [x[0] for x in pred_gt_prob]						#  Now separate them again.
+		prob = [x[1] for x in pred_gt_prob]
+
+		fh = open('probabilities-' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  All labels.\n')
+		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
+		fh.write('#  {fair, UNFAIR}    Probability    Predicted-Label    Ground-Truth-Label\n')
+		for i in range(0, len(pred_gt)):
+			p = prob[i]
+			prediction = pred_gt[i][0]
+			ground_truth_label = pred_gt[i][1]
+			fair = pred_gt[i][2]
+
+			if fair:
+				if prediction is not None:
+					fh.write('fair\t' + str(p) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+				else:
+					fh.write('fair\t' + str(p) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+			else:
+				if prediction is not None:
+					fh.write('UNFAIR\t' + str(p) + '\t' + prediction + '\t' + ground_truth_label + '\n')
+				else:
+					fh.write('UNFAIR\t' + str(p) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
 		fh.close()
 
 		return
