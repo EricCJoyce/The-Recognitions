@@ -2834,8 +2834,9 @@ class TemporalClassifier(Classifier):
 		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
 
 		classification_stats = {}
-		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
+		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence,                        confidence,                      ... ]
+		classification_stats['_prob'] = []							#  key:_prob  ==> val:[probability,                       probability,                     ... ]
 
 		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
 			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
@@ -3018,6 +3019,7 @@ class TemporalClassifier(Classifier):
 
 					classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
 					classification_stats['_conf'].append( tentative_confidence )
+					classification_stats['_prob'].append( smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -3109,8 +3111,9 @@ class TemporalClassifier(Classifier):
 			tf.config.experimental.set_memory_growth(gpu, True)		#  For each GPU, limit memory use.
 
 		classification_stats = {}
-		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
+		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence,                        confidence,                      ... ]
+		classification_stats['_prob'] = []							#  key:_prob  ==> val:[probability,                       probability,                     ... ]
 
 		flip = np.array([[-1.0,  0.0, 0.0], \
 		                 [ 0.0, -1.0, 0.0], \
@@ -3370,6 +3373,7 @@ class TemporalClassifier(Classifier):
 
 					classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
 					classification_stats['_conf'].append( tentative_confidence )
+					classification_stats['_prob'].append( smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
