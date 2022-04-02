@@ -1,10 +1,21 @@
 from classifier import *
+import shutil
 
 def main():
 	params = get_command_line_params()								#  Collect parameters.
 	if params['helpme'] or len(params['enactments']) == 0 or params['database'] is None:
 		usage()
 		return
+
+	if params['load-from'] is not None:
+		for enactment in params['enactments']:
+			enactment_file_name = enactment + '.enactment'
+			enactment_src_dir = params['load-from']
+			enactment_dst_dir = './'
+			if params['verbose']:
+				print('>>> Copying ' + enactment_src_dir + '/' + enactment_file_name + ' to ' + enactment_dst_dir + enactment_file_name)
+			shutil.copy(enactment_src_dir + '/' + enactment_file_name, \
+			            enactment_dst_dir + enactment_file_name)
 
 	temporal = TemporalClassifier(rolling_buffer_length=params['rolling-buffer-length'], \
 	                              rolling_buffer_stride=params['rolling-buffer-stride'], \
@@ -56,14 +67,16 @@ def get_command_line_params():
 	params['props-coeff'] = 9.0
 
 	params['result-string'] = None									#  Default to the timestamp.
+	params['load-from'] = None										#  Directory from which enactment files should be loaded into the working directory at runtime.
+
 	params['verbose'] = False
 	params['helpme'] = False
 
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
 	flags = ['-e', '-db', '-model', \
-	         '-conf', '-map', 'detth', '-minpx', '-relabel', \
-	         '-id', \
+	         '-conf', '-map', '-detth', '-minpx', '-relabel', \
+	         '-lddir', '-id', \
 	         '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
 		if sys.argv[i] in flags:
@@ -91,6 +104,8 @@ def get_command_line_params():
 					params['minimum-pixels'] = max(1, int(argval))
 				elif argtarget == '-relabel':
 					params['relabel-file'] = argval
+				elif argtarget == '-lddir':
+					params['load-from'] = argval
 				elif argtarget == '-id':
 					params['result-string'] = argval
 
@@ -103,8 +118,8 @@ def usage():
 	print('This script produces several files outlining the system\'s performance.')
 	print('')
 	print('Usage:  python3 classify.py <parameters, preceded by flags>')
-	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -model training/exported-models/ssd_mobilenet_640x640 -db 10f-split2-stride2-MobileNet0.2-train.db -map MobileNet-th0.2.isomap -relabel relabels.txt -detth 0.2 -id MobileNet-th0.2 -v')
-	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT.isomap -relabel relabels.txt -id GT -v')
+	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -model training/exported-models/ssd_mobilenet_640x640 -db 10f-split2-stride2-MobileNet0.2-train.db -map MobileNet-th0.2.isomap -relabel relabels.txt -detth 0.2 -lddir MobileNet-th0.2 -id MobileNet-th0.2 -v')
+	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT.isomap -relabel relabels.txt -lddir GT -id GT -v')
 	print('')
 	print('Flags:  -e        Following argument is the name of an enactment on which to perform classification.')
 	print('                  Must have at least one.')
