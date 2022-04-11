@@ -161,11 +161,13 @@ class Database():
 		fh.write('#  DB SIZE:\n')
 		fh.write('#    ' + str(self.current_size()) + ' snippets\n')
 
+		db_ctr = 0
 		for label, actions in sorted(self.Xy.items()):
 			ctr = 0
 			for action in actions['actions']:
 				if (label, ctr) in self.protected:
-					fh.write(label + '\t' + actions['actions'][ctr][0]      + '\t' + \
+					fh.write(label + '\t' + '[' + str(db_ctr) + ']'         + '\t' + \
+					                        actions['actions'][ctr][0]      + '\t' + \
 					                        str(actions['actions'][ctr][1]) + '\t' + \
 					                        actions['actions'][ctr][2]      + '\t' + \
 					                        str(actions['actions'][ctr][3]) + '\t' + \
@@ -186,6 +188,7 @@ class Database():
 							sys.stdout.flush()
 
 					complete_ctr += 1
+					db_ctr += 1										#  Increment only after writing to file.
 				ctr += 1
 		fh.close()
 		return
