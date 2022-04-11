@@ -655,6 +655,10 @@ class Classifier():
 			for label, confidence in confidences.items():
 				probabilities[label] = confidence
 
+		prob_norm = sum( probabilities.values() )					#  Normalize probabilities.
+		for k in probabilities.keys():
+			probabilities[k] /= prob_norm
+
 		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
 
 	#  Does the given 'query_seq' present enough support for us to even consider attempting to match this query
@@ -904,9 +908,17 @@ class Classifier():
 	#################################################################
 	def initialize_stats(self):
 		classification_stats = {}
-		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence,                        confidence,                      ... ]
-		classification_stats['_prob'] = []							#  key:_prob  ==> val:[probability,                       probability,                     ... ]
+		classification_stats['_tests'] = []							#  key:_tests ==> val:[ ( prediction, ground-truth,
+																	#                         confidence-of-prediction, probability-of-pred, fair ),
+																	#                       ( prediction, ground-truth,
+																	#                         confidence-of-prediction, probability-of-pred, fair ),
+																	#                       ... ]
+
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[ (confidence-for-label, label, ground-truth),
+																	#                       (confidence-for-label, label, ground-truth), ... ]
+
+		classification_stats['_prob'] = []							#  key:_prob  ==> val:[ (probability-for-label, label, ground-truth),
+																	#                       (probability-for-label, label, ground-truth), ... ]
 
 		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
 			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
@@ -984,89 +996,67 @@ class Classifier():
 		return
 
 	#  Writes file: "confidences-<time stamp>.txt".
-	#  This contains the confidence scores, predictions, and an indication of whether the test was "fair".
-	def write_confidences(self, results, confidences, file_timestamp=None):
+	#  This contains all confidence scores for all training-set labels.
+	#  That means, for every prediction the system made, we save N scores, where N is the number of training-set labels.
+	#  Each line of this file reads:  score  <tab>  label  <tab>  ground-truth  <tab>  fair/unfair.
+	def write_confidences(self, confidences, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
-
-																	#  Zip these up so we can sort them DESCENDING by confidence.
-		pred_gt_conf = sorted(list(zip(results, confidences)), key=lambda x: x[1], reverse=True)
-		pred_gt = [x[0] for x in pred_gt_conf]						#  Now separate them again.
-		conf = [x[1] for x in pred_gt_conf]
-
+																	#  Sort DESCENDING by confidence.
+		conf_label_gt = sorted(confidences, key=lambda x: x[0], reverse=True)
+		train_labels = self.labels('train')
 		fh = open('confidences-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
-		fh.write('#  All labels.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  {fair, unfair}    Confidence    Predicted-Label    Ground-Truth-Label\n')
-		for i in range(0, len(pred_gt)):
-			c = conf[i]
-			prediction = pred_gt[i][0]
-			ground_truth_label = pred_gt[i][1]
-			fair = pred_gt[i][2]
-
-			if fair:
-				fh.write('fair\t')
+		fh.write('#  Each line is:\n')
+		fh.write('#    Confidence    Label    Ground-Truth-Label    {fair, unfair}\n')
+		for i in range(0, len(conf_label_gt)):
+			fh.write(str(conf_label_gt[i][0]) + '\t' + conf_label_gt[i][1] + '\t' + conf_label_gt[i][2] + '\t')
+			if conf_label_gt[i][2] in train_labels:
+				fh.write('fair\n')
 			else:
-				fh.write('unfair\t')
-
-			fh.write(str(c) + '\t')
-
-			if prediction is not None:
-				fh.write(prediction + '\t')
-			else:
-				fh.write('*' + '\t')
-
-			fh.write(ground_truth_label + '\n')
+				fh.write('unfair\n')
 		fh.close()
-
 		return
 
 	#  Writes file: "probabilities-<time stamp>.txt".
-	#  This contains the probability of the best match, regardless of whether the system actually made a decision.
-	def write_probabilities(self, predictions_truths, probabilities, file_timestamp=None):
+	#  This contains all probabilities for all training-set labels.
+	#  That means, for every prediction the system made, we save N probabilities, where N is the number of training-set labels.
+	#  For each prediction, all N label probabilities sum to 1.0.
+	#  Each line of this file reads:  probability  <tab>  label  <tab>  ground-truth  <tab>  fair/unfair.
+	def write_probabilities(self, probabilities, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
-
-																	#  Zip these up so we can sort them DESCENDING by confidence.
-		pred_gt_prob = sorted(list(zip(predictions_truths, probabilities)), key=lambda x: x[1], reverse=True)
-		pred_gt = [x[0] for x in pred_gt_prob]						#  Now separate them again.
-		prob = [x[1] for x in pred_gt_prob]
-
+																	#  Sort DESCENDING by probability.
+		prob_label_gt = sorted(probabilities, key=lambda x: x[0], reverse=True)
+		train_labels = self.labels('train')
 		fh = open('probabilities-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
-		fh.write('#  All labels.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  {fair, unfair}    Probability    Predicted-Label    Ground-Truth-Label\n')
-		for i in range(0, len(pred_gt)):
-			p = prob[i]
-			prediction = pred_gt[i][0]
-			ground_truth_label = pred_gt[i][1]
-			fair = pred_gt[i][2]
-
-			if fair:
-				fh.write('fair\t')
+		fh.write('#  Each line is:\n')
+		fh.write('#    Probability    Label    Ground-Truth-Label    {fair, unfair}\n')
+		for i in range(0, len(prob_label_gt)):
+			fh.write(str(prob_label_gt[i][0]) + '\t' + prob_label_gt[i][1] + '\t' + prob_label_gt[i][2] + '\t')
+			if prob_label_gt[i][2] in train_labels:
+				fh.write('fair\n')
 			else:
-				fh.write('unfair\t')
-
-			fh.write(str(p) + '\t')
-
-			if prediction is not None:
-				fh.write(prediction + '\t')
-			else:
-				fh.write('*' + '\t')
-
-			fh.write(ground_truth_label + '\n')
+				fh.write('unfair\n')
 		fh.close()
-
 		return
 
 	#  Avoid repeating time-consuming experiments. Save results to file.
-	#  'stats' is dictionary with key:'_tests' ==> val:[(prediction, ground-truth, enactment-source, timestamp, DB-index, fair),
-	#                                                   (prediction, ground-truth, enactment-source, timestamp, DB-index, fair),
+	#  'stats' is dictionary with key:'_tests' ==> val:[ ( prediction, ground-truth,
+	#                                                      confidence-of-prediction, probability-of-prediction,
+	#                                                      enactment-source, timestamp, DB-index, fair ),
+	#                                                    ( prediction, ground-truth,
+	#                                                      confidence-of-prediction, probability-of-prediction,
+	#                                                      enactment-source, timestamp, DB-index, fair ),
 	#                                                    ... ]
-	#                             key:'_conf'  ==> val:[ confidence,                       confidence,                      ... ]
-	#                             key:'_prob'  ==> val:[ probability,                      probability,                     ... ]
+	#
+	#                             key:'_conf'  ==> val:[ (confidence, label, ground-truth), (confidence, label, ground-truth), ... ]
+	#
+	#                             key:'_prob'  ==> val:[ (probability, label, ground-truth), (probability, label, ground-truth), ... ]
+	#
 	#                             key:<label>  ==> val:{key:'tp'      ==> val: true positive count for <label>,
 	#                                                   key:'fp'      ==> val: false positive count for <label>,
 	#                                                   key:'fn'      ==> val: false negative count for <label>,
@@ -1095,10 +1085,10 @@ class Classifier():
 			if true_label in test_set_survey:
 				test_set_survey[true_label] += 1					#  Count up ground-truth labels.
 
-		for i in range(0, len(stats['_tests'])):					#  'i' also indexes into 'stats[_conf]'.
+		for i in range(0, len(stats['_tests'])):
 			prediction = stats['_tests'][i][0]
 			true_label = stats['_tests'][i][1]
-			confidence = stats['_conf'][i]
+			confidence = stats['_tests'][i][2]
 
 			if prediction is not None:
 				decision_ctr += 1
@@ -1192,14 +1182,14 @@ class Classifier():
 			else:
 				pred = stats['_tests'][i][0]
 			gt = stats['_tests'][i][1]								#  [1]  Ground-Truth
-			conf = stats['_conf'][i]								#       Confidence
-			prob = stats['_prob'][i]								#       Probability
-			enactment_src = stats['_tests'][i][2]					#  [2]  Enactment source
-			timestamp = stats['_tests'][i][3]						#  [3]  Time stamp at of newest frame
-			db_index = stats['_tests'][i][4]						#  [4]  Database index
+			conf = stats['_tests'][i][2]							#  [2]  Confidence
+			prob = stats['_tests'][i][3]							#  [3]  Probability
+			enactment_src = stats['_tests'][i][4]					#  [4]  Enactment source
+			timestamp = stats['_tests'][i][5]						#  [5]  Time stamp at of newest frame
+			db_index = stats['_tests'][i][6]						#  [6]  Database index
 
 			fh.write(pred + '\t' + gt + '\t' + str(conf) + '\t' + str(prob) + '\t' + enactment_src + '\t' + str(timestamp) + '\t' + str(db_index) + '\t')
-			if stats['_tests'][i][5]:								#  [5]  Fair/Unfair
+			if stats['_tests'][i][7]:								#  [7]  Fair/Unfair
 				fh.write('fair\n')
 			else:
 				fh.write('unfair\n')
@@ -1621,10 +1611,12 @@ class AtemporalClassifier(Classifier):
 			#                                       tmplate-indices,#
 			#                                       db-index}       #
 			#########################################################
-																	#  Before consulting the threshold and possibly witholding judgment,
-																	#  save the confidence score for what *would* have been picked.
-																	#  We use these values downstream in the pipeline for isotonic regression.
-			classification_stats['_conf'].append( confidences[tentative_prediction] )
+																	#  Save confidence scores for all labels, regardless of what the system picks.
+			for label in self.labels('train'):						#  We use these values downstream in the pipeline for isotonic regression.
+				classification_stats['_conf'].append( (confidences[label], label, ground_truth_label) )
+
+			for label in self.labels('train'):						#  Save probabilities for all labels, regardless of what the system picks.
+				classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label) )
 
 			t1_start = time.process_time()							#  Start timer.
 			if probabilities[tentative_prediction] > self.threshold:#  Is it above the threshold?
@@ -1638,6 +1630,8 @@ class AtemporalClassifier(Classifier):
 			classification_stats = self.update_stats(prediction, ground_truth_label, fair, classification_stats)
 			classification_stats['_tests'].append( (prediction, \
 			                                        ground_truth_label, \
+			                                        confidences[tentative_prediction], \
+			                                        probabilities[tentative_prediction], \
 			                                        'Test-snippet', \
 			                                        i, \
 			                                        metadata[tentative_prediction]['db-index'], \
@@ -3034,10 +3028,13 @@ class TemporalClassifier(Classifier):
 					#################################################
 																	#  Among other tasks, this method pushes to the temporal buffer.
 					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
-																	#  Before consulting the threshold and possibly witholding judgment,
-																	#  save the confidence score for what *would* have been picked.
-																	#  We use these values downstream in the pipeline for isotonic regression.
-					classification_stats['_conf'].append( confidences[tentative_prediction] )
+
+																	#  Save confidence scores for all labels, regardless of what the system picks.
+					for label in self.labels('train'):				#  We use these values downstream in the pipeline for isotonic regression.
+						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label) )
+
+					for label in self.labels('train'):				#  Save probabilities for all labels, regardless of what the system picks.
+						classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label) )
 
 																	#  If we are rendering confidences, then add to the confidences buffer.
 					if self.render and 'confidence' in self.render_modes:
@@ -3076,13 +3073,15 @@ class TemporalClassifier(Classifier):
 																	#  Whether or not it's skipped, put it on record.
 					classification_stats['_tests'].append( (prediction, \
 					                                        ground_truth_label, \
+					                                        confidences[tentative_prediction], \
+					                                        probabilities[tentative_prediction], \
 					                                        enactment_input, \
 					                                        time_stamp_buffer[frame_ctr], \
 					                                        metadata[tentative_prediction]['db-index'], \
 					                                        fair) )
 
 					#classification_stats['_conf'].append( tentative_confidence )
-					classification_stats['_prob'].append( tentative_probability )
+					#classification_stats['_prob'].append( tentative_probability )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -3436,10 +3435,12 @@ class TemporalClassifier(Classifier):
 					#################################################
 																	#  Among other tasks, this method pushes to the temporal buffer.
 					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
-																	#  Before consulting the threshold and possibly witholding judgment,
-																	#  save the confidence score for what *would* have been picked.
-																	#  We use these values downstream in the pipeline for isotonic regression.
-					classification_stats['_conf'].append( confidences[tentative_prediction] )
+																	#  Save confidence scores for all labels, regardless of what the system picks.
+					for label in self.labels('train'):				#  We use these values downstream in the pipeline for isotonic regression.
+						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label) )
+
+					for label in self.labels('train'):				#  Save probabilities for all labels, regardless of what the system picks.
+						classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label) )
 
 					#################################################
 					#  Smooth the contents of the temporal buffer   #
@@ -3468,12 +3469,14 @@ class TemporalClassifier(Classifier):
 																	#  Whether or not it's skipped, put it on record.
 					classification_stats['_tests'].append( (prediction, \
 					                                        ground_truth_label, \
+					                                        confidences[tentative_prediction], \
+					                                        probabilities[tentative_prediction], \
 					                                        enactment_input, \
 					                                        time_stamp_buffer[frame_ctr], \
 					                                        metadata[tentative_prediction]['db-index'], \
 					                                        fair) )
 					#classification_stats['_conf'].append( tentative_confidence )
-					classification_stats['_prob'].append( tentative_probability )
+					#classification_stats['_prob'].append( tentative_probability )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
