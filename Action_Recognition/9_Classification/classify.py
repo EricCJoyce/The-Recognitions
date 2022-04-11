@@ -23,6 +23,7 @@ def main():
 	                              temporal_buffer_stride=params['temporal-buffer-stride'], \
 	                              db_file=params['database'], \
 	                              relabel=params['relabel-file'], \
+	                              conf_func=params['conf-function'], \
 	                              hand_schema=params['hand-schema'], \
 	                              props_coeff=params['props-coeff'], \
 	                              hands_one_hot_coeff=params['one-hot-coeff'], \
@@ -33,6 +34,7 @@ def main():
 	                              verbose=params['verbose'])
 
 	stats = temporal.classify(params['detection-model'], False)
+
 	if params['verbose']:
 		M = temporal.confusion_matrix(stats['_tests'])
 		print('Confusion Matrix Trace: ' + str(M.trace()))
@@ -41,8 +43,8 @@ def main():
 
 	temporal.write_confusion_matrix(stats['_tests'], params['result-string'], 'train')
 	temporal.write_results(stats, params['result-string'])
-	temporal.write_confidences(stats['_tests'], stats['_conf'], params['result-string'])
-	temporal.write_probabilities(stats['_tests'], stats['_prob'], params['result-string'])
+	temporal.write_confidences(stats['_conf'], params['result-string'])
+	temporal.write_probabilities(stats['_prob'], params['result-string'])
 
 	return
 
@@ -102,6 +104,8 @@ def get_command_line_params():
 					params['conf-function'] = argval
 				elif argtarget == '-minpx':
 					params['minimum-pixels'] = max(1, int(argval))
+				elif argtarget == '-map':
+					params['map-conf-prob'] = argval
 				elif argtarget == '-relabel':
 					params['relabel-file'] = argval
 				elif argtarget == '-lddir':
