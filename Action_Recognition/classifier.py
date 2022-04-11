@@ -2,33 +2,16 @@ import cv2
 import datetime
 																	#  python3 setup.py build
 import DTW															#    produces DTW.cpython-36m-x86_64-linux-gnu.so
-from enactment import Enactment, Gaussian, RObject
+from enactment import Enactment, Gaussian3D, RObject
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from sklearn.decomposition import PCA
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.neighbors import KDTree
-from sklearn.neighbors import (KNeighborsClassifier, NeighborhoodComponentsAnalysis)
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 import sys
 import time
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'							#  Suppress TensorFlow barf.
 import tensorflow as tf
 from object_detection.utils import label_map_util					#  Works with TensorFlow Object-Model Zoo's model library.
-
-'''
-
-'''
-class MetricLearner():
-	def __init__(self, **kwargs):
-		return
-
-	#
-	def func(self):
-		return
 
 '''
 Similar to the Enactment class in enactment.py but completely separated from the raw materials and file structure.
@@ -108,7 +91,7 @@ class ProcessedEnactment():
 					self.fps = int(arr[0])
 					reading_fps = False
 
-				if 'GAUSSIAN' in line:								#  Read this enactment's Gaussian parameters.
+				if 'GAUSSIAN' in line:								#  Read this enactment's Gaussian3D parameters.
 					reading_gaussian = True
 				elif reading_gaussian:
 					arr = line[1:].strip().split('\t')
@@ -523,11 +506,12 @@ class Classifier():
 				else:
 					action_arr = line.strip().split('\t')
 					label                     = action_arr[0]
-					db_entry_enactment_source = action_arr[1]
-					db_entry_start_time       = float(action_arr[2])
-					db_entry_start_frame      = action_arr[3]
-					db_entry_end_time         = float(action_arr[4])
-					db_entry_end_frame        = action_arr[5]
+					db_index_str              = action_arr[1]		#  For human reference only; ignored upon loading. 'sample_ctr' handles lookup tracking.
+					db_entry_enactment_source = action_arr[2]
+					db_entry_start_time       = float(action_arr[3])
+					db_entry_start_frame      = action_arr[4]
+					db_entry_end_time         = float(action_arr[5])
+					db_entry_end_frame        = action_arr[6]
 
 					if label in self.relabelings:					#  Apply relabelings.
 						self.y_train.append( self.relabelings[label] )
@@ -612,7 +596,6 @@ class Classifier():
 	#    - Confidences over all classes
 	#    - Probability distribution over all classes
 	#    - Metadata (nearest neighbor indices, alignment sequences) over all classes
-
 	#  Use the C-extension DTW module.
 	def classify(self, query):
 		least_cost = float('inf')
@@ -672,7 +655,7 @@ class Classifier():
 			for label, confidence in confidences.items():
 				probabilities[label] = confidence
 
-		return matching_costs, confidences, probabilities, metadata
+		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
 
 	#  Does the given 'query_seq' present enough support for us to even consider attempting to match this query
 	#  with templates exemplifying 'candidate_label'?
@@ -784,6 +767,36 @@ class Classifier():
 
 		return conf
 
+	#  Given a prediction, the ground-truth label, and the stats-collection object (dictionary), update the counts.
+	#    stats = {key:_tests  ==> val:[(prediction, ground-truth, enactment-source, timestamp, DB-index, fair),
+	#                                  (prediction, ground-truth, enactment-source, timestamp, DB-index, fair),
+	#                                   ... ],
+	#             key:_conf   ==> val:[confidence,                        confidence,                      ... ],
+	#             key:_prob   ==> val:[probability,                       probability,                     ... ],
+	#             key:<label> ==> val:{key:tp      ==> val:true positive count,
+	#                                  key:fp      ==> val:false positive count,
+	#                                  key:tn      ==> val:true negative count,
+	#                                  key:fn      ==> val:false negative count,
+	#                                  key:support ==> val:instances in training set}
+	#            }
+	def update_stats(self, prediction, ground_truth_label, fair, stats):
+		if fair:
+			if prediction == ground_truth_label:					#  Hard match: TP++
+				stats[ground_truth_label]['tp'] += 1
+
+			elif prediction is not None:							#  Classifier chose something, but it's not a match.
+				stats[prediction]['fp']  += 1						#  FP++ on the mis-identified action.
+				if ground_truth_label != '*':						#  FN++ on the falsely negated true action.
+					stats[ground_truth_label]['fn'] += 1
+
+			elif prediction is None:								#  Classifier withheld.
+				if ground_truth_label == '*':						#  Nothing is happening; this is a true negation. TN++
+					stats['*']['tn'] += 1
+				else:												#  FN++ on the falsely negated true action.
+					stats[ground_truth_label]['fn'] += 1
+
+		return stats
+
 	#################################################################
 	#  Vector encoding.                                             #
 	#################################################################
@@ -887,6 +900,28 @@ class Classifier():
 		return
 
 	#################################################################
+	#  Initializers                                                 #
+	#################################################################
+	def initialize_stats(self):
+		classification_stats = {}
+		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence,                        confidence,                      ... ]
+		classification_stats['_prob'] = []							#  key:_prob  ==> val:[probability,                       probability,                     ... ]
+
+		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
+			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
+			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
+			classification_stats[label]['fp']      = 0				#                     key:tn      ==> val:true negative count
+			classification_stats[label]['tn']      = 0				#                     key:fn      ==> val:false negative count
+			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instances in training set}
+			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
+
+		classification_stats['*'] = {}								#  Add the nothing-label manually.
+		classification_stats['*']['tn'] = 0							#  This will only have true negatives.
+
+		return classification_stats
+
+	#################################################################
 	#  Rendering: (common to both derived classes.)                 #
 	#################################################################
 
@@ -950,39 +985,20 @@ class Classifier():
 
 	#  Writes file: "confidences-<time stamp>.txt".
 	#  This contains the confidence scores, predictions, and an indication of whether the test was "fair".
-	def write_confidences(self, predictions_truths, confidences, file_timestamp=None):
+	def write_confidences(self, results, confidences, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
 																	#  Zip these up so we can sort them DESCENDING by confidence.
-		pred_gt_conf = sorted(list(zip(predictions_truths, confidences)), key=lambda x: x[1], reverse=True)
+		pred_gt_conf = sorted(list(zip(results, confidences)), key=lambda x: x[1], reverse=True)
 		pred_gt = [x[0] for x in pred_gt_conf]						#  Now separate them again.
 		conf = [x[1] for x in pred_gt_conf]
 
-		'''
-		fh = open('confidences-winners-' + file_timestamp + '.txt', 'w')
-		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
-		fh.write('#  Winning labels only.\n')
-		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  Confidence    Predicted-Label    Ground-Truth-Label\n')
-		for i in range(0, len(pred_gt)):
-			c = conf[i]
-			prediction = pred_gt[i][0]
-			ground_truth_label = pred_gt[i][1]
-			fair = pred_gt[i][2]
-
-			if prediction == ground_truth_label:
-				fh.write(str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
-
-		fh.close()
-		'''
-
-		#fh = open('confidences-all-' + file_timestamp + '.txt', 'w')
 		fh = open('confidences-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  All labels.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  {fair, UNFAIR}    Confidence    Predicted-Label    Ground-Truth-Label\n')
+		fh.write('#  {fair, unfair}    Confidence    Predicted-Label    Ground-Truth-Label\n')
 		for i in range(0, len(pred_gt)):
 			c = conf[i]
 			prediction = pred_gt[i][0]
@@ -990,15 +1006,18 @@ class Classifier():
 			fair = pred_gt[i][2]
 
 			if fair:
-				if prediction is not None:
-					fh.write('fair\t' + str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
-				else:
-					fh.write('fair\t' + str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+				fh.write('fair\t')
 			else:
-				if prediction is not None:
-					fh.write('UNFAIR\t' + str(c) + '\t' + prediction + '\t' + ground_truth_label + '\n')
-				else:
-					fh.write('UNFAIR\t' + str(c) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+				fh.write('unfair\t')
+
+			fh.write(str(c) + '\t')
+
+			if prediction is not None:
+				fh.write(prediction + '\t')
+			else:
+				fh.write('*' + '\t')
+
+			fh.write(ground_truth_label + '\n')
 		fh.close()
 
 		return
@@ -1018,7 +1037,7 @@ class Classifier():
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  All labels.\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
-		fh.write('#  {fair, UNFAIR}    Probability    Predicted-Label    Ground-Truth-Label\n')
+		fh.write('#  {fair, unfair}    Probability    Predicted-Label    Ground-Truth-Label\n')
 		for i in range(0, len(pred_gt)):
 			p = prob[i]
 			prediction = pred_gt[i][0]
@@ -1026,22 +1045,28 @@ class Classifier():
 			fair = pred_gt[i][2]
 
 			if fair:
-				if prediction is not None:
-					fh.write('fair\t' + str(p) + '\t' + prediction + '\t' + ground_truth_label + '\n')
-				else:
-					fh.write('fair\t' + str(p) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+				fh.write('fair\t')
 			else:
-				if prediction is not None:
-					fh.write('UNFAIR\t' + str(p) + '\t' + prediction + '\t' + ground_truth_label + '\n')
-				else:
-					fh.write('UNFAIR\t' + str(p) + '\t' + 'NO-DECISION' + '\t' + ground_truth_label + '\n')
+				fh.write('unfair\t')
+
+			fh.write(str(p) + '\t')
+
+			if prediction is not None:
+				fh.write(prediction + '\t')
+			else:
+				fh.write('*' + '\t')
+
+			fh.write(ground_truth_label + '\n')
 		fh.close()
 
 		return
 
 	#  Avoid repeating time-consuming experiments. Save results to file.
-	#  'stats' is dictionary with key:'_tests' ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
+	#  'stats' is dictionary with key:'_tests' ==> val:[(prediction, ground-truth, enactment-source, timestamp, DB-index, fair),
+	#                                                   (prediction, ground-truth, enactment-source, timestamp, DB-index, fair),
+	#                                                    ... ]
 	#                             key:'_conf'  ==> val:[ confidence,                       confidence,                      ... ]
+	#                             key:'_prob'  ==> val:[ probability,                      probability,                     ... ]
 	#                             key:<label>  ==> val:{key:'tp'      ==> val: true positive count for <label>,
 	#                                                   key:'fp'      ==> val: false positive count for <label>,
 	#                                                   key:'fn'      ==> val: false negative count for <label>,
@@ -1053,7 +1078,7 @@ class Classifier():
 		fh = open('results-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier results completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
-			fh.write('#  ' + ' '.join(sys.argv) + '\n')
+			fh.write('#  ' + ' '.join(sys.argv) + '\n\n')
 
 		conf_correct = []											#  Accumulate confidences when the classifier is correct.
 		conf_incorrect = []											#  Accumulate confidences when the classifier is incorrect.
@@ -1096,7 +1121,7 @@ class Classifier():
 		fh.write('============\n')
 		fh.write('\tTP\tFP\tFN\tSupport\tTests\n')
 		for k, v in sorted(stats.items()):
-			if k != '_tests' and k != '_conf' and k in labels:
+			if k != '_tests' and k != '_conf' and k != '_prob' and k in labels:
 				if k in test_set_survey:
 					fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t' + str(test_set_survey[k]) + '\n')
 				else:
@@ -1108,7 +1133,7 @@ class Classifier():
 		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
 		meanAcc = []
 		for k, v in sorted(stats.items()):
-			if k != '_tests' and k != '_conf':
+			if k != '_tests' and k != '_conf' and k != '_prob' and k != '*':
 				if v['support'] > 0:								#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
 					if v['tp'] + v['fp'] + v['fn'] == 0:
 						acc    = 0.0
@@ -1150,14 +1175,34 @@ class Classifier():
 		fh.write('Std.Dev. Confidence when correct = ' + str(stddev_conf_correct) + '\n')
 		fh.write('Std.Dev. Confidence when incorrect = ' + str(stddev_conf_incorrect) + '\n')
 
-		'''
 		fh.write('\n')
 		fh.write('Test Set Survey:\n')
 		fh.write('================\n')
 		for label in labels:
 			if label in test_set_survey:
 				fh.write(label + '\t' + str(test_set_survey[label]) + '\n')
-		'''
+
+		fh.write('\n')
+		fh.write('Complete Itemization:\n')
+		fh.write('Pred.    G.T.    Conf.    Prob.    Enactment    Time    DB-Index    fair/unfair\n')
+		fh.write('===============================================================================\n')
+		for i in range(0, len(stats['_tests'])):
+			if stats['_tests'][i][0] is None:						#  [0]  Prediction
+				pred = '*'
+			else:
+				pred = stats['_tests'][i][0]
+			gt = stats['_tests'][i][1]								#  [1]  Ground-Truth
+			conf = stats['_conf'][i]								#       Confidence
+			prob = stats['_prob'][i]								#       Probability
+			enactment_src = stats['_tests'][i][2]					#  [2]  Enactment source
+			timestamp = stats['_tests'][i][3]						#  [3]  Time stamp at of newest frame
+			db_index = stats['_tests'][i][4]						#  [4]  Database index
+
+			fh.write(pred + '\t' + gt + '\t' + str(conf) + '\t' + str(prob) + '\t' + enactment_src + '\t' + str(timestamp) + '\t' + str(db_index) + '\t')
+			if stats['_tests'][i][5]:								#  [5]  Fair/Unfair
+				fh.write('fair\n')
+			else:
+				fh.write('unfair\n')
 
 		fh.close()
 
@@ -1171,7 +1216,6 @@ class Classifier():
 	#    - object-detection											Times taken to perform object detection on a single frame.
 	#    - centroid-computation										Times taken to compute a 3D centroid from a detection bounding box.
 	#    - dtw-classification										Times taken to make a single call to the DTW backend.
-	#    - make-tentative-prediction								Times taken to compute the least cost match.
 	#    - sort-confidences											Times taken to put confidence scores in label-order.
 	#    - sort-probabilities										Times taken to put probabilities in label-order.
 	#    - push-temporal-buffer										Times taken to update temporal-buffer.
@@ -1265,7 +1309,6 @@ class Classifier():
 		#                     Classification                        #
 		#############################################################
 		if ('dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0) or \
-		   ('make-tentative-prediction' in self.timing and len(self.timing['make-tentative-prediction']) > 0) or \
 		   ('sort-confidences' in self.timing and len(self.timing['sort-confidences']) > 0) or \
 		   ('sort-probabilities' in self.timing and len(self.timing['sort-probabilities']) > 0) or \
 		   ('push-temporal-buffer' in self.timing and len(self.timing['push-temporal-buffer']) > 0) or \
@@ -1276,9 +1319,6 @@ class Classifier():
 		if 'dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0:
 			classification_time += np.sum(self.timing['dtw-classification'])
 			accounted_time += np.sum(self.timing['dtw-classification'])
-		if 'make-tentative-prediction' in self.timing and len(self.timing['make-tentative-prediction']) > 0:
-			classification_time += np.sum(self.timing['make-tentative-prediction'])
-			accounted_time += np.sum(self.timing['make-tentative-prediction'])
 		if 'sort-confidences' in self.timing and len(self.timing['sort-confidences']) > 0:
 			classification_time += np.sum(self.timing['sort-confidences'])
 			accounted_time += np.sum(self.timing['sort-confidences'])
@@ -1298,10 +1338,6 @@ class Classifier():
 		if 'dtw-classification' in self.timing and len(self.timing['dtw-classification']) > 0:
 			fh.write('  DTW-CLASSIFICATION avg. time (per query)\t' + str(np.mean(self.timing['dtw-classification'])) + '\t' + str(np.sum(self.timing['dtw-classification']) / classification_time * 100.0) + '% of classification time\n')
 			fh.write('  DTW-CLASSIFICATION std.dev time (per query)\t' + str(np.std(self.timing['dtw-classification'])) + '\n\n')
-																	#  Report least-distance-finding times.
-		if 'make-tentative-prediction' in self.timing and len(self.timing['make-tentative-prediction']) > 0:
-			fh.write('  TENTATIVE-PREDICTION avg. time\t' + str(np.mean(self.timing['make-tentative-prediction'])) + '\t' + str(np.sum(self.timing['make-tentative-prediction']) / classification_time * 100.0) + '% of classification time\n')
-			fh.write('  TENTATIVE-PREDICTION std.dev time\t' + str(np.std(self.timing['make-tentative-prediction'])) + '\n\n')
 																	#  Report confidence score-sorting times.
 		if 'sort-confidences' in self.timing and len(self.timing['sort-confidences']) > 0:
 			fh.write('  SORT-CONFIDENCE avg. time\t' + str(np.mean(self.timing['sort-confidences'])) + '\t' + str(np.sum(self.timing['sort-confidences']) / classification_time * 100.0) + '% of classification time\n')
@@ -1552,24 +1588,15 @@ class AtemporalClassifier(Classifier):
 		if self.verbose:
 			print('>>> Performing atemporal classifications on test set.')
 
-		classification_stats = {}
-		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth), (prediction, ground-truth), ... ]
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence, confidence, ... ]
+		classification_stats = self.initialize_stats()				#  Init.
 
-		for label in self.labels('both'):
-			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
-			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
-			classification_stats[label]['fp']      = 0				#                     key:fn      ==> val:false negative count
-			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instance in training set}
-			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
+		self.initialize_timers()									#  (Re)set.
 
 		num_labels = len(self.y_test)
 		prev_ctr = 0
 		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
 		success_ctr = 0
 		mismatch_ctr = 0
-
-		self.initialize_timers()									#  (Re)set.
 
 		t0_start = time.process_time()								#  Start timer.
 		for i in range(0, len(self.y_test)):
@@ -1581,43 +1608,43 @@ class AtemporalClassifier(Classifier):
 				fair = False
 			t1_start = time.process_time()							#  Start timer.
 																	#  Call the parent class's core matching engine.
-			matching_costs, confidences, probabilities, metadata = super(AtemporalClassifier, self).classify(query)
+			tentative_prediction, matching_costs, confidences, probabilities, metadata = super(AtemporalClassifier, self).classify(query)
 			t1_stop = time.process_time()							#  Stop timer.
 			self.timing['dtw-classification'].append(t1_stop - t1_start)
 
-			t1_start = time.process_time()							#  Start timer.
-			least_cost = float('inf')
-			prediction = None
-			for k, v in matching_costs.items():						#  Find the best match.
-				if v < least_cost:
-					least_cost = v
-					prediction = k
-			t1_stop = time.process_time()							#  Stop timer.
-			self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
-
+			#########################################################
+			#  tentative_prediction:          label                 #
+			#  matching_costs: key: label ==> val: cost             #
+			#  confidences:    key: label ==> val: score            #
+			#  probabilities:  key: label ==> val: probability      #
+			#  metadata:       key: label ==> val: {query-indices,  #
+			#                                       tmplate-indices,#
+			#                                       db-index}       #
+			#########################################################
 																	#  Before consulting the threshold and possibly witholding judgment,
 																	#  save the confidence score for what *would* have been picked.
 																	#  We use these values downstream in the pipeline for isotonic regression.
-			classification_stats['_conf'].append( confidences[prediction] )
+			classification_stats['_conf'].append( confidences[tentative_prediction] )
 
 			t1_start = time.process_time()							#  Start timer.
-			if probabilities[prediction] < self.threshold:			#  Is it above the threshold?
+			if probabilities[tentative_prediction] > self.threshold:#  Is it above the threshold?
+				prediction = tentative_prediction
+			else:
 				prediction = None
 			t1_stop = time.process_time()							#  Stop timer.
 			self.timing['make-decision'].append(t1_stop - t1_start)
 
-			if prediction == ground_truth_label:					#  This is the atemporal tester: ground_truth_label will never be None.
-				classification_stats[ground_truth_label]['tp'] += 1
-			elif prediction is not None:
-				classification_stats[prediction]['fp']         += 1
-				classification_stats[ground_truth_label]['fn'] += 1
-																	#  Add this prediction-truth tuple to our list.
-			classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
+																	#  For the Atemporal Classifier, ground_truth_label will never be None.
+			classification_stats = self.update_stats(prediction, ground_truth_label, fair, classification_stats)
+			classification_stats['_tests'].append( (prediction, \
+			                                        ground_truth_label, \
+			                                        'Test-snippet', \
+			                                        i, \
+			                                        metadata[tentative_prediction]['db-index'], \
+			                                        fair) )
 
 			if self.render:											#  Put the query and the template side by side.
 				if prediction is not None:							#  If there's no prediction, there is nothing to render.
-																	#  Our ability to render also depends on which DTW engine we used:
-																	#  the Fortran engine is speedy but does not compute alignment sequences.
 					if 'template-indices' in metadata[prediction] and 'query-indices' in metadata[prediction]:
 						t1_start = time.process_time()				#  Start timer.
 						if prediction == ground_truth_label:
@@ -2139,6 +2166,8 @@ class AtemporalClassifier(Classifier):
 
 	#  Drop a specific action allocation (from whichever set contains it).
 	#  (Some action performances are just no good: usually when the important elements are obscured or occur off-screen.)
+	#  The argument 'index' is the index into the enactment. So to drop the sixth (zero-indexed) action performed in Enactment7, call
+	#  drop_allocation('Enactment7', 5)
 	def drop_allocation(self, enactment_name, index):
 		keys = list(self.allocation.keys())
 		i = 0
@@ -2374,11 +2403,12 @@ class AtemporalClassifier(Classifier):
 				else:
 					action_arr = line.strip().split('\t')
 					label                     = action_arr[0]
-					db_entry_enactment_source = action_arr[1]
-					db_entry_start_time       = float(action_arr[2])
-					db_entry_start_frame      = action_arr[3]
-					db_entry_end_time         = float(action_arr[4])
-					db_entry_end_frame        = action_arr[5]
+					db_index_str              = action_arr[1]		#  For human reference only; ignored upon loading. 'sample_ctr' handles lookup tracking.
+					db_entry_enactment_source = action_arr[2]
+					db_entry_start_time       = float(action_arr[3])
+					db_entry_start_frame      = action_arr[4]
+					db_entry_end_time         = float(action_arr[5])
+					db_entry_end_frame        = action_arr[6]
 					self.y_test.append( label )
 					self.X_test.append( [] )
 																	#  Be able to lookup the frames of a matched database sample.
@@ -2396,7 +2426,6 @@ class AtemporalClassifier(Classifier):
 		self.timing = {}											#  (Re)set.
 		self.timing['total'] = 0									#  Measure total time taken
 		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process.
-		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
 		self.timing['make-decision'] = []							#  Prepare to collect final decision-making runtimes.
 		if self.render:
 			self.timing['render-side-by-side'] = []					#  Prepare to collect rendering times.
@@ -2723,29 +2752,30 @@ class TemporalClassifier(Classifier):
 		else:
 			self.enactment_inputs = []
 
-		if 'relabel' in kwargs:										#  Were we given a relableing file?
+		if 'relabel' in kwargs and kwargs['relabel'] is not None:	#  Were we given a relableing file?
 			assert isinstance(kwargs['relabel'], str), 'Argument \'relabel\' passed to TemporalClassifier must be a string: the filepath for a relabeling file.'
-			self.relabelings = {}
-			fh = open(kwargs['relabel'], 'r')
-			for line in fh.readlines():
-				if line[0] != '#':
-					arr = line.strip().split('\t')
-					self.relabelings[arr[0]] = arr[1]
-			fh.close()
+			if kwargs['relabel'] is not None:
+				self.relabelings = {}
+				fh = open(kwargs['relabel'], 'r')
+				for line in fh.readlines():
+					if line[0] != '#':
+						arr = line.strip().split('\t')
+						self.relabelings[arr[0]] = arr[1]
+				fh.close()
 		else:
 			self.relabelings = {}									#  key: old label ==> val: new label
 
-		if 'gaussian' in kwargs:									#  Were we given a Gaussian object or a 3-tuple of 3-tuples?
-			assert isinstance(kwargs['gaussian'], Gaussian) or (isinstance(kwargs['gaussian'], tuple) and len(kwargs['gaussian']) == 3), \
-			  'Argument \'gaussian\' passed to TemporalClassifier must be either a Gaussian object or a 3-tuple of 3-tuples of floats: (mu for the gaze, sigma for the gaze, sigma for the hands).'
-			if isinstance(kwargs['gaussian'], Gaussian):
+		if 'gaussian' in kwargs:									#  Were we given a Gaussian3D object or a 3-tuple of 3-tuples?
+			assert isinstance(kwargs['gaussian'], Gaussian3D) or (isinstance(kwargs['gaussian'], tuple) and len(kwargs['gaussian']) == 3), \
+			  'Argument \'gaussian\' passed to TemporalClassifier must be either a Gaussian3D object or a 3-tuple of 3-tuples of floats: (mu for the gaze, sigma for the gaze, sigma for the hands).'
+			if isinstance(kwargs['gaussian'], Gaussian3D):
 				self.gaussian = kwargs['gaussian']
 			else:
-				self.gaussian = Gaussian(mu=kwargs['gaussian'][0], \
-				                         sigma_gaze=kwargs['gaussian'][1], \
-				                         sigma_hand=kwargs['gaussian'][2])
+				self.gaussian = Gaussian3D(mu=kwargs['gaussian'][0], \
+				                           sigma_gaze=kwargs['gaussian'][1], \
+				                           sigma_hand=kwargs['gaussian'][2])
 		else:
-			self.gaussian = Gaussian(mu=(0.0, 0.0, 0.0), sigma_gaze=(2.0, 1.5, 3.0), sigma_hand=(0.5, 0.5, 0.5))
+			self.gaussian = Gaussian3D(mu=(0.0, 0.0, 0.0), sigma_gaze=(2.0, 1.5, 3.0), sigma_hand=(0.5, 0.5, 0.5))
 
 		if 'min_bbox' in kwargs:									#  Were we given a minimum bounding box area for recognized objects?
 			assert isinstance(kwargs['min_bbox'], int) and kwargs['min_bbox'] > 0, \
@@ -2868,17 +2898,7 @@ class TemporalClassifier(Classifier):
 	def simulated_classify(self, skip_unfair=True):
 		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
 
-		classification_stats = {}
-		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence,                        confidence,                      ... ]
-		classification_stats['_prob'] = []							#  key:_prob  ==> val:[probability,                       probability,                     ... ]
-
-		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
-			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
-			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
-			classification_stats[label]['fp']      = 0				#                     key:fn      ==> val:false negative count
-			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instance in training set}
-			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
+		classification_stats = self.initialize_stats()				#  Init.
 
 		self.initialize_timers()									#  (Re)set.
 
@@ -2949,6 +2969,7 @@ class TemporalClassifier(Classifier):
 					print('>>> Classifying from "' + enactment_input + '" in simulated real time.')
 				print('    Minimum detection area:       ' + str(self.minimum_bbox_area))
 				print('    Minimum detection confidence: ' + str(self.detection_confidence))
+				print('    Prediction threshold:         ' + str(self.threshold))
 
 			tentative_prediction = None								#  Initially nothing.
 			prediction = None
@@ -2979,7 +3000,8 @@ class TemporalClassifier(Classifier):
 																	#  Push G.T. label to rolling G.T. buffer.
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
 																	#  Are the contents of the ground-truth buffer "fair"?
-				fair = self.ground_truth_buffer_full() and self.ground_truth_buffer_uniform() and self.ground_truth_buffer_familiar()
+				#fair = self.ground_truth_buffer_full() and self.ground_truth_buffer_uniform() and self.ground_truth_buffer_familiar()
+				fair = self.ground_truth_buffer_full() and (self.ground_truth_buffer_newest_frame_label() in self.labels('train') or self.ground_truth_buffer_newest_frame_label() == '*')
 
 				#####################################################
 				#  If the rolling buffer is full, then classify.    #
@@ -2989,18 +3011,19 @@ class TemporalClassifier(Classifier):
 				#  smoothed probabilities.                          #
 				#####################################################
 				if self.is_rolling_buffer_full() and (fair or not skip_unfair):
-
-					ground_truth_label = self.buffer_labels[0]		#  Identify ground-truth.
+																	#  Identify ground-truth.
+					ground_truth_label = self.ground_truth_buffer_newest_frame_label()
 
 					prediction = None								#  (Re)set.
 
 					t1_start = time.process_time()					#  Start timer.
 																	#  Call the parent class's core matching engine.
-					matching_costs, confidences, probabilities, metadata = super(TemporalClassifier, self).classify(self.rolling_buffer)
+					tentative_prediction, matching_costs, confidences, probabilities, metadata = super(TemporalClassifier, self).classify(self.rolling_buffer)
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 					#################################################
+					#  tentative_prediction:           label        #
 					#  matching_costs = key: label ==> val: cost    #
 					#  confidences    = key: label ==> val: score   #
 					#  probabilities  = key: label ==> val: prob.   #
@@ -3009,9 +3032,12 @@ class TemporalClassifier(Classifier):
 					#                           template-indices,   #
 					#                           db-index}           #
 					#################################################
-
 																	#  Among other tasks, this method pushes to the temporal buffer.
-					_, tentative_confidence, sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
+					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
+																	#  Before consulting the threshold and possibly witholding judgment,
+																	#  save the confidence score for what *would* have been picked.
+																	#  We use these values downstream in the pipeline for isotonic regression.
+					classification_stats['_conf'].append( confidences[tentative_prediction] )
 
 																	#  If we are rendering confidences, then add to the confidences buffer.
 					if self.render and 'confidence' in self.render_modes:
@@ -3035,26 +3061,28 @@ class TemporalClassifier(Classifier):
 						smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
 					t1_start = time.process_time()					#  Start timer.
-					tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
+					#  THIS IS THE STEP BEING DEBATED RIGHT NOW
+					#tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
 
-					if smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] > self.threshold:
+					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
+					if tentative_probability > self.threshold:
 						prediction = tentative_prediction
 					else:
 						prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
-																	#  Performance is only measured when conditions are fair
-																	#  (which, by now, we know are.)
-					if prediction == ground_truth_label:
-						classification_stats[ground_truth_label]['tp'] += 1
-					elif prediction is not None:
-						classification_stats[prediction]['fp']  += 1
-						if ground_truth_label != '*':
-							classification_stats[ground_truth_label]['fn'] += 1
 
-					classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
-					classification_stats['_conf'].append( tentative_confidence )
-					classification_stats['_prob'].append( smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] )
+					classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
+																	#  Whether or not it's skipped, put it on record.
+					classification_stats['_tests'].append( (prediction, \
+					                                        ground_truth_label, \
+					                                        enactment_input, \
+					                                        time_stamp_buffer[frame_ctr], \
+					                                        metadata[tentative_prediction]['db-index'], \
+					                                        fair) )
+
+					#classification_stats['_conf'].append( tentative_confidence )
+					classification_stats['_prob'].append( tentative_probability )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -3138,41 +3166,34 @@ class TemporalClassifier(Classifier):
 	#  THIS is the really real real-time method.
 	#  We cannot temporally "skip over" unfair snippets, but if this parameter is left to 'True', then unfair snippets will not
 	#  negatively impact classifier accuracy.
-	def classify(self, model, skip_unfair=True):
+	def classify(self, model=None, skip_unfair=True):
 		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
 
 		gpus = tf.config.experimental.list_physical_devices('GPU')	#  List all GPUs on this system.
 		for gpu in gpus:
 			tf.config.experimental.set_memory_growth(gpu, True)		#  For each GPU, limit memory use.
 
-		classification_stats = {}
-		classification_stats['_tests'] = []							#  key:_tests ==> val:[(prediction, ground-truth, fair), (prediction, ground-truth, fair), ... ]
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[confidence,                        confidence,                      ... ]
-		classification_stats['_prob'] = []							#  key:_prob  ==> val:[probability,                       probability,                     ... ]
-
 		flip = np.array([[-1.0,  0.0, 0.0], \
 		                 [ 0.0, -1.0, 0.0], \
 		                 [ 0.0,  0.0, 1.0]], dtype=np.float32)		#  Build the flip matrix
 
-		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
-			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
-			classification_stats[label]['tp']      = 0				#                     key:fp      ==> val:false positive count
-			classification_stats[label]['fp']      = 0				#                     key:fn      ==> val:false negative count
-			classification_stats[label]['fn']      = 0				#                     key:support ==> val:instance in training set}
-			classification_stats[label]['support'] = len([x for x in self.y_train if x == label])
+		classification_stats = self.initialize_stats()				#  Init.
 
 		self.initialize_timers()									#  (Re)set.
 
 		if self.verbose:
-			print('>>> Bootup: loading object-detection model "' + model + '"')
+			if model is None:
+				print('>>> Bootup: no object-detection model to load; using GROUND-TRUTH')
+			else:
+				print('>>> Bootup: loading object-detection model "' + model + '"')
 
-		t1_start = time.process_time()								#  Start timer.
-																	#  Load saved model and build detection function.
-		detect_function = tf.saved_model.load(model + '/saved_model')
-		label_path = '/'.join(model.split('/')[:-2] + ['annotations', 'label_map.pbtxt'])
-		recognizable_objects = label_map_util.create_category_index_from_labelmap(label_path, use_display_name=True)
-		t1_stop = time.process_time()								#  Stop timer.
-		self.timing['load-model'] = t1_stop - t1_start
+		if model is not None:										#  Load saved model and build detection function.
+			t1_start = time.process_time()							#  Start timer.
+			detect_function = tf.saved_model.load(model + '/saved_model')
+			label_path = '/'.join(model.split('/')[:-2] + ['annotations', 'label_map.pbtxt'])
+			recognizable_objects = label_map_util.create_category_index_from_labelmap(label_path, use_display_name=True)
+			t1_stop = time.process_time()							#  Stop timer.
+			self.timing['load-model'] = t1_stop - t1_start
 
 		if self.verbose:
 			print('    Done')
@@ -3181,6 +3202,9 @@ class TemporalClassifier(Classifier):
 		for enactment_input in self.enactment_inputs:				#  Treat each input enactment as a separate slice of time.
 
 			e = Enactment(enactment_input, enactment_file=enactment_input + '.enactment')
+			if model is None:										#  Using ground-truth? Load all the detections.
+				e.load_parsed_objects()
+				recognizable_objects = e.recognizable_objects[:]
 
 			metadata = e.load_metadata()
 			min_depth = metadata['depthImageRange']['x']			#  Save the current enactment's minimum and maximum depths.
@@ -3247,6 +3271,7 @@ class TemporalClassifier(Classifier):
 					print('>>> Classifying from "' + enactment_input + '" in real time.')
 				print('    Minimum detection area:       ' + str(self.minimum_bbox_area))
 				print('    Minimum detection confidence: ' + str(self.detection_confidence))
+				print('    Prediction threshold:         ' + str(self.threshold))
 
 			prediction = None										#  Initially nothing.
 
@@ -3267,60 +3292,96 @@ class TemporalClassifier(Classifier):
 				t1_stop = time.process_time()						#  Stop timer.
 				self.timing['image-open'].append(t1_stop - t1_start)
 
-				t1_start = time.process_time()						#  Start timer.
-				detections = detect_function(input_tensor)			#  DETECT!
-				t1_stop = time.process_time()						#  Stop timer.
-				self.timing['object-detection'].append(t1_stop - t1_start)
+				if model is None:
+					t1_start = time.process_time()					#  Start timer.
 
-				num_detections = int(detections.pop('num_detections'))
-				detections = {key: val[0, :num_detections].numpy() for key, val in detections.items()}
-				detections['num_detections'] = num_detections
-				detections['detection_classes'] = detections['detection_classes'].astype(np.int64)
+					detections = e.frames[ time_stamp_buffer[frame_ctr] ].detections
+					num_detections = len(detections)
+
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['object-detection'].append(t1_stop - t1_start)
+				else:
+					t1_start = time.process_time()					#  Start timer.
+					detections = detect_function(input_tensor)		#  DETECT!
+					t1_stop = time.process_time()					#  Stop timer.
+					self.timing['object-detection'].append(t1_stop - t1_start)
+
+					num_detections = int(detections.pop('num_detections'))
+					detections = {key: val[0, :num_detections].numpy() for key, val in detections.items()}
+					detections['num_detections'] = num_detections
+					detections['detection_classes'] = detections['detection_classes'].astype(np.int64)
 
 				hands_subvector = hand_vector_buffer[frame_ctr]		#  We already have the hands subvector.
 
 																	#  If hands are not present, then they cannot influence object weights.
 				if hands_subvector[0] > 0.0 or hands_subvector[1] > 0.0 or hands_subvector[2] > 0.0:
-					lh = np.array(hands_subvector[:3])				#  Left hand influences Gaussian weight.
+					lh = np.array(hands_subvector[:3])				#  Left hand influences Gaussian3D weight.
 				else:
-					lh = None										#  No left-hand influence on Gaussian weight.
+					lh = None										#  No left-hand influence on Gaussian3D weight.
 				if hands_subvector[6] > 0.0 or hands_subvector[7] > 0.0 or hands_subvector[8] > 0.0:
-					rh = np.array(hands_subvector[6:9])				#  Right hand influences Gaussian weight.
+					rh = np.array(hands_subvector[6:9])				#  Right hand influences Gaussian3D weight.
 				else:
-					rh = None										#  No right-hand influence on Gaussian weight.
+					rh = None										#  No right-hand influence on Gaussian3D weight.
 																	#  Initialize the props subvector to zero.
 				props_subvector = [0.0 for i in self.recognizable_objects]
 																	#  For every detection...
-				for i in range(0, num_detections):					#  SSD MOBILE-NET:
+				if model is None:
+					for i in range(0, num_detections):				#  GROUND-TRUTH:
+																	#    object_name, bounding_box, confidence
+						if detections[i].object_name in recognizable_objects:
+							detection_class = detections[i].object_name
+							bbox            = detections[i].bounding_box
+							detection_score = detections[i].confidence
+							bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+							if detection_score >= self.detection_confidence and bbox_area >= self.minimum_bbox_area:
+								object_index = self.recognizable_objects.index(detection_class)
+
+								t1_start = time.process_time()		#  Start timer.
+								bbox_center = ( int(round(float(bbox[0] + bbox[2]) * 0.5)), \
+								                int(round(float(bbox[1] + bbox[3]) * 0.5)) )
+																	#  In meters.
+								d = min_depth + (float(depth_map[min(bbox_center[1], e.height - 1), min(bbox_center[0], e.width - 1)]) / 255.0) * (max_depth - min_depth)
+								centroid = np.dot(K_inv, np.array([bbox_center[0], bbox_center[1], 1.0]))
+								centroid *= d						#  Scale by known depth (meters from head).
+								centroid_3d = np.dot(flip, centroid)#  Flip point.
+								t1_stop = time.process_time()		#  Stop timer.
+								self.timing['centroid-computation'].append(t1_stop - t1_start)
+
+								g = self.gaussian.weigh(centroid_3d, lh, rh)
+																	#  Each recognizable object's slot receives the maximum signal for that prop.
+								props_subvector[object_index] = max(g, props_subvector[object_index])
+				else:
+					for i in range(0, num_detections):				#  SSD MOBILE-NET:
 																	#    detection_classes, detection_multiclass_scores, detection_anchor_indices,
 																	#    detection_boxes, raw_detection_boxes,
 																	#    detection_scores, raw_detection_scores,
 																	#    num_detections
-					detection_class = recognizable_objects[ detections['detection_classes'][i] ]['name']
-					detection_box   = detections['detection_boxes'][i]
-					detection_score = float(detections['detection_scores'][i])
+						detection_class = recognizable_objects[ detections['detection_classes'][i] ]['name']
+						detection_box   = detections['detection_boxes'][i]
+						detection_score = float(detections['detection_scores'][i])
 
-					bbox = ( int(round(detection_box[1] * e.width)), int(round(detection_box[0] * e.height)), \
-					         int(round(detection_box[3] * e.width)), int(round(detection_box[2] * e.height)) )
-					bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+						bbox = ( int(round(detection_box[1] * e.width)), int(round(detection_box[0] * e.height)), \
+						         int(round(detection_box[3] * e.width)), int(round(detection_box[2] * e.height)) )
+						bbox_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
 
-					if detection_score >= self.detection_confidence and bbox_area >= self.minimum_bbox_area:
-						object_index = self.recognizable_objects.index(detection_class)
+						if detection_score >= self.detection_confidence and bbox_area >= self.minimum_bbox_area:
+							object_index = self.recognizable_objects.index(detection_class)
 
-						t1_start = time.process_time()				#  Start timer.
-						bbox_center = ( int(round(float(bbox[0] + bbox[2]) * 0.5)), \
-						                int(round(float(bbox[1] + bbox[3]) * 0.5)) )
+							t1_start = time.process_time()			#  Start timer.
+							bbox_center = ( int(round(float(bbox[0] + bbox[2]) * 0.5)), \
+							                int(round(float(bbox[1] + bbox[3]) * 0.5)) )
 																	#  In meters.
-						d = min_depth + (float(depth_map[min(bbox_center[1], e.height - 1), min(bbox_center[0], e.width - 1)]) / 255.0) * (max_depth - min_depth)
-						centroid = np.dot(K_inv, np.array([bbox_center[0], bbox_center[1], 1.0]))
-						centroid *= d								#  Scale by known depth (meters from head).
-						centroid_3d = np.dot(flip, centroid)		#  Flip point.
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['centroid-computation'].append(t1_stop - t1_start)
+							d = min_depth + (float(depth_map[min(bbox_center[1], e.height - 1), min(bbox_center[0], e.width - 1)]) / 255.0) * (max_depth - min_depth)
+							centroid = np.dot(K_inv, np.array([bbox_center[0], bbox_center[1], 1.0]))
+							centroid *= d							#  Scale by known depth (meters from head).
+							centroid_3d = np.dot(flip, centroid)	#  Flip point.
+							t1_stop = time.process_time()			#  Stop timer.
+							self.timing['centroid-computation'].append(t1_stop - t1_start)
 
-						g = self.gaussian.weigh(centroid_3d, lh, rh)
+							g = self.gaussian.weigh(centroid_3d, lh, rh)
 																	#  Each recognizable object's slot receives the maximum signal for that prop.
-						props_subvector[object_index] = max(g, props_subvector[object_index])
+							props_subvector[object_index] = max(g, props_subvector[object_index])
 
 				del frame_img										#  Free the memory!
 				del depth_map
@@ -3341,7 +3402,8 @@ class TemporalClassifier(Classifier):
 																	#  Push G.T. label to rolling G.T. buffer.
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
 																	#  Are the contents of the ground-truth buffer "fair"?
-				fair = self.ground_truth_buffer_full() and self.ground_truth_buffer_uniform() and self.ground_truth_buffer_familiar()
+				#fair = self.ground_truth_buffer_full() and self.ground_truth_buffer_uniform() and self.ground_truth_buffer_familiar()
+				fair = self.ground_truth_buffer_full() and (self.ground_truth_buffer_newest_frame_label() in self.labels('train') or self.ground_truth_buffer_newest_frame_label() == '*')
 
 				#####################################################
 				#  If the rolling buffer is full, then classify.    #
@@ -3351,18 +3413,19 @@ class TemporalClassifier(Classifier):
 				#  smoothed probabilities.                          #
 				#####################################################
 				if self.is_rolling_buffer_full():
-
-					ground_truth_label = self.buffer_labels[0]		#  Identify ground-truth.
+																	#  Identify ground-truth.
+					ground_truth_label = self.ground_truth_buffer_newest_frame_label()
 
 					prediction = None								#  (Re)set.
 
 					t1_start = time.process_time()					#  Start timer.
 																	#  Call the parent class's core matching engine.
-					matching_costs, confidences, probabilities, metadata = super(TemporalClassifier, self).classify(self.rolling_buffer)
+					tentative_prediction, matching_costs, confidences, probabilities, metadata = super(TemporalClassifier, self).classify(self.rolling_buffer)
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 					#################################################
+					#  tentative_prediction:          label         #
 					#  matching_costs: key: label ==> val: cost     #
 					#  confidences:    key: label ==> val: score    #
 					#  probabilities:  key: label ==> val: prob.    #
@@ -3371,9 +3434,12 @@ class TemporalClassifier(Classifier):
 					#                          template-indices,    #
 					#                          db-index}            #
 					#################################################
-
 																	#  Among other tasks, this method pushes to the temporal buffer.
-					_, tentative_confidence, sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
+					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
+																	#  Before consulting the threshold and possibly witholding judgment,
+																	#  save the confidence score for what *would* have been picked.
+																	#  We use these values downstream in the pipeline for isotonic regression.
+					classification_stats['_conf'].append( confidences[tentative_prediction] )
 
 					#################################################
 					#  Smooth the contents of the temporal buffer   #
@@ -3387,28 +3453,27 @@ class TemporalClassifier(Classifier):
 					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
 					t1_start = time.process_time()					#  Start timer.
-					tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
+					#  THIS IS THE STEP BEING DEBATED RIGHT NOW
+					#tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
 
-					if smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] > self.threshold:
+					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
+					if tentative_probability > self.threshold:
 						prediction = tentative_prediction
 					else:
 						prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
 
-																	#  Only measure performance when conditions are fair.
-																	#  (Unless directed otherwise.)
-					if fair or not skip_unfair:
-						if prediction == ground_truth_label:
-							classification_stats[ground_truth_label]['tp'] += 1
-						elif prediction is not None:
-							classification_stats[prediction]['fp']  += 1
-							if ground_truth_label != '*':
-								classification_stats[ground_truth_label]['fn'] += 1
-
-					classification_stats['_tests'].append( (prediction, ground_truth_label, fair) )
-					classification_stats['_conf'].append( tentative_confidence )
-					classification_stats['_prob'].append( smoothed_probabilities[ self.labels('train').index(tentative_prediction) ] )
+					classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
+																	#  Whether or not it's skipped, put it on record.
+					classification_stats['_tests'].append( (prediction, \
+					                                        ground_truth_label, \
+					                                        enactment_input, \
+					                                        time_stamp_buffer[frame_ctr], \
+					                                        metadata[tentative_prediction]['db-index'], \
+					                                        fair) )
+					#classification_stats['_conf'].append( tentative_confidence )
+					classification_stats['_prob'].append( tentative_probability )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
@@ -3456,21 +3521,16 @@ class TemporalClassifier(Classifier):
 
 	#  Used in both the simulated and in the real-time case, it made sense to have a single method they can share.
 	#  This method receives the matching_costs, confidences, and probabilities returned by DTW.
-	#  It pushes to the temporal buffer.
+	#  The received 'matching_costs' is a dictionary, key: label ==> val: cost.
+	#  The received 'confidences'    is a dictionary, key: label ==> val: score.
+	#  The received 'probabilities'  is a dictionary, key: label ==> val: prob.
+	#
+	#  This method pushes probabilities sorted according to the labels('train') method to the temporal buffer.
+	#
+	#  This method returns:
+	#    'sorted_confidences',   which is all labels' confidence scores, sorted according to the labels('train') method;
+	#    'sorted_probabilities', which is all labels' probabilities, sorted according to the labels('train') method.
 	def process_dtw_results(self, matching_costs, confidences, probabilities):
-		tentative_prediction = None									#  Initially nothing.
-		tentative_confidence = 0.0
-
-		t1_start = time.process_time()								#  Start timer.
-		least_cost = float('inf')									#  Tentative prediction always determined by least matching cost.
-		for k, v in matching_costs.items():
-			if v < least_cost:
-				least_cost = v
-				tentative_prediction = k
-				tentative_confidence = confidences[k]
-		t1_stop = time.process_time()								#  Stop timer.
-		self.timing['make-tentative-prediction'].append(t1_stop - t1_start)
-
 		t1_start = time.process_time()								#  Start timer.
 		sorted_confidences = []
 		for label in self.labels('train'):							#  Maintain the order of label scores.
@@ -3487,10 +3547,12 @@ class TemporalClassifier(Classifier):
 
 		t1_start = time.process_time()								#  Start timer.
 		self.push_temporal( sorted_probabilities )					#  Add this probability distribution to the temporal buffer.
+																	#  The temporal buffer always receives distributions sorted
+																	#  according to the labels('train') method.
 		t1_stop = time.process_time()								#  Stop timer.
 		self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
 
-		return tentative_prediction, tentative_confidence, sorted_confidences, sorted_probabilities
+		return sorted_confidences, sorted_probabilities
 
 	#  Add the given vector to the rolling buffer, kicking out old vectors if necessary.
 	def push_rolling(self, vector):
@@ -3569,6 +3631,17 @@ class TemporalClassifier(Classifier):
 	def ground_truth_buffer_familiar(self):
 		valid_labels = self.labels('train')
 		return all([x in valid_labels for x in self.buffer_labels])
+
+	#  Get the most recently added label (this is capable of returning None).
+	def ground_truth_buffer_newest_frame_label(self):
+		i = 0
+		label = self.buffer_labels[i]
+
+		while i < len(self.buffer_labels) and self.buffer_labels[i] is not None:
+			label = self.buffer_labels[i]
+			i += 1
+
+		return label
 
 	#################################################################
 	#  Profiling.                                                   #
@@ -3712,7 +3785,6 @@ class TemporalClassifier(Classifier):
 		self.timing['centroid-computation'] = []					#  Prepare to capture centroid computation times.
 		self.timing['dtw-classification'] = []						#  This is a coarser grain: time each classification process
 																	#  (directly affected by the size of the database).
-		self.timing['make-tentative-prediction'] = []				#  Prepare to collect least-distance-finding times.
 		self.timing['sort-confidences'] = []						#  Prepare to collect confidence-score sorting times.
 		self.timing['sort-probabilities'] = []						#  Prepare to collect probability sorting times.
 		self.timing['push-temporal-buffer'] = []					#  Prepare to collect temporal-buffer update times.
