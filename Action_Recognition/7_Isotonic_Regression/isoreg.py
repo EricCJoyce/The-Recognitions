@@ -19,12 +19,14 @@ def main():
 	for line in lines:
 		if line[0] != '#':
 			arr = line.strip().split('\t')
-			fair = arr[0]
-			conf = float(arr[1])
-			pred = arr[2]
-			gt = arr[3]
+
+			conf = float(arr[0])									#  Confidence score
+			label = arr[1]											#  The label earning the score--NOT NECESSARILY THE SYSTEM PREDICTION!
+			gt = arr[2]
+			fair = arr[3]
+
 			X.append(conf)											#  Add confidence.
-			if pred == gt:											#  Add correctness:
+			if label == gt:											#  Add correctness:
 				y.append(1)											#    right
 			else:
 				y.append(0)											#    wrong
@@ -114,7 +116,7 @@ def usage():
 	print('Plot the isotonic curve and write discretized "buckets" to file.')
 	print('')
 	print('Usage:  python3 isoreg.py <parameters, preceded by flags>')
-	print(' e.g.:  python3 isoreg.py -src confidences-110921T003434.txt')
+	print(' e.g.:  python3 isoreg.py -src confidences-111021T003434.txt')
 	print('')
 	print('Flags:  -src  Following argument is the filepath to a "confidences" file written by one of the Classifiers.')
 	print('        -?    Display this message.')
