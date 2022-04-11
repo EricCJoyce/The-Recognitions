@@ -12,7 +12,7 @@ import time
 '''
 The "cone of attention" that boosts or lowers object signals in the props subvector according to their proximities to gaze and hands.
 '''
-class Gaussian():
+class Gaussian3D():
 	def __init__(self, **kwargs):
 		self.mu = (0.0, 0.0, 0.0)									#  Centered on the head
 		self.sigma_gaze = (2.0, 1.5, 3.0)							#  In METERS
@@ -22,19 +22,19 @@ class Gaussian():
 		if 'mu' in kwargs:
 			assert isinstance(kwargs['mu'], tuple) and len(kwargs['mu']) == 3 and \
 			       isinstance(kwargs['mu'][0], float) and isinstance(kwargs['mu'][1], float) and isinstance(kwargs['mu'][2], float), \
-			       'Argument \'mu\' passed to Gaussian must be a 3-tuple of floats.'
+			       'Argument \'mu\' passed to Gaussian3D must be a 3-tuple of floats.'
 			self.mu = kwargs['mu']
 
 		if 'sigma_gaze' in kwargs:
 			assert isinstance(kwargs['sigma_gaze'], tuple) and len(kwargs['sigma_gaze']) == 3 and \
 			       isinstance(kwargs['sigma_gaze'][0], float) and isinstance(kwargs['sigma_gaze'][1], float) and isinstance(kwargs['sigma_gaze'][2], float), \
-			       'Argument \'sigma_gaze\' passed to Gaussian must be a 3-tuple of floats.'
+			       'Argument \'sigma_gaze\' passed to Gaussian3D must be a 3-tuple of floats.'
 			self.sigma_gaze = kwargs['sigma_gaze']
 
 		if 'sigma_hand' in kwargs:
 			assert isinstance(kwargs['sigma_hand'], tuple) and len(kwargs['sigma_hand']) == 3 and \
 			       isinstance(kwargs['sigma_hand'][0], float) and isinstance(kwargs['sigma_hand'][1], float) and isinstance(kwargs['sigma_hand'][2], float), \
-			       'Argument \'sigma_hand\' passed to Gaussian must be a 3-tuple of floats.'
+			       'Argument \'sigma_hand\' passed to Gaussian3D must be a 3-tuple of floats.'
 			self.sigma_hand = kwargs['sigma_hand']
 
 	#  'object_centroid' is a Numpy array.
@@ -896,10 +896,10 @@ class Enactment():
 					fh.write('0.0\t0.0\t1.0\t')
 				else:												#  This case should never happen, but be prepared!
 					fh.write('0.0\t0.0\t0.0\t')
-				lh = np.array(frame.left_hand_pose[:3])				#  Left hand influences Gaussian weight.
+				lh = np.array(frame.left_hand_pose[:3])				#  Left hand influences Gaussian3D weight.
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
-				lh = None											#  No left-hand influence on Gaussian weight.
+				lh = None											#  No left-hand influence on Gaussian3D weight.
 
 			if frame.right_hand_pose is not None:					#  Write the RIGHT-HAND subvector
 				fh.write(str(frame.right_hand_pose[0]) + '\t')
@@ -913,10 +913,10 @@ class Enactment():
 					fh.write('0.0\t0.0\t1.0\t')
 				else:												#  This case should never happen, but be prepared!
 					fh.write('0.0\t0.0\t0.0\t')
-				rh = np.array(frame.right_hand_pose[:3])			#  Right hand influences Gaussian weight.
+				rh = np.array(frame.right_hand_pose[:3])			#  Right hand influences Gaussian3D weight.
 			else:
 				fh.write('0.0\t0.0\t0.0\t0.0\t0.0\t0.0\t')
-				rh = None											#  No right-hand influence on Gaussian weight.
+				rh = None											#  No right-hand influence on Gaussian3D weight.
 
 			props_subvector = [0.0 for i in range(0, len(self.recognizable_objects))]
 			for detection in frame.detections:
@@ -3079,8 +3079,8 @@ class Enactment():
 			mode = 'video'
 
 		if 'gaussian' in kwargs:
-			assert isinstance(kwargs['gaussian'], Gaussian), \
-			       'Argument \'gaussian\' passed to Enactment.render_point_cloud() must be a Gaussian object.'
+			assert isinstance(kwargs['gaussian'], Gaussian3D), \
+			       'Argument \'gaussian\' passed to Enactment.render_point_cloud() must be a Gaussian3D object.'
 			gaussian = kwargs['gaussian']
 		else:
 			gaussian = None
