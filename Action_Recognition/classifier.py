@@ -909,9 +909,11 @@ class Classifier():
 	def initialize_stats(self):
 		classification_stats = {}
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[ ( prediction, ground-truth,
-																	#                         confidence-of-prediction, probability-of-pred, fair ),
+																	#                         confidence-of-prediction, probability-of-pred,
+																	#                         enactment-source, timestamp, DB-index, fair ),
 																	#                       ( prediction, ground-truth,
-																	#                         confidence-of-prediction, probability-of-pred, fair ),
+																	#                         confidence-of-prediction, probability-of-pred,
+																	#                         enactment-source, timestamp, DB-index, fair ),
 																	#                       ... ]
 
 		classification_stats['_conf'] = []							#  key:_conf  ==> val:[ (confidence-for-label, label, ground-truth),
