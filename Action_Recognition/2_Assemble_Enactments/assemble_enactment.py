@@ -63,9 +63,9 @@ def main():
 		else:														#  We are we using a hand-pose source file.
 			e.load_hand_pose_file(enactment_name + params['hand-pose-src-file'])
 
-		g = Gaussian(mu=params['gaussian']['mu'], \
-		             sigma_gaze=params['gaussian']['sigma-gaze'], \
-		             sigma_hand=params['gaussian']['sigma-hand'])
+		g = Gaussian3D(mu=params['gaussian']['mu'], \
+		               sigma_gaze=params['gaussian']['sigma-gaze'], \
+		               sigma_hand=params['gaussian']['sigma-hand'])
 
 		if params['min-pixels'] > 1:								#  Kill scrub detections.
 			e.disable_detections( (lambda detection: detection.get_mask_area() < params['min-pixels']) )
