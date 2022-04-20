@@ -6,6 +6,7 @@ from enactment import Enactment, Gaussian3D, RObject
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import sys
 import time
 
@@ -520,9 +521,10 @@ class Classifier():
 
 					self.X_train.append( [] )
 																	#  Be able to lookup the frames of a matched database sample.
-					self.train_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
-					                                                                   db_entry_end_time,   db_entry_end_frame)
-					sample_ctr += 1
+					if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+						self.train_sample_lookup[sample_ctr] = (db_entry_enactment_source, db_entry_start_time, db_entry_start_frame, \
+						                                                                   db_entry_end_time,   db_entry_end_frame)
+						sample_ctr += 1
 		return
 
 	def load_isotonic_map(self, isotonic_file):
@@ -605,11 +607,19 @@ class Classifier():
 																	#  As a hash table, updating takes O(1) * |X_train| rather than
 																	#  O(n) * |X_train| to find matching_costs[ matching_costs.index(template_label) ].
 		matching_costs = {}											#  Matching cost for the nearest neighbor per class.
-		for label in self.labels('train'):							#  Initialize everything to infinitely far away.
+		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+			labels = self.labels('train')
+		else:
+			labels = sorted(np.unique(self.y_train))
+		for label in labels:										#  Initialize everything to infinitely far away.
 			matching_costs[label] = float('inf')
 
 		metadata = {}												#  Track information about the best match per class.
-		for label in self.labels('both'):							#  Include labels the classifier may not know; these will simply be empty.
+		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+			labels = self.labels('both')							#  Include labels the classifier may not know; these will simply be empty.
+		else:
+			labels = sorted(np.unique(self.y_train))
+		for label in labels:
 			metadata[label] = {}
 
 		db_index = 0												#  Index into self.X_train let us know which sample best matches the query.
@@ -640,7 +650,11 @@ class Classifier():
 		confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
 
 		probabilities = {}											#  If we apply isotonic mapping, then this is a different measure than confidence.
-		for label in self.labels('train'):
+		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+			labels = self.labels('train')
+		else:
+			labels = sorted(np.unique(self.y_train))
+		for label in labels:
 			probabilities[label] = 0.0
 
 		if self.isotonic_map is not None:							#  We have an isotonic mapping to apply.
@@ -916,11 +930,17 @@ class Classifier():
 																	#                         enactment-source, timestamp, DB-index, fair ),
 																	#                       ... ]
 
-		classification_stats['_conf'] = []							#  key:_conf  ==> val:[ (confidence-for-label, label, ground-truth),
-																	#                       (confidence-for-label, label, ground-truth), ... ]
+		classification_stats['_conf'] = []							#  key:_conf  ==> val:[ (confidence-for-label, label, ground-truth,
+																	#                        source-enactment, first-snippet-timestamp, final-snippet-timestamp),
+																	#                       (confidence-for-label, label, ground-truth,
+																	#                        source-enactment, first-snippet-timestamp, final-snippet-timestamp),
+																	#                       ... ]
 
-		classification_stats['_prob'] = []							#  key:_prob  ==> val:[ (probability-for-label, label, ground-truth),
-																	#                       (probability-for-label, label, ground-truth), ... ]
+		classification_stats['_prob'] = []							#  key:_prob  ==> val:[ (probability-for-label, label, ground-truth,
+																	#                        source-enactment, first-snippet-timestamp, final-snippet-timestamp),
+																	#                       (probability-for-label, label, ground-truth,
+																	#                        source-enactment, first-snippet-timestamp, final-snippet-timestamp),
+																	#                       ... ]
 
 		for label in self.labels('both'):							#  May include "unfair" labels, but will not include the "*" nothing-label.
 			classification_stats[label] = {}						#  key:label ==> val:{key:tp      ==> val:true positive count
@@ -1000,7 +1020,7 @@ class Classifier():
 	#  Writes file: "confidences-<time stamp>.txt".
 	#  This contains all confidence scores for all training-set labels.
 	#  That means, for every prediction the system made, we save N scores, where N is the number of training-set labels.
-	#  Each line of this file reads:  score  <tab>  label  <tab>  ground-truth  <tab>  fair/unfair.
+	#  Each line of this file reads:  score  <tab>  label  <tab>  ground-truth  <tab>  source-enactment  <tab>  first-timestamp  <tab>  final-timestamp  <tab>  fair/unfair.
 	def write_confidences(self, confidences, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
@@ -1011,9 +1031,10 @@ class Classifier():
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
 		fh.write('#  Each line is:\n')
-		fh.write('#    Confidence    Label    Ground-Truth-Label    {fair, unfair}\n')
+		fh.write('#    Confidence    Label    Ground-Truth-Label    Source-Enactment    First-Timestamp   Final-Timestamp   {fair, unfair}\n')
 		for i in range(0, len(conf_label_gt)):
 			fh.write(str(conf_label_gt[i][0]) + '\t' + conf_label_gt[i][1] + '\t' + conf_label_gt[i][2] + '\t')
+			fh.write(conf_label_gt[i][3] + '\t' + str(conf_label_gt[i][4]) + '\t' + str(conf_label_gt[i][5]) + '\t')
 			if conf_label_gt[i][2] in train_labels:
 				fh.write('fair\n')
 			else:
@@ -1025,7 +1046,7 @@ class Classifier():
 	#  This contains all probabilities for all training-set labels.
 	#  That means, for every prediction the system made, we save N probabilities, where N is the number of training-set labels.
 	#  For each prediction, all N label probabilities sum to 1.0.
-	#  Each line of this file reads:  probability  <tab>  label  <tab>  ground-truth  <tab>  fair/unfair.
+	#  Each line of this file reads:  probability  <tab>  label  <tab>  ground-truth  <tab>  source-enactment  <tab>  first-timestamp  <tab>  final-timestamp  <tab>  fair/unfair.
 	def write_probabilities(self, probabilities, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
@@ -1036,9 +1057,10 @@ class Classifier():
 		fh.write('#  Classifier predictions made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  Confidence function is "' + self.confidence_function + '"\n')
 		fh.write('#  Each line is:\n')
-		fh.write('#    Probability    Label    Ground-Truth-Label    {fair, unfair}\n')
+		fh.write('#    Probability    Label    Ground-Truth-Label    Source-Enactment    First-Timestamp   Final-Timestamp   {fair, unfair}\n')
 		for i in range(0, len(prob_label_gt)):
 			fh.write(str(prob_label_gt[i][0]) + '\t' + prob_label_gt[i][1] + '\t' + prob_label_gt[i][2] + '\t')
+			fh.write(prob_label_gt[i][3] + '\t' + str(prob_label_gt[i][4]) + '\t' + str(prob_label_gt[i][5]) + '\t')
 			if prob_label_gt[i][2] in train_labels:
 				fh.write('fair\n')
 			else:
@@ -1072,36 +1094,99 @@ class Classifier():
 		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
 			fh.write('#  ' + ' '.join(sys.argv) + '\n\n')
 
+		train_labels = self.labels('train')							#  List of strings.
+		train_labels.append('*')									#  Append the no vote label.
+
+		fair_test_pred = []											#  Convert all tests into indices into self.labels('train').
+		fair_test_y    = []
+		fair_conf      = []
+		for i in range(0, len(stats['_tests'])):
+			pred_label = stats['_tests'][i][0]
+			gt_label   = stats['_tests'][i][1]
+			conf       = stats['_tests'][i][2]
+			fair       = stats['_tests'][i][-1]
+			if pred_label is None:
+				pred_label = '*'
+
+			if gt_label in train_labels and fair:
+				fair_test_pred.append( train_labels.index(pred_label) )
+				fair_test_y.append(    train_labels.index(gt_label)   )
+				fair_conf.append(              conf                   )
+
+		acc = accuracy_score(fair_test_y, fair_test_pred)			#  Compute total accuracy.
+
+																	#  Compute precision for EACH class.
+		class_prec = precision_score(fair_test_y, fair_test_pred, average=None, labels=list(range(0, len(train_labels))), zero_division=0)
+
+																	#  Compute recall for EACH class.
+		class_recall = recall_score(fair_test_y, fair_test_pred, average=None, labels=list(range(0, len(train_labels))), zero_division=0)
+
+																	#  Compute per-class F1 score.
+		class_f1 = f1_score(fair_test_y, fair_test_pred, average=None, labels=list(range(0, len(train_labels))), zero_division=0)
+
+		acc_str = 'Accuracy:  ' + str(acc)
+		fh.write(acc_str + '\n')
+		fh.write('='*len(acc_str) + '\n')
+		fh.write('\n')
+
+		mean_acc = []
+		conf_mat = confusion_matrix(fair_test_y, fair_test_pred)
+
+		fh.write('Per-Class:\n')
+		fh.write('==========\n')
+		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_conf', '_prob', '*']] ):
+			if v['support'] > 0:									#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
+				tn = np.sum(np.delete(np.delete(conf_mat, train_labels.index(k), axis=0), train_labels.index(k), axis=1))
+				tp = conf_mat[train_labels.index(k), train_labels.index(k)]
+				per_class_acc = (tp + tn) / np.sum(conf_mat)
+				mean_acc.append(per_class_acc)
+
+				prec = class_prec[ train_labels.index(k) ]
+				recall = class_recall[ train_labels.index(k) ]
+				f1 = class_f1[ train_labels.index(k) ]
+
+				support = v['support']
+				fh.write(k + '\t' + str(per_class_acc) + '\t' + str(prec) + '\t' + str(recall) + '\t' + str(f1) + '\t' + str(support) + '\n')
+		fh.write('\n')
+
+		if len(mean_acc) == 0:
+			maacc_str = 'Mean Avg. Accuracy:  N/A'
+		else:
+			maacc_str = 'Mean Avg. Accuracy:  ' + str(np.mean(mean_acc))
+		fh.write(maacc_str + '\n')
+		fh.write('='*len(maacc_str) + '\n\n')
+
 		conf_correct = []											#  Accumulate confidences when the classifier is correct.
 		conf_incorrect = []											#  Accumulate confidences when the classifier is incorrect.
+
+		prob_correct = []											#  Accumulate probabilities when the classifier is correct.
+		prob_incorrect = []											#  Accumulate probabilities when the classifier is incorrect.
 
 		decision_ctr = 0											#  Count times the classifier made a decision.
 		no_decision_ctr = 0											#  Count times the classifier abstained from making a decision.
 
-		labels = self.labels('train')								#  How many of each (training-set) label appeared in the test set?
-		test_set_survey = {}
-		for label in labels:
-			test_set_survey[label] = 0								#  Initialize all counts to zero.
 		for i in range(0, len(stats['_tests'])):
-			true_label = stats['_tests'][i][1]
-			if true_label in test_set_survey:
-				test_set_survey[true_label] += 1					#  Count up ground-truth labels.
+			pred_label = stats['_tests'][i][0]
+			gt_label   = stats['_tests'][i][1]
+			conf       = stats['_tests'][i][2]
+			prob       = stats['_tests'][i][3]
+			fair       = stats['_tests'][i][-1]
+			if pred_label is None:
+				pred_label = '*'
 
-		for i in range(0, len(stats['_tests'])):
-			prediction = stats['_tests'][i][0]
-			true_label = stats['_tests'][i][1]
-			confidence = stats['_tests'][i][2]
-
-			if prediction is not None:
-				decision_ctr += 1
-				if prediction == true_label:
-					conf_correct.append(confidence)
+			if gt_label in train_labels and fair:
+				if pred_label == '*':
+					no_decision_ctr += 1
 				else:
-					conf_incorrect.append(confidence)
-			else:
-				no_decision_ctr += 1
-				if type(self).__name__ == 'AtemporalClassifier':	#  We happen to know that for atemporal classification
-					conf_incorrect.append(confidence)				#  there is never a correct abstention.
+					decision_ctr += 1
+
+				if pred_label == gt_label:
+					conf_correct.append(conf)
+					prob_correct.append(prob)
+				else:
+					conf_incorrect.append(conf)
+					prob_incorrect.append(prob)
 
 		avg_conf_correct = np.mean(conf_correct)					#  Compute average confidence when correct.
 		avg_conf_incorrect = np.mean(conf_incorrect)				#  Compute average confidence when incorrect.
@@ -1109,54 +1194,11 @@ class Classifier():
 		stddev_conf_correct = np.std(conf_correct)					#  Compute standard deviation of confidence when correct.
 		stddev_conf_incorrect = np.std(conf_incorrect)				#  Compute standard deviation of confidence when incorrect.
 
-		fh.write('Raw Results:\n')
-		fh.write('============\n')
-		fh.write('\tTP\tFP\tFN\tSupport\tTests\n')
-		for k, v in sorted(stats.items()):
-			if k != '_tests' and k != '_conf' and k != '_prob' and k in labels:
-				if k in test_set_survey:
-					fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t' + str(test_set_survey[k]) + '\n')
-				else:
-					fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t0\n')
-		fh.write('\n')
+		avg_prob_correct = np.mean(prob_correct)					#  Compute average probability when correct.
+		avg_prob_incorrect = np.mean(prob_incorrect)				#  Compute average probability when incorrect.
 
-		fh.write('Classification:\n')
-		fh.write('===============\n')
-		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
-		meanAcc = []
-		for k, v in sorted(stats.items()):
-			if k != '_tests' and k != '_conf' and k != '_prob' and k != '*':
-				if v['support'] > 0:								#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
-					if v['tp'] + v['fp'] + v['fn'] == 0:
-						acc    = 0.0
-					else:
-						acc    = float(v['tp']) / float(v['tp'] + v['fp'] + v['fn'])
-					meanAcc.append(acc)
-
-					if v['tp'] + v['fp'] == 0:
-						prec   = 0.0
-					else:
-						prec   = float(v['tp']) / float(v['tp'] + v['fp'])
-
-					if v['tp'] + v['fn'] == 0:
-						recall = 0.0
-					else:
-						recall = float(v['tp']) / float(v['tp'] + v['fn'])
-
-					if prec + recall == 0:
-						f1     = 0.0
-					else:
-						f1     = float(2 * prec * recall) / float(prec + recall)
-
-					support = v['support']
-					fh.write(k + '\t' + str(acc) + '\t' + str(prec) + '\t' + str(recall) + '\t' + str(f1) + '\t' + str(support) + '\n')
-		fh.write('\n')
-		fh.write('Mean Avg. Accuracy:\n')
-		fh.write('===================\n')
-		if len(meanAcc) > 0:
-			fh.write('\t' + str(np.mean(meanAcc)) + '\n')
-		else:
-			fh.write('N/A\n')
+		stddev_prob_correct = np.std(prob_correct)					#  Compute standard deviation of probability when correct.
+		stddev_prob_incorrect = np.std(prob_incorrect)				#  Compute standard deviation of probability when incorrect.
 
 		fh.write('Total decisions made = ' + str(decision_ctr) + '\n')
 		fh.write('Total non-decisions made = ' + str(no_decision_ctr) + '\n')
@@ -1166,15 +1208,28 @@ class Classifier():
 		fh.write('\n')
 		fh.write('Std.Dev. Confidence when correct = ' + str(stddev_conf_correct) + '\n')
 		fh.write('Std.Dev. Confidence when incorrect = ' + str(stddev_conf_incorrect) + '\n')
-
 		fh.write('\n')
+		fh.write('Avg. Probability when correct = ' + str(avg_prob_correct) + '\n')
+		fh.write('Avg. Probability when incorrect = ' + str(avg_prob_incorrect) + '\n')
+		fh.write('\n')
+		fh.write('Std.Dev. Probability when correct = ' + str(stddev_prob_correct) + '\n')
+		fh.write('Std.Dev. Probability when incorrect = ' + str(stddev_prob_incorrect) + '\n')
+		fh.write('\n')
+
+		fh.write('Raw Results:\n')
+		fh.write('============\n')
+		fh.write('\tTP\tFP\tFN\tSupport\tTests\n')
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_conf', '_prob', '*']] ):
+			fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t')
+			fh.write(str(len( [x for x in stats['_tests'] if x[1] == k and x[-1]] )) + '\n')
+		fh.write('\n')
+
 		fh.write('Test Set Survey:\n')
 		fh.write('================\n')
-		for label in labels:
-			if label in test_set_survey:
-				fh.write(label + '\t' + str(test_set_survey[label]) + '\n')
-
+		for label in train_labels:
+			fh.write(label + '\t' + str(len( [x for x in stats['_tests'] if x[1] == label and x[-1]] )) + '\n')
 		fh.write('\n')
+
 		fh.write('Complete Itemization:\n')
 		fh.write('Pred.    G.T.    Conf.    Prob.    Enactment    Time    DB-Index    fair/unfair\n')
 		fh.write('===============================================================================\n')
@@ -1197,7 +1252,6 @@ class Classifier():
 				fh.write('unfair\n')
 
 		fh.close()
-
 		return
 
 	#  Look for:
@@ -1615,13 +1669,16 @@ class AtemporalClassifier(Classifier):
 			#########################################################
 																	#  Save confidence scores for all labels, regardless of what the system picks.
 			for label in self.labels('train'):						#  We use these values downstream in the pipeline for isotonic regression.
-				classification_stats['_conf'].append( (confidences[label], label, ground_truth_label) )
+				classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
+				                                       'Test-snippet', 0, self.window_size - 1) )
 
 			for label in self.labels('train'):						#  Save probabilities for all labels, regardless of what the system picks.
-				classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label) )
+				classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
+				                                       'Test-snippet', 0, self.window_size - 1) )
 
 			t1_start = time.process_time()							#  Start timer.
-			if probabilities[tentative_prediction] > self.threshold:#  Is it above the threshold?
+																	#  Is it above the threshold?
+			if probabilities[tentative_prediction] >= self.threshold:
 				prediction = tentative_prediction
 			else:
 				prediction = None
@@ -2914,7 +2971,7 @@ class TemporalClassifier(Classifier):
 					confidence_store = []
 				if 'probabilities' in self.render_modes:
 					probability_store = []
-				if 'smoothed' in self.render_modes:
+				if 'smooth' in self.render_modes:
 					smoothed_probability_store = []
 
 			vector_buffer = []										#  Takes the place of X_test or an input stream.
@@ -2969,6 +3026,7 @@ class TemporalClassifier(Classifier):
 
 			tentative_prediction = None								#  Initially nothing.
 			prediction = None
+			metadata = None											#  Initially nothing (applies when rendering).
 
 			if self.render:											#  Rendering? Create the video file now and add to it through the loop.
 				pe = ProcessedEnactment(enactment_input, verbose=False)
@@ -2983,7 +3041,7 @@ class TemporalClassifier(Classifier):
 				if 'probabilities' in self.render_modes:
 					vid_probabilities = cv2.VideoWriter(enactment_input + '_probabilities_seismograph.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
 					                                    pe.fps, (pe.width * 2, pe.height) )
-				if 'smoothed' in self.render_modes:
+				if 'smooth' in self.render_modes:
 					vid_smoothed_probabilities = cv2.VideoWriter(enactment_input + '_smoothed-probabilities_seismograph.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
 					                                             pe.fps, (pe.width * 2, pe.height) )
 
@@ -3033,10 +3091,16 @@ class TemporalClassifier(Classifier):
 
 																	#  Save confidence scores for all labels, regardless of what the system picks.
 					for label in self.labels('train'):				#  We use these values downstream in the pipeline for isotonic regression.
-						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label) )
+						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
+						                                       enactment_input, \
+						                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+						                                       time_stamp_buffer[ frame_ctr ]) )
 
 					for label in self.labels('train'):				#  Save probabilities for all labels, regardless of what the system picks.
-						classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label) )
+						classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
+						                                       enactment_input, \
+						                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+						                                       time_stamp_buffer[ frame_ctr ]) )
 
 																	#  If we are rendering confidences, then add to the confidences buffer.
 					if self.render and 'confidence' in self.render_modes:
@@ -3052,7 +3116,11 @@ class TemporalClassifier(Classifier):
 					#################################################
 
 					t1_start = time.process_time()					#  Start timer.
-					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
+					smoothed_probabilities = np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0)
+					smoothed_norm = sum(smoothed_probabilities)
+					if smoothed_norm > 0.0:
+						smoothed_probabilities /= smoothed_norm
+					smoothed_probabilities = list(smoothed_probabilities)
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
@@ -3060,11 +3128,9 @@ class TemporalClassifier(Classifier):
 						smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
 					t1_start = time.process_time()					#  Start timer.
-					#  THIS IS THE STEP BEING DEBATED RIGHT NOW
-					#tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
 
 					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
-					if tentative_probability > self.threshold:
+					if tentative_probability >= self.threshold:
 						prediction = tentative_prediction
 					else:
 						prediction = None
@@ -3081,9 +3147,6 @@ class TemporalClassifier(Classifier):
 					                                        time_stamp_buffer[frame_ctr], \
 					                                        metadata[tentative_prediction]['db-index'], \
 					                                        fair) )
-
-					#classification_stats['_conf'].append( tentative_confidence )
-					#classification_stats['_prob'].append( tentative_probability )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -3114,7 +3177,11 @@ class TemporalClassifier(Classifier):
 
 					if 'confidence' in self.render_modes:
 						t1_start = time.process_time()				#  Stop timer.
-						graph = self.render_confidence_seismograph(confidence_store)
+						if metadata is not None:
+							label_picks = dict( [(x[0], x[1]['db-index']) for x in metadata.items() if x[0] in self.labels('train')] )
+						else:
+							label_picks = None
+						graph = self.render_confidence_seismograph(confidence_store, label_picks)
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['render-confidence'].append(t1_stop - t1_start)
 						concat_frame = np.zeros((self.height, self.width * 2, 3), dtype='uint8')
@@ -3124,7 +3191,11 @@ class TemporalClassifier(Classifier):
 
 					if 'probabilities' in self.render_modes:
 						t1_start = time.process_time()				#  Stop timer.
-						graph = self.render_probabilities_seismograph(probability_store)
+						if metadata is not None:
+							label_picks = dict( [(x[0], x[1]['db-index']) for x in metadata.items() if x[0] in self.labels('train')] )
+						else:
+							label_picks = None
+						graph = self.render_probabilities_seismograph(probability_store, label_picks)
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['render-probabilities'].append(t1_stop - t1_start)
 						concat_frame = np.zeros((self.height, self.width * 2, 3), dtype='uint8')
@@ -3132,9 +3203,13 @@ class TemporalClassifier(Classifier):
 						concat_frame[:, self.width:, :] = graph[:, :, :]
 						vid_probabilities.write(concat_frame)
 
-					if 'smoothed' in self.render_modes:
+					if 'smooth' in self.render_modes:
 						t1_start = time.process_time()				#  Stop timer.
-						graph = self.render_smoothed_probabilities_seismograph(smoothed_probability_store)
+						if metadata is not None:
+							label_picks = dict( [(x[0], x[1]['db-index']) for x in metadata.items() if x[0] in self.labels('train')] )
+						else:
+							label_picks = None
+						graph = self.render_smoothed_probabilities_seismograph(smoothed_probability_store, label_picks)
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['render-smoothed-probabilities'].append(t1_stop - t1_start)
 						concat_frame = np.zeros((self.height, self.width * 2, 3), dtype='uint8')
@@ -3439,10 +3514,16 @@ class TemporalClassifier(Classifier):
 					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
 																	#  Save confidence scores for all labels, regardless of what the system picks.
 					for label in self.labels('train'):				#  We use these values downstream in the pipeline for isotonic regression.
-						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label) )
+						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
+						                                       enactment_input, \
+						                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+						                                       time_stamp_buffer[ frame_ctr ]) )
 
 					for label in self.labels('train'):				#  Save probabilities for all labels, regardless of what the system picks.
-						classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label) )
+						classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
+						                                       enactment_input, \
+						                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+						                                       time_stamp_buffer[ frame_ctr ]) )
 
 					#################################################
 					#  Smooth the contents of the temporal buffer   #
@@ -3451,16 +3532,18 @@ class TemporalClassifier(Classifier):
 					#################################################
 
 					t1_start = time.process_time()					#  Start timer.
-					smoothed_probabilities = list(np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0))
+					smoothed_probabilities = np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0)
+					smoothed_norm = sum(smoothed_probabilities)
+					if smoothed_norm > 0.0:
+						smoothed_probabilities /= smoothed_norm
+					smoothed_probabilities = list(smoothed_probabilities)
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
 					t1_start = time.process_time()					#  Start timer.
-					#  THIS IS THE STEP BEING DEBATED RIGHT NOW
-					#tentative_prediction = self.labels('train')[ np.argmax(smoothed_probabilities) ]
 
 					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
-					if tentative_probability > self.threshold:
+					if tentative_probability >= self.threshold:
 						prediction = tentative_prediction
 					else:
 						prediction = None
@@ -3477,8 +3560,6 @@ class TemporalClassifier(Classifier):
 					                                        time_stamp_buffer[frame_ctr], \
 					                                        metadata[tentative_prediction]['db-index'], \
 					                                        fair) )
-					#classification_stats['_conf'].append( tentative_confidence )
-					#classification_stats['_prob'].append( tentative_probability )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
@@ -3877,17 +3958,11 @@ class TemporalClassifier(Classifier):
 																	#  [LHx, LHy, LHz, LH0, LH1, LH2, RHx, ..., num_objects] in frame 0
 																	#  [LHx, LHy, LHz, LH0, LH1, LH2, RHx, ..., num_objects] in frame 1
 		B = []														#  [LHx, LHy, LHz, LH0, LH1, LH2, RHx, ..., num_objects] in frame 2
-		if self.rolling_buffer_filling:								#  Buffer has yet to reach capacity
-			for i in range(len([x for x in self.rolling_buffer if x is not None]), self.rolling_buffer_length):
-				B.append( [0.0 for x in range(0, vector_len)] )
-			for i in range(0, self.rolling_buffer.index(None)):
+		for i in range(0, self.rolling_buffer_length):
+			if self.rolling_buffer[i] is not None:
 				B.append( [x for x in self.undo_vector_coefficients(self.rolling_buffer[i])] )
-		else:														#  Buffer reached capacity at some point but may contain Nones left from stride
-			for i in range(0, len(self.rolling_buffer)):
-				if self.rolling_buffer[i] is not None:
-					B.append( [x for x in self.undo_vector_coefficients(self.rolling_buffer[i])] )
-				else:
-					B.append( [0.0 for x in range(0, vector_len)] )
+			else:
+				B.append( [0.0 for x in range(0, vector_len)] )
 		B = np.array(B)
 
 		x_intervals = int(np.floor(float(self.width) / float(vector_len)))
@@ -3912,13 +3987,14 @@ class TemporalClassifier(Classifier):
 						color = (0, 255, 0)
 					else:
 						color = (255, 0, 0)
+				dark_color = (color[0] // 4, color[1] // 4, color[2] // 4)
 
 				graph = cv2.line(graph, point_a, point_b, color, max(1, int(round(float(self.max_seismograph_linewidth) * B[y, x]))) )
 
 				if x >= 12:
 					tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 					pt = (x * x_intervals, self.height - 10)
-					cv2.putText(tmp, self.recognizable_objects[x - 12], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+					cv2.putText(tmp, self.recognizable_objects[x - 12], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.4, dark_color, 1)
 					tmp = self.rotate_text(tmp, 90.0, (x * x_intervals, self.height - 10))
 					indices = np.where(tmp > 0)
 					for i in range(0, len(indices[0])):
@@ -3931,7 +4007,7 @@ class TemporalClassifier(Classifier):
 
 	#  Create a seismograph-like plot of confidence scores.
 	#  Receives 'confidence_accumulator', a buffer of 'self.seismograph_length' confidence vectors for all recognizable actions.
-	def render_confidence_seismograph(self, confidence_accumulator):
+	def render_confidence_seismograph(self, confidence_accumulator, label_picks=None):
 																	#  All-white RGB
 		graph = np.ones((self.height, self.width, 3), dtype='uint8') * 255
 
@@ -3968,12 +4044,16 @@ class TemporalClassifier(Classifier):
 					color = (0, 255, 0)
 				else:
 					color = (255, 0, 0)
+				dark_color = (color[0] // 4, color[1] // 4, color[2] // 4)
 
 				graph = cv2.line(graph, point_a, point_b, color, max(1, int(round(float(self.max_seismograph_linewidth) * B[y, x]))) )
 
 				tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 				pt = (x * x_intervals, self.height - 10)
-				cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 1)
+				if label_picks is not None:
+					cv2.putText(tmp, labels[x] + ' [' + str(label_picks[labels[x]]) + ']', img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, dark_color, 1)
+				else:
+					cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, dark_color, 1)
 				tmp = self.rotate_text(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
 				indices = np.where(tmp > 0)
 				for i in range(0, len(indices[0])):
@@ -3987,7 +4067,7 @@ class TemporalClassifier(Classifier):
 
 	#  Create a seismograph-like plot of probabilities.
 	#  Receives 'probability_accumulator', a buffer of 'self.seismograph_length' probability distributions for all recognizable actions.
-	def render_probabilities_seismograph(self, probability_accumulator):
+	def render_probabilities_seismograph(self, probability_accumulator, label_picks=None):
 																	#  All-white RGB
 		graph = np.ones((self.height, self.width, 3), dtype='uint8') * 255
 
@@ -4024,12 +4104,16 @@ class TemporalClassifier(Classifier):
 					color = (0, 255, 0)
 				else:
 					color = (255, 0, 0)
+				dark_color = (color[0] // 4, color[1] // 4, color[2] // 4)
 
 				graph = cv2.line(graph, point_a, point_b, color, max(1, int(round(float(self.max_seismograph_linewidth) * B[y, x]))) )
 
 				tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 				pt = (x * x_intervals, self.height - 10)
-				cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 1)
+				if label_picks is not None:
+					cv2.putText(tmp, labels[x] + ' [' + str(label_picks[labels[x]]) + ']', img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, dark_color, 1)
+				else:
+					cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, dark_color, 1)
 				tmp = self.rotate_text(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
 				indices = np.where(tmp > 0)
 				for i in range(0, len(indices[0])):
@@ -4043,7 +4127,7 @@ class TemporalClassifier(Classifier):
 
 	#  Create a seismograph-like plot of smoothed probabilities.
 	#  Receives 'smoothed_probability_accumulator', a buffer of 'self.seismograph_length' probability distributions for all recognizable actions.
-	def render_smoothed_probabilities_seismograph(self, smoothed_probability_accumulator):
+	def render_smoothed_probabilities_seismograph(self, smoothed_probability_accumulator, label_picks=None):
 																	#  All-white RGB
 		graph = np.ones((self.height, self.width, 3), dtype='uint8') * 255
 
@@ -4080,12 +4164,16 @@ class TemporalClassifier(Classifier):
 					color = (0, 255, 0)
 				else:
 					color = (255, 0, 0)
+				dark_color = (color[0] // 4, color[1] // 4, color[2] // 4)
 
 				graph = cv2.line(graph, point_a, point_b, color, max(1, int(round(float(self.max_seismograph_linewidth) * B[y, x]))) )
 
 				tmp = np.zeros((self.height, self.width, 3), dtype='uint8')
 				pt = (x * x_intervals, self.height - 10)
-				cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 1)
+				if label_picks is not None:
+					cv2.putText(tmp, labels[x] + ' [' + str(label_picks[labels[x]]) + ']', img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, dark_color, 1)
+				else:
+					cv2.putText(tmp, labels[x], img_center, cv2.FONT_HERSHEY_SIMPLEX, 0.7, dark_color, 1)
 				tmp = self.rotate_text(tmp, 90.0, (x * x_intervals + nudge_right - label_margin, self.height - 10))
 				indices = np.where(tmp > 0)
 				for i in range(0, len(indices[0])):
