@@ -275,11 +275,12 @@ class Database():
 				if line[0] != '\t':									#  Snippet header.
 					arr = line.strip().split('\t')
 					label = arr[0]
-					src_enactment = arr[1]
-					start_timestamp = float(arr[2])
-					start_frame = arr[3]
-					end_timestamp = float(arr[4])
-					end_frame = arr[5]
+					db_index = int(arr[1][1:-1])					#  Snip off brackets.
+					src_enactment = arr[2]
+					start_timestamp = float(arr[3])
+					start_frame = arr[4]
+					end_timestamp = float(arr[5])
+					end_frame = arr[6]
 
 					action_tuple = (src_enactment, start_timestamp, start_frame, end_timestamp, end_frame)
 
