@@ -2285,6 +2285,132 @@ class Enactment():
 	#  Rendering: see that what is computed is what you expect.     #
 	#################################################################
 
+	#  Render an annotated snippet of the enactment, from 'start_time' up to and including 'final_time'.
+	def render_snippet(self, start_time=0.0, final_time=float('inf'), final_inclusive=True, output_filename=None):
+		if output_filename is None:
+			output_filename = self.enactment_name + '_snippet.avi'
+
+		K = self.K()												#  Build the camera matrix
+		sorted_frames = sorted(self.frames.items())
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		if self.verbose:
+			print('>>> Rendering "' + output_filename + '"')
+
+		num_frames = len(sorted_frames)
+		prev_ctr = 0
+
+		vid = cv2.VideoWriter( output_filename, \
+		                       cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
+		                       self.fps, \
+		                      (self.width, self.height) )
+		i = 0
+		copying = False
+		for time_stamp, frame in sorted_frames:
+			if time_stamp >= start_time:
+				copying = True
+			if final_inclusive:
+				if time_stamp > final_time:							#  Include final_time? Shut off AFTER time stamp.
+					copying = False
+			else:
+				if time_stamp >= final_time:						#  Exclude final time? Shut off AT time stamp.
+					copying = False
+			if copying:
+																	#  Load the video frame
+				img = cv2.imread(frame.fullpath(), cv2.IMREAD_UNCHANGED)
+				if img.shape[2] == 4:								#  Do these guys have alpha channels? I forget.
+					img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
+				maskcanvas = np.zeros((self.height, self.width, 3), dtype='uint8')
+				for detection in frame.detections:					#  Render overlays
+					if detection.object_name is not None and detection.enabled and detection.object_name in self.robject_colors:
+						object_name = detection.object_name
+						mask = cv2.imread(detection.mask_path, cv2.IMREAD_UNCHANGED)
+						mask[mask > 1] = 1							#  All values greater than 1 become 1
+																	#  Extrude to three channels
+						mask = mask[:, :, None] * np.ones(3, dtype='uint8')[None, None, :]
+																	#  Convert this to a graphical overlay:
+						mask[:, :, 0] *= self.robject_colors[ object_name ][2]
+						mask[:, :, 1] *= self.robject_colors[ object_name ][1]
+						mask[:, :, 2] *= self.robject_colors[ object_name ][0]
+
+						maskcanvas += mask							#  Add mask to mask accumulator
+						maskcanvas[maskcanvas > 255] = 255			#  Clip accumulator to 255
+
+				img = cv2.addWeighted(img, 1.0, maskcanvas, 0.7, 0)	#  Add mask accumulator to source frame
+				img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)			#  Flatten alpha
+
+				for detection in frame.detections:					#  Render bounding boxes and (bbox) centroids
+					if detection.object_name is not None and detection.enabled and detection.object_name in self.robject_colors:
+						object_name = detection.object_name
+						center_bbox = detection.center('bbox')
+						bbox = detection.bounding_box
+						cv2.rectangle(img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (self.robject_colors[ object_name ][2], \
+						                                                            self.robject_colors[ object_name ][1], \
+						                                                            self.robject_colors[ object_name ][0]), 1)
+						cv2.circle(img, (center_bbox[0], center_bbox[1]), 5, (self.robject_colors[ object_name ][2], \
+						                                                      self.robject_colors[ object_name ][1], \
+						                                                      self.robject_colors[ object_name ][0]), 3)
+
+				if frame.left_hand_pose is not None:				#  Does the left hand project into the camera?
+					x = np.array(frame.left_hand_pose[:3]).reshape(3, 1)
+					p = np.dot(K, x)
+					if p[2] != 0.0:
+						p /= p[2]
+						x = int(round(p[0][0]))						#  Round and discretize to pixels
+						y = int(round(p[1][0]))
+						if x >= 0 and x < self.width and y >= 0 and y < self.height:
+							cv2.line(img, (self.width - x - 5, self.height - y - 5), \
+							              (self.width - x + 5, self.height - y + 5), (0, 255, 0, 255), 3)
+							cv2.line(img, (self.width - x - 5, self.height - y + 5), \
+							              (self.width - x + 5, self.height - y - 5), (0, 255, 0, 255), 3)
+																	#  Write the hand subvector
+							cv2.putText(img, "{:.2f}".format(frame.left_hand_pose[0]) + ', ' + \
+							                 "{:.2f}".format(frame.left_hand_pose[1]) + ', ' + \
+							                 "{:.2f}".format(frame.left_hand_pose[2]) + ': ' + str(frame.left_hand_pose[3]), \
+							            (self.LH_super['x'], self.LH_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.LH_super['fontsize'], (0, 255, 0, 255), 3)
+
+				if frame.right_hand_pose is not None:				#  Does the right hand project into the camera?
+					x = np.array(frame.right_hand_pose[:3]).reshape(3, 1)
+					p = np.dot(K, x)
+					if p[2] != 0.0:
+						p /= p[2]
+						x = int(round(p[0][0]))						#  Round and discretize to pixels
+						y = int(round(p[1][0]))
+						if x >= 0 and x < self.width and y >= 0 and y < self.height:
+							cv2.line(img, (self.width - x - 5, self.height - y - 5), \
+							              (self.width - x + 5, self.height - y + 5), (0, 0, 255, 255), 3)
+							cv2.line(img, (self.width - x - 5, self.height - y + 5), \
+							              (self.width - x + 5, self.height - y - 5), (0, 0, 255, 255), 3)
+																	#  Write the hand subvector
+							cv2.putText(img, "{:.2f}".format(frame.right_hand_pose[0]) + ', ' + \
+							                 "{:.2f}".format(frame.right_hand_pose[1]) + ', ' + \
+							                 "{:.2f}".format(frame.right_hand_pose[2]) + ': ' + str(frame.right_hand_pose[3]), \
+							            (self.RH_super['x'], self.RH_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.RH_super['fontsize'], (0, 0, 255, 255), 3)
+
+																	#  Write the true action
+				if frame.ground_truth_label == '*':					#  White asterisk for nothing
+					cv2.putText(img, frame.ground_truth_label, (self.gt_label_super['x'], self.gt_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.gt_label_super['fontsize'], (255, 255, 255, 255), 3)
+				else:												#  Bright green for truth!
+					cv2.putText(img, frame.ground_truth_label, (self.gt_label_super['x'], self.gt_label_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.gt_label_super['fontsize'], (0, 255, 0, 255), 3)
+																	#  Write the frame file name
+				cv2.putText(img, frame.file_name, (self.filename_super['x'], self.filename_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.filename_super['fontsize'], (0, 255, 0, 255), 3)
+
+				vid.write(img)
+
+			if self.verbose:
+				if int(round(float(i) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
+					sys.stdout.flush()
+			i += 1
+
+		vid.release()
+		if self.verbose:
+			print('')
+
+		return
+
 	#  If a specific index is not given, then each action will be rendered to video.
 	#  Include in the rendering as many details as have been prepared. If we computed masks, show the masks. If centroids, show centroids....
 	def render_annotated_action(self, index=None):
