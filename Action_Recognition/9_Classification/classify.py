@@ -33,7 +33,7 @@ def main():
 	                              isotonic_file=params['map-conf-prob'], \
 	                              verbose=params['verbose'])
 
-	stats = temporal.classify(params['detection-model'], False)
+	stats = temporal.classify(params['detection-model'], params['skip-unfair'])
 
 	if params['verbose']:
 		M = temporal.confusion_matrix(stats['_tests'])
@@ -70,6 +70,7 @@ def get_command_line_params():
 
 	params['result-string'] = None									#  Default to the timestamp.
 	params['load-from'] = None										#  Directory from which enactment files should be loaded into the working directory at runtime.
+	params['skip-unfair'] = False
 
 	params['verbose'] = False
 	params['helpme'] = False
@@ -78,11 +79,13 @@ def get_command_line_params():
 																	#  Permissible setting flags
 	flags = ['-e', '-db', '-model', \
 	         '-conf', '-map', '-detth', '-minpx', '-relabel', \
-	         '-lddir', '-id', \
+	         '-lddir', '-id', '-fair', \
 	         '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
 		if sys.argv[i] in flags:
-			if sys.argv[i] == '-v':
+			if sys.argv[i] == '-fair':
+				params['skip-unfair'] = True
+			elif sys.argv[i] == '-v':
 				params['verbose'] = True
 			elif sys.argv[i] == '-?' or sys.argv[i] == '-help' or sys.argv[i] == '--help':
 				params['helpme'] = True
