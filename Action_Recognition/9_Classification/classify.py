@@ -24,6 +24,7 @@ def main():
 	                              db_file=params['database'], \
 	                              relabel=params['relabel-file'], \
 	                              conf_func=params['conf-function'], \
+	                              threshold=params['threshold'], \
 	                              hand_schema=params['hand-schema'], \
 	                              props_coeff=params['props-coeff'], \
 	                              hands_one_hot_coeff=params['one-hot-coeff'], \
@@ -32,6 +33,9 @@ def main():
 	                              detection_confidence=params['detection-threshold'], \
 	                              isotonic_file=params['map-conf-prob'], \
 	                              verbose=params['verbose'])
+
+	for label in params['hidden-labels']:							#  Hide all hidden labels.
+		temporal.hide_label(label)
 
 	stats = temporal.classify(params['detection-model'], params['skip-unfair'])
 
@@ -55,6 +59,7 @@ def get_command_line_params():
 	params['detection-model'] = None								#  Default to ground-truth.
 	params['conf-function'] = 'sum2'								#  The default confidence function.
 	params['map-conf-prob'] = None									#  Default to using confidence scores.
+	params['threshold'] = 0.0										#  Default to 0.0 threshold.
 	params['detection-threshold'] = 0.0								#  Default to 0.0 threshold.
 	params['minimum-pixels'] = 1									#  Default to 1 pixel threshold.
 	params['relabel-file'] = None									#  No relabeling by default.
@@ -67,6 +72,7 @@ def get_command_line_params():
 	params['hand-coeff'] = 1.0
 	params['one-hot-coeff'] = 6.0
 	params['props-coeff'] = 9.0
+	params['hidden-labels'] = []
 
 	params['result-string'] = None									#  Default to the timestamp.
 	params['load-from'] = None										#  Directory from which enactment files should be loaded into the working directory at runtime.
@@ -78,7 +84,7 @@ def get_command_line_params():
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
 	flags = ['-e', '-db', '-model', \
-	         '-conf', '-map', '-detth', '-minpx', '-relabel', \
+	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', '-hide', \
 	         '-lddir', '-id', '-fair', \
 	         '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
@@ -101,6 +107,8 @@ def get_command_line_params():
 					params['database'] = argval
 				elif argtarget == '-model':
 					params['detection-model'] = argval
+				elif argtarget == '-th':
+					params['threshold'] = min(1.0, max(0.0, float(argval)))
 				elif argtarget == '-detth':
 					params['detection-threshold'] = min(1.0, max(0.0, float(argval)))
 				elif argtarget == '-conf':
@@ -111,6 +119,8 @@ def get_command_line_params():
 					params['map-conf-prob'] = argval
 				elif argtarget == '-relabel':
 					params['relabel-file'] = argval
+				elif argtarget == '-hide':
+					params['hidden-labels'].append(argval)
 				elif argtarget == '-lddir':
 					params['load-from'] = argval
 				elif argtarget == '-id':
@@ -126,7 +136,7 @@ def usage():
 	print('')
 	print('Usage:  python3 classify.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -model training/exported-models/ssd_mobilenet_640x640 -db 10f-split2-stride2-MobileNet0.2-train.db -map MobileNet-th0.2.isomap -relabel relabels.txt -detth 0.2 -lddir MobileNet-th0.2 -id MobileNet-th0.2 -v')
-	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT.isomap -relabel relabels.txt -lddir GT -id GT -v')
+	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT.isomap -relabel relabels.txt -lddir GT -id GT -hide Read\\ \\(C.\\ Panel\\) -v')
 	print('')
 	print('Flags:  -e        Following argument is the name of an enactment on which to perform classification.')
 	print('                  Must have at least one.')
@@ -140,11 +150,16 @@ def usage():
 	print('        -conf     Following string in {' + ', '.join(c.confidence_function_names) + '} indicates which confidence function to use.')
 	print('                  Default is "sum2". Be carefule when changing this; the confidence function should match that which was')
 	print('                  used to compute the probability bins during isotonic regression.')
+	print('        -th       Following real number in [0.0, 1.0] is the threshold to use when classifying actions.')
+	print('                  The default is 0.0.')
 	print('        -relabel  Following argument is the path to a relabeling file, allowing you to rename actions at runtime.')
 	print('        -detth    Following real number in [0.0, 1.0] is the detection score threshold to use when recognizing objects.')
 	print('                  The default is 0.0.')
 	print('        -minpx    Following integer > 0 is the pixel area minimum to use when recognizing objects.')
 	print('                  The default is 1.')
+	print('        -hide     Following string (escaped where necessary) is a label the system should "hide".')
+	print('                  Hidden labels are in the database, and can be recognized; but when they are chosen as the system prediction,.')
+	print('                  hidden labels are changed to no-votes.')
 	print('        -v        Enable verbosity.')
 	print('        -?        Display this message.')
 	return
