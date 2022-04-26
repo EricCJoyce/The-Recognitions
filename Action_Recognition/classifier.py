@@ -387,6 +387,7 @@ class Classifier():
 																	#  training set happens here. Child classes must each handle clearing columns
 																	#  from their respective X_test lists themselves.
 		self.relabelings = {}										#  key: old-label ==> val: new-label
+		self.hidden_labels = {}										#  key: label ==> True
 		self.timing = {}											#  Really only used by the derived classes.
 
 		self.epsilon = 0.000001										#  Prevent divisions by zero.
@@ -815,6 +816,18 @@ class Classifier():
 
 		return stats
 
+	#  When a label is 'hidden', it is still in the DB (y_train), and it can still be recognized.
+	#  However, when selected as the system's prediction, a hidden label becomes a no-vote.
+	def hide_label(self, label):
+		self.hidden_labels[label] = True
+		return
+
+	#  Remove the given 'label' from the table of hidden labels.
+	def unhide_label(self, label):
+		if label in self.hidden_labels:
+			del self.hidden_labels[label]
+		return
+
 	#################################################################
 	#  Vector encoding.                                             #
 	#################################################################
@@ -920,6 +933,7 @@ class Classifier():
 	#################################################################
 	#  Initializers                                                 #
 	#################################################################
+
 	def initialize_stats(self):
 		classification_stats = {}
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[ ( prediction, ground-truth,
@@ -978,19 +992,24 @@ class Classifier():
 	#  Reporting.                                                   #
 	#################################################################
 
-	#  Given 'predictions_truths' is a list of tuples: (predicted label, true label, is fair).
+	#  Given 'predictions_truths' is a list of tuples: ( prediction, ground-truth,
+	#                                                    confidence-of-prediction, probability-of-prediction,
+	#                                                    enactment-source, timestamp, DB-index, fair ).
 	def confusion_matrix(self, predictions_truths, sets='both'):
 		labels = self.labels(sets)
+		labels.append('*')											#  Add the nothing-label, a posteriori.
 		num_classes = len(labels)
 
 		M = np.zeros((num_classes, num_classes), dtype='uint16')
 
 		for pred_gt in predictions_truths:
 			prediction = pred_gt[0]
+			if prediction is None:
+				prediction = '*'
 			ground_truth_label = pred_gt[1]
-			fair = pred_gt[2]
+			fair = pred_gt[-1]
 
-			if prediction is not None and prediction in labels and fair:
+			if prediction in labels and fair:
 				i = labels.index(prediction)
 				if ground_truth_label in labels:
 					j = labels.index(ground_truth_label)
@@ -999,12 +1018,16 @@ class Classifier():
 		return M
 
 	#  Write the confusion matrix to file.
+	#  Given 'predictions_truths' is a list of tuples: ( prediction, ground-truth,
+	#                                                    confidence-of-prediction, probability-of-prediction,
+	#                                                    enactment-source, timestamp, DB-index, fair ).
 	def write_confusion_matrix(self, predictions_truths, file_timestamp=None, sets='both'):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
-		num_classes = self.num_labels(sets)
 		labels = self.labels(sets)
+		labels.append('*')
+		num_classes = len(labels)
 
 		M = self.confusion_matrix(predictions_truths, sets)
 
@@ -1095,19 +1118,20 @@ class Classifier():
 			fh.write('#  ' + ' '.join(sys.argv) + '\n\n')
 
 		train_labels = self.labels('train')							#  List of strings.
-		train_labels.append('*')									#  Append the no vote label.
+		train_labels.append('*')									#  Add the nothing-label, a posteriori.
 
 		fair_test_pred = []											#  Convert all tests into indices into self.labels('train').
 		fair_test_y    = []
 		fair_conf      = []
 		for i in range(0, len(stats['_tests'])):
 			pred_label = stats['_tests'][i][0]
+			if pred_label is None:
+				pred_label = '*'									#  Convert None to the nothing-label.
 			gt_label   = stats['_tests'][i][1]
 			conf       = stats['_tests'][i][2]
 			fair       = stats['_tests'][i][-1]
-			if pred_label is None:
-				pred_label = '*'
 
+			#if pred_label is not None and gt_label in train_labels and fair:
 			if gt_label in train_labels and fair:
 				fair_test_pred.append( train_labels.index(pred_label) )
 				fair_test_y.append(    train_labels.index(gt_label)   )
@@ -1680,6 +1704,8 @@ class AtemporalClassifier(Classifier):
 																	#  Is it above the threshold?
 			if probabilities[tentative_prediction] >= self.threshold:
 				prediction = tentative_prediction
+				if prediction in self.hidden_labels:				#  Is this a hidden label? Then dummy up.
+					prediction = None
 			else:
 				prediction = None
 			t1_stop = time.process_time()							#  Stop timer.
@@ -3132,6 +3158,8 @@ class TemporalClassifier(Classifier):
 					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
 					if tentative_probability >= self.threshold:
 						prediction = tentative_prediction
+						if prediction in self.hidden_labels:		#  Is this a hidden label? Then dummy up.
+							prediction = None
 					else:
 						prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
@@ -3545,6 +3573,8 @@ class TemporalClassifier(Classifier):
 					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
 					if tentative_probability >= self.threshold:
 						prediction = tentative_prediction
+						if prediction in self.hidden_labels:		#  Is this a hidden label? Then dummy up.
+							prediction = None
 					else:
 						prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
