@@ -11,6 +11,7 @@ def main():
 	atemporal = AtemporalClassifier(window_size=params['window'], stride=params['stride'], \
 	                                train=params['training'], divide=params['divide'], test=params['test'], \
 	                                conf_func=params['confidence-function'], threshold=params['threshold'], \
+	                                dtw_diagonal=params['dtw-diagonal'], \
 	                                isotonic_file=params['isotonic-file'], conditions_file=params['conditions-file'], \
 	                                hand_schema=params['hand-schema'], hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], \
 	                                train_portion=params['train-portion'], test_portion=params['test-portion'], \
@@ -74,6 +75,8 @@ def get_command_line_params():
 	params['minimum-length'] = 2
 	params['shuffle'] = False
 
+	params['dtw-diagonal'] = 2.0									#  The Classifier defaults to 2.0 anyway.
+
 	params['color-file'] = None										#  Recognizable-object color look up table.
 	params['render'] = False										#  Rendering, yes or no?
 
@@ -88,7 +91,7 @@ def get_command_line_params():
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
 	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-split', '-splits', '-window', '-stride', \
-	         '-conf', '-th', '-iso', '-cond', '-minlen', '-shuffle', \
+	         '-conf', '-th', '-iso', '-cond', '-minlen', '-shuffle', '-dtw', \
 	         '-schema', '-hand', '-hands', '-prop', '-props', '-relabel', '-color', '-colors', \
 	         '-render', '-V', '-?', '-help', '--help', \
 	         '-User', '-imgw', '-imgh', '-fontsize']
@@ -143,6 +146,8 @@ def get_command_line_params():
 					params['confidence-function'] = argval
 				elif argtarget == '-th':
 					params['threshold'] = float(argval)
+				elif argtarget == '-dtw':
+					params['dtw-diagonal'] = float(argval)
 
 				elif argtarget == '-schema':
 					params['hand-schema'] = argval
@@ -200,6 +205,7 @@ def usage():
 	print('        -conf     Following string indicates which confidence function to use.')
 	print('                  Must be in {' + ', '.join(c.confidence_function_names) + '}. Default is "sum2".')
 	print('        -th       Following real number is the confidence/probability threshold. Default is 0.0.')
+	print('        -dtw      Following real number is the weight to give to diagonal moves in the DTW cost matrix. Default is 2.0.')
 	print('')
 	print('        -relabel  Following argument is the filepath to a relabeling table.')
 	print('        -iso      Following argument is the filepath to an isotonic mapping table.')
