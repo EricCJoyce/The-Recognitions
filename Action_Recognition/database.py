@@ -680,19 +680,25 @@ class Database():
 	#  One door may open, but the signal for closed doors will not go away because adjacent doors in view remain closed.
 	#
 	#  Example: identify all "Close Disconnect (MFB)" snippets that contain a downturn for Disconnect_Open or Disconnect_Unknown.
-	#    db.lambda_identify( db.snippets('Close Disconnect (MFB)'),
-	#                       (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Open') + 12) or
-	#                                    db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Unknown') + 12)) )
+	#    keepers = db.lambda_identify( db.snippets('Close Disconnect (MFB)'),
+	#                                  (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Open') + 12) or
+	#                                               db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Unknown') + 12)) )
+	#    db.drop_all('Close Disconnect (MFB)')
+	#    db.keep('Close Disconnect (MFB)', keepers)
 	#
 	#  Example: identify all "Release (Meter)" snippets that contain a change in either hand's status from 1=grabbing
 	#                                                                 to either 0=open or 2=pointing (or disappeared).
-	#    db.lambda_identify( db.snippets('Release (Meter)'),
-	#                        lambda seq: db.contains_hand_status_change_from(seq, 1) )
+	#    keepers = db.lambda_identify( db.snippets('Release (Meter)'),
+	#                                  lambda seq: db.contains_hand_status_change_from(seq, 1) )
+	#    db.drop_all('Release (Meter)')
+	#    db.keep('Release (Meter)', keepers)
 	#
 	#  Example: identify all "Grab (Meter)" snippets that contain a change in either hand's status from either 0=open or 2=pointing (or disappeared)
 	#                                                                                              to 1=grabbing.
-	#    db.lambda_identify( db.snippets('Grab (Meter)'),
-	#                        lambda seq: db.contains_hand_status_change_to(seq, 1) )
+	#    keepers = db.lambda_identify( db.snippets('Grab (Meter)'),
+	#                                  lambda seq: db.contains_hand_status_change_to(seq, 1) )
+	#    db.drop_all('Grab (Meter)')
+	#    db.keep('Grab (Meter)', keepers)
 	def lambda_identify(self, snippets, condition):
 		passing_indices = []
 		index = 0
