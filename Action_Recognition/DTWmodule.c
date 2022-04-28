@@ -17,7 +17,7 @@
 */
 
 unsigned int build_L2_matrix(double*, unsigned int, double*, unsigned int, unsigned int, double**);
-unsigned int viterbi(unsigned int, unsigned int, double*, double*, unsigned int**, unsigned int**, unsigned int**);
+unsigned int viterbi(unsigned int, unsigned int, double*, double, double*, unsigned int**, unsigned int**, unsigned int**);
 
 /* Given two matrices, Q in Real^q_len-by-d, T in Real^t_len-by-d, compute the L2 distance between
    all pairs of elemtns. Both Q (for query) and T (for template) are sequences of encoded frames.
@@ -226,7 +226,7 @@ static PyObject* L2(PyObject* Py_UNUSED(self), PyObject* args)
    Store the time-warped indices of the query in (*q).
    Store the time-warped indices of the template in (*t).
    Return the length of the path. */
-unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
+unsigned int viterbi(unsigned int rows, unsigned int cols, double* C, double diagonal,
                      double* cost, unsigned int** path, unsigned int** q, unsigned int** t)
   {
     double* T_1;                                                    //  Hold accumulated costs so far.
@@ -265,9 +265,9 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
                 if(left_exists && up_exists)                        //  Compare cost of arriving at 'index' from 'neighbor' = above-left.
                   {
                     neighbor = index - cols - 1;
-                    if(2.0 * C[index] + T_1[neighbor] < T_1[index])
+                    if(diagonal * C[index] + T_1[neighbor] < T_1[index])
                       {
-                        T_1[index] = 2.0 * C[index] + T_1[neighbor];
+                        T_1[index] = diagonal * C[index] + T_1[neighbor];
                         T_2[index] = neighbor;
                       }
                   }
@@ -348,6 +348,7 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C,
   }
 
 /* Receives a list of lists of floats: the cost matrix.
+   Receives a value for the weight of a diagonal move in the cost matrix.
    Returns four objects (in a 4-tuple):
    1.) The cost of the cheapest path   (float)
    2.) The path itself                 (tuple of ints)
@@ -362,6 +363,7 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
     Py_ssize_t sublist_len;
     Py_ssize_t i, j;
 
+    double diagonal;                                                //  Weight for moving diagonally across the cost matrix.
     double* cost;                                                   //  The cost matrix as a row-major array, length of Q by length of T.
     unsigned int cost_rows, cost_cols = 0;                          //  Same dimensions as above, but as uints rather than Py_ssize_ts.
     double total_cost;                                              //  Total cost of the cheapest path.
@@ -374,7 +376,7 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
 
     PyObject* ret;                                                  //  The PyObject to be returned.
 
-    if(!PyArg_ParseTuple(args, "O!", &PyList_Type, &C))
+    if(!PyArg_ParseTuple(args, "O!d", &PyList_Type, &C, &diagonal)) //  Expect arguments: List of lists of floats; (optionally) a double.
       return NULL;
 
     c_rows = PyList_Size(C);                                        //  Save list size: number of frames in Q
@@ -429,7 +431,7 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
           }
       }
 
-    pathLen = viterbi(cost_rows, cost_cols, cost, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    pathLen = viterbi(cost_rows, cost_cols, cost, diagonal, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
     if(!ret)                                                        //  If it failed, clean up before we die.
@@ -488,6 +490,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     Py_ssize_t sublist_len;
     Py_ssize_t i, j;
 
+    double diagonal;                                                //  Weight for moving diagonally across the cost matrix.
     double* query;                                                  //  The query as a row-major array, frames-by-dimensionality.
     unsigned int query_len;                                         //  Length of the outer list of Q.
     double* template;                                               //  The template as a row-major array, frames-by-dimensionality.
@@ -505,7 +508,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
 
     PyObject* ret;                                                  //  The PyObject to be returned.
 
-    if(!PyArg_ParseTuple(args, "O!O!", &PyList_Type, &Q, &PyList_Type, &T))
+    if(!PyArg_ParseTuple(args, "O!O!d", &PyList_Type, &Q, &PyList_Type, &T, &diagonal))
       return NULL;
 
     q_len = PyList_Size(Q);                                         //  Save list size: number of frames in Q
@@ -611,7 +614,7 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
     free(query);
     free(template);
 
-    pathLen = viterbi(query_len, template_len, C, &total_cost, &cost_path, &alignment_a, &alignment_b);
+    pathLen = viterbi(query_len, template_len, C, diagonal, &total_cost, &cost_path, &alignment_a, &alignment_b);
 
     ret = PyTuple_New(4);                                           //  Create a return object: a 4-tuple.
     if(!ret)                                                        //  If it failed, clean up before we die.
