@@ -28,6 +28,7 @@ def main():
 	                              hand_schema=params['hand-schema'], \
 	                              props_coeff=params['props-coeff'], \
 	                              hands_one_hot_coeff=params['one-hot-coeff'], \
+	                              dtw_diagonal=params['dtw-diagonal'], \
 	                              inputs=params['enactments'], \
 	                              min_bbox=params['minimum-pixels'], \
 	                              detection_confidence=params['detection-threshold'], \
@@ -72,6 +73,7 @@ def get_command_line_params():
 	params['hand-coeff'] = 1.0
 	params['one-hot-coeff'] = 6.0
 	params['props-coeff'] = 9.0
+	params['dtw-diagonal'] = 2.0									#  Classifier defaults to 2.0 anyway.
 	params['hidden-labels'] = []
 
 	params['result-string'] = None									#  Default to the timestamp.
@@ -84,7 +86,7 @@ def get_command_line_params():
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
 	flags = ['-e', '-db', '-model', \
-	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', '-hide', \
+	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', '-dtw', '-hide', \
 	         '-lddir', '-id', '-fair', \
 	         '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
@@ -117,6 +119,8 @@ def get_command_line_params():
 					params['minimum-pixels'] = max(1, int(argval))
 				elif argtarget == '-map':
 					params['map-conf-prob'] = argval
+				elif argtarget == '-dtw':
+					params['dtw-diagonal'] = float(argval)
 				elif argtarget == '-relabel':
 					params['relabel-file'] = argval
 				elif argtarget == '-hide':
@@ -157,6 +161,7 @@ def usage():
 	print('                  The default is 0.0.')
 	print('        -minpx    Following integer > 0 is the pixel area minimum to use when recognizing objects.')
 	print('                  The default is 1.')
+	print('        -dtw      Following real number is the weight to give to diagonal moves in the DTW cost matrix. Default is 2.0.')
 	print('        -hide     Following string (escaped where necessary) is a label the system should "hide".')
 	print('                  Hidden labels are in the database, and can be recognized; but when they are chosen as the system prediction,.')
 	print('                  hidden labels are changed to no-votes.')
