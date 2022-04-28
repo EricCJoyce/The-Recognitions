@@ -298,6 +298,13 @@ class Classifier():
 		else:
 			self.confidence_function = 'sum2'						#  Default to 'sum2'
 
+		if 'dtw_diagonal' in kwargs:								#  Were we given a cost for moving diagonally across the cost matrix?
+			assert isinstance(kwargs['dtw_diagonal'], float), \
+			       'Argument \'dtw_diagonal\' passed to Classifier must be a float.'
+			self.diagonal_cost = kwargs['dtw_diagonal']
+		else:
+			self.diagonal_cost = 2.0								#  Default to 2.0.
+
 		if 'verbose' in kwargs:
 			assert isinstance(kwargs['verbose'], bool), \
 			       'Argument \'verbose\' passed to Classifier must be a boolean.'
@@ -633,7 +640,7 @@ class Classifier():
 
 			if self.conditions is None or conditions_passed:		#  Either we have no conditions, or our conditions give us reason to run DTW.
 																	#  What is the distance between this query and this template?
-				dist, _, query_indices, template_indices = DTW.DTW(query, template)
+				dist, _, query_indices, template_indices = DTW.DTW(query, template, self.diagonal_cost)
 
 				if least_cost > dist:								#  A preferable match over all!
 					least_cost = dist								#  Save the cost.
