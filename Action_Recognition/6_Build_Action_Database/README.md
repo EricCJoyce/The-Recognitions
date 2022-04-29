@@ -60,6 +60,7 @@ db.drop_all('Ungrab("Multimeter.RedProbe)')
 db.relabel_from_file('relabels.txt')                                #  Use shorter labels so the confusion matrix is easier to read.
 
 db.drop_all('Open (Safety)')                                        #  Drop because it is under-represented and useless.
+db.drop_all('Open (TFB)')                                           #  Drop because it is under-represented and useless.
 
 db.compute_signal_strength()                                        #  Compute signal strengths.
                                                                     #########################
