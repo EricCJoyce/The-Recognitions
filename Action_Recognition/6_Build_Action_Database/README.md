@@ -62,9 +62,9 @@ db.relabel_from_file('relabels.txt')                                #  Use short
 db.drop_all('Open (Safety)')                                        #  Drop because it is under-represented and useless.
 
 db.compute_signal_strength()                                        #  Compute signal strengths.
-
-db.output('10f-2s-GT-train.db')                                     #  Write a basline DB.
-
+                                                                    #########################
+db.output('10f-2s-GT-train.db')                                     #  Write a basline DB.  #
+                                                                    #########################
                                                                     #  Mitigate Grab-Release ambiguities: admit only actual grabbings.
 keepers = db.lambda_identify( db.snippets('Grab (ArcSuit)'), lambda seq: db.contains_hand_status_change_to(seq, 1) )
 db.drop_all('Grab (ArcSuit)')
@@ -173,8 +173,9 @@ keepers += db.lambda_identify( db.snippets('Open (MFB)'), lambda seq: db.contain
 keepers = list(np.unique(keepers))
 db.drop_all('Open (MFB)')
 db.keep('Open (MFB)', keepers)
-
-db.output('10f-2s-GT-train-curated.db')                             #  Write a curated DB.
+                                                                    #########################
+db.output('10f-split2-stride2-GT-train-curated.db')                 #  Write a curated DB.  #
+                                                                    #########################
 ```
 
 ## Inputs
