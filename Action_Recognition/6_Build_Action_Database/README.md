@@ -156,12 +156,6 @@ keepers = list(np.unique(keepers))
 db.drop_all('Open (Reg)')
 db.keep('Open (Reg)', keepers)
                                                                     #  Mitigate Open-Close ambiguities: admit only snippets containing a downturn in Closed or Unknown props + snippets containing an upturn in Open props.
-keepers = db.lambda_identify( db.snippets('Open (TFB)'), (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('TransferFeederBox_Closed') + 12) or db.contains_downturn(seq, db.recognizable_objects.index('TransferFeederBox_Unknown') + 12)) )
-keepers += db.lambda_identify( db.snippets('Open (TFB)'), lambda seq: db.contains_upturn(seq, db.recognizable_objects.index('TransferFeederBox_Open') + 12) )
-keepers = list(np.unique(keepers))
-db.drop_all('Open (TFB)')
-db.keep('Open (TFB)', keepers)
-                                                                    #  Mitigate Open-Close ambiguities: admit only snippets containing a downturn in Closed or Unknown props + snippets containing an upturn in Open props.
 keepers = db.lambda_identify( db.snippets('Open (BB)'), (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('BackBreaker_Closed') + 12) or db.contains_downturn(seq, db.recognizable_objects.index('BackBreaker_Unknown') + 12)) )
 keepers += db.lambda_identify( db.snippets('Open (BB)'), lambda seq: db.contains_upturn(seq, db.recognizable_objects.index('BackBreaker_Open') + 12) )
 keepers = list(np.unique(keepers))
