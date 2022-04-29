@@ -177,6 +177,11 @@ class ProcessedEnactment():
 	def num_frames(self):
 		return len(self.frames)
 
+	#  Return the length in frames of the index-th action.
+	def action_len(self, index):
+		video_frames = [y[1]['file'] for y in sorted([x for x in self.frames.items()], key=lambda x: x[0])]
+		return video_frames.index(self.actions[index][4]) - video_frames.index(self.actions[index][2])
+
 	#  Print out a formatted list of this enactment's actions.
 	#  Actions are label intervals: from whenever one begins to whenever it ends.
 	def itemize_actions(self):
@@ -246,17 +251,26 @@ class ProcessedEnactment():
 		time_stamps = sorted([x[0] for x in self.frames.items()])
 
 		snippet_actions = []										#  To be returned: a list of action tuples.
-																	#  Action = (label, start time, start frame, end time, end frame).
+																	#  Action = (label, start-time, start-frame, end-time, end-frame).
 		for index in indices:
 																	#  Get a list of all frame indices for this action.
 																	#  (The +1 at the end ensures that we take the last snippet.)
 			frame_indices = range(video_frames.index(self.actions[index][2]), video_frames.index(self.actions[index][4]) + 1)
-			for i in range(0, len(frame_indices) - window_length, stride):
+
+			if window_length > len(frame_indices):					#  CAUTION!!!  This allows you to take a snippet that extends past the labeled frames!!
+																	#  You'll include some frames of the adjacent label!!!
 				snippet_actions.append( (self.actions[index][0],                           \
-				                         time_stamps[ frame_indices[i] ],                  \
-				                         video_frames[ frame_indices[i] ],                 \
-				                         time_stamps[ frame_indices[i + window_length] ],  \
-				                         video_frames[ frame_indices[i + window_length] ]) )
+				                         time_stamps[  frame_indices[0]                 ], \
+				                         video_frames[ frame_indices[0]                 ], \
+				                         time_stamps[  frame_indices[0] + window_length ], \
+				                         video_frames[ frame_indices[0] + window_length ]) )
+			else:
+				for i in range(0, len(frame_indices) - window_length, stride):
+					snippet_actions.append( (self.actions[index][0],                           \
+					                         time_stamps[  frame_indices[i]                 ], \
+					                         video_frames[ frame_indices[i]                 ], \
+					                         time_stamps[  frame_indices[i + window_length] ], \
+					                         video_frames[ frame_indices[i + window_length] ]) )
 
 		return snippet_actions
 
@@ -265,6 +279,7 @@ class ProcessedEnactment():
 	def snippets_from_frames(self, window_length, stride):
 		video_frames = [y[1]['file'] for y in sorted([x for x in self.frames.items()], key=lambda x: x[0])]
 		time_stamps = sorted([x[0] for x in self.frames.items()])
+
 		num_frames = len(time_stamps)
 
 		snippet_actions = []										#  To be returned: a list of Action objects.
@@ -353,7 +368,7 @@ class Classifier():
 			       'Argument \'hand_schema\' passed to Classifier must be a string in {' + ', '.join(self.hand_schema_names) + '}.'
 			self.hand_schema = kwargs['hand_schema']
 		else:
-			self.hand_schema = 'left-right'
+			self.hand_schema = 'strong-hand'						#  Default to strong-hand.
 
 		if 'presence_threshold' in kwargs:							#  Were we given an object presence threshold?
 			assert isinstance(kwargs['presence_threshold'], float) and kwargs['presence_threshold'] > 0.0 and kwargs['presence_threshold'] <= 1.0, \
@@ -1576,7 +1591,7 @@ class AtemporalClassifier(Classifier):
 			       'Argument \'minimum_length\' passed to AtemporalClassifier must be an int > 0.'
 			self.minimum_length = kwargs['minimum_length']
 		else:
-			self.minimum_length = 2
+			self.minimum_length = self.window_size					#  Default to the window size.
 
 		if 'shuffle' in kwargs:										#  Were we given an explicit order to shuffle the divided set?
 			assert isinstance(kwargs['shuffle'], bool), 'Argument \'shuffle\' passed to AtemporalClassifier must be a Boolean.'
@@ -1608,8 +1623,10 @@ class AtemporalClassifier(Classifier):
 		for enactment in train_list:
 			pe = ProcessedEnactment(enactment, verbose=self.verbose)
 			for i in range(0, pe.num_actions()):
+				action_len = pe.action_len(i)						#  Get the length of this action in frames.
+				if action_len >= self.minimum_length:
 																	#  Mark this action in this enactment for the training set.
-				self.allocation[ (enactment, i, pe.actions[i][0]) ] = 'train'
+					self.allocation[ (enactment, i, pe.actions[i][0]) ] = 'train'
 		if self.verbose and len(train_list) > 0:
 			print('')
 
@@ -1618,8 +1635,10 @@ class AtemporalClassifier(Classifier):
 		for enactment in test_list:
 			pe = ProcessedEnactment(enactment, verbose=self.verbose)
 			for i in range(0, pe.num_actions()):
+				action_len = pe.action_len(i)						#  Get the length of this action in frames.
+				if action_len >= self.minimum_length:
 																	#  Mark this action in this enactment for the test set.
-				self.allocation[ (enactment, i, pe.actions[i][0]) ] = 'test'
+					self.allocation[ (enactment, i, pe.actions[i][0]) ] = 'test'
 		if self.verbose and len(test_list) > 0:
 			print('')
 
@@ -1632,9 +1651,11 @@ class AtemporalClassifier(Classifier):
 			for enactment in divide_list:							#                      (enactment-name, action-index) ]
 				pe = ProcessedEnactment(enactment, verbose=self.verbose)
 				for i in range(0, pe.num_actions()):
-					if pe.actions[i][0] not in label_accumulator:
-						label_accumulator[ pe.actions[i][0] ] = []
-					label_accumulator[ pe.actions[i][0] ].append( (enactment, i) )
+					action_len = pe.action_len(i)					#  Get the length of this action in frames.
+					if action_len >= self.minimum_length:
+						if pe.actions[i][0] not in label_accumulator:
+							label_accumulator[ pe.actions[i][0] ] = []
+						label_accumulator[ pe.actions[i][0] ].append( (enactment, i) )
 
 			if shuffle:
 				for label in label_accumulator.keys():
@@ -1766,14 +1787,14 @@ class AtemporalClassifier(Classifier):
 		#  (Re)set the data set attributes.                         #
 		#############################################################
 		if sets == 'train' or sets == 'both':
-			self.X_train = []										#  To become a list of lists of vectors
-			self.y_train = []										#  To become a list of lables (strings)
-			self.train_sample_lookup = {}
+			self.X_train = []										#  To become a list of lists of vectors.
+			self.y_train = []										#  To become a list of lables (strings).
+			self.train_sample_lookup = {}							#  Be able to look up which training-set sample matched.
 
 		if sets == 'test' or sets == 'both':
-			self.X_test = []										#  To become a list of lists of vectors
-			self.y_test = []										#  To become a list of lables (strings)
-			self.test_sample_lookup = {}
+			self.X_test = []										#  To become a list of lists of vectors.
+			self.y_test = []										#  To become a list of lables (strings).
+			self.test_sample_lookup = {}							#  Be able to look up which test-set sample matched.
 
 		#############################################################
 		#  Make sure that all ProcessedEnactments align.            #
@@ -1793,9 +1814,14 @@ class AtemporalClassifier(Classifier):
 			rev_allocation['train'] = []							#                                                              ...
 		if sets == 'test' or sets == 'both':						#                                        (enactment-name, action-index, action-label) ]
 			rev_allocation['test'] = []
-		for enactment_action, set_name in self.allocation.items():
+
+		for enactment_action, set_name in self.allocation.items():	#  Build the reverse lookup.
 			if set_name in rev_allocation:
 				rev_allocation[set_name].append(enactment_action)
+
+		#############################################################
+		#  Create snippets.                                         #
+		#############################################################
 
 		if 'train' in rev_allocation and len(rev_allocation['train']) > 0:
 			if self.verbose:
@@ -1806,27 +1832,33 @@ class AtemporalClassifier(Classifier):
 			ctr = 0													#  Count through allocations.
 			sample_ctr = 0											#  Count through snippets.
 
-			for enactment_action in rev_allocation['train']:
+			for enactment_action in rev_allocation['train']:		#  For each tuple (enactment-name, action-index, action-label)...
 				enactment_name = enactment_action[0]
 				action_index = enactment_action[1]
 				action_label = enactment_action[2]
 
 				pe = ProcessedEnactment(enactment_name, verbose=False)
-				enactment_frames = pe.get_frames()					#  Retrieve a list of tuples: (time stamp, frame dictionary).
-																	#  Dictionary has keys 'file', 'ground-truth-label', and 'vector'.
-																	#  I don't trust the fidelity of float-->str-->float conversions.
-																	#  Separate frame file paths and use these to index into 'enactment_frames'.
+																	#  List of tuples: ( float(timestamp), {key:'file'               ==> val:file-path,
+				enactment_frames = pe.get_frames()					#                                       key:'ground-truth-label' ==> val:label (incl. "*"),
+																	#                                       key:'vector'             ==> val:vector} ), ...
+																	#  Separate frame file-paths and use these to index into 'enactment_frames'.
+																	#  (Avoids float-->str-->float errors.)
 				video_frames = [x[1]['file'] for x in enactment_frames]
+
 				snippets = pe.snippets_from_action(self.window_size, self.stride, action_index)
-				for snippet in snippets:							#  Each 'snippet' = (label, start time, start frame, end time, end frame).
+				for snippet in snippets:							#  Each 'snippet' = (label, start-time, start-frame, end-time, end-frame).
 					seq = []
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
-						vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
+						vec = enactment_frames[ video_frames.index(snippet[2]) + i ][1]['vector'][:]
+
 						if self.hand_schema == 'strong-hand':		#  Re-arrange for "strong-hand-first" encoding?
 							vec = self.strong_hand_encode(vec)
+																	#  Apply subvector coefficients.
 						seq.append( self.apply_vector_coefficients(vec) )
+
 					self.X_train.append( seq )						#  Append the snippet sequence.
 					self.y_train.append( action_label )				#  Append ground-truth-label.
+
 					self.train_sample_lookup[sample_ctr] = (enactment_name, snippet[1], snippet[2], snippet[3], snippet[4])
 					sample_ctr += 1
 
@@ -1860,21 +1892,27 @@ class AtemporalClassifier(Classifier):
 				action_label = enactment_action[2]
 
 				pe = ProcessedEnactment(enactment_name, verbose=False)
-				enactment_frames = pe.get_frames()					#  Retrieve a list of tuples: (time stamp, frame dictionary).
-																	#  Dictionary has keys 'file', 'ground-truth-label', and 'vector'.
-																	#  I don't trust the fidelity of float-->str-->float conversions.
-																	#  Separate frame file paths and use these to index into 'enactment_frames'.
+																	#  List of tuples: ( float(timestamp), {key:'file'               ==> val:file-path,
+				enactment_frames = pe.get_frames()					#                                       key:'ground-truth-label' ==> val:label (incl. "*"),
+																	#                                       key:'vector'             ==> val:vector} ), ...
+																	#  Separate frame file-paths and use these to index into 'enactment_frames'.
+																	#  (Avoids float-->str-->float errors.)
 				video_frames = [x[1]['file'] for x in enactment_frames]
+
 				snippets = pe.snippets_from_action(self.window_size, self.stride, action_index)
 				for snippet in snippets:							#  Each 'snippet' = (label, start time, start frame, end time, end frame).
 					seq = []
 					for i in range(0, self.window_size):			#  Build the snippet sequence.
-						vec = enactment_frames[video_frames.index(snippet[2]) + i][1]['vector'][:]
+						vec = enactment_frames[ video_frames.index(snippet[2]) + i ][1]['vector'][:]
+
 						if self.hand_schema == 'strong-hand':		#  Re-arrange for "strong-hand-first" encoding?
 							vec = self.strong_hand_encode(vec)
+																	#  Apply subvector coefficients.
 						seq.append( self.apply_vector_coefficients(vec) )
+
 					self.X_test.append( seq )						#  Append the snippet sequence.
 					self.y_test.append( action_label )				#  Append ground-truth-label.
+
 					self.test_sample_lookup[sample_ctr] = (enactment_name, snippet[1], snippet[2], snippet[3], snippet[4])
 					sample_ctr += 1
 
@@ -1892,6 +1930,10 @@ class AtemporalClassifier(Classifier):
 
 			if self.verbose:
 				print('')
+
+		#############################################################
+		#  Check alignments.                                        #
+		#############################################################
 
 		assert len(recognizable_object_alignment.keys()) == 1, \
 		       'ERROR: The objects recognizable in the enactments given to AtemporalClassifier() do not align.'
@@ -2402,6 +2444,7 @@ class AtemporalClassifier(Classifier):
 		return
 
 	#  Write the current data set allocation to file.
+	#  Call this BEFORE calling .commit().
 	def load_data_split(self, file_name='data-split.txt'):
 		if self.verbose:
 			print('>>> Loading data split from "' + file_name + '".')
