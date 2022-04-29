@@ -69,7 +69,7 @@ class Database():
 			e = ProcessedEnactment(enactment, verbose=False)
 			for i in range(0, e.num_actions()):
 				if e.action_len(i) >= self.snippet_size:			#  Only admit actions of size sufficient to make at least one snippet.
-					num += len(e.actions)
+					num += 1
 		prev_ctr = 0
 		ctr = 0
 		for enactment in self.enactments:
