@@ -67,51 +67,55 @@ class Database():
 		num = 0
 		for enactment in self.enactments:
 			e = ProcessedEnactment(enactment, verbose=False)
-			num += len(e.actions)
+			for i in range(0, e.num_actions()):
+				if e.action_len(i) >= self.snippet_size:			#  Only admit actions of size sufficient to make at least one snippet.
+					num += len(e.actions)
 		prev_ctr = 0
 		ctr = 0
 		for enactment in self.enactments:
 			e = ProcessedEnactment(enactment, verbose=False)
 			action_ctr = 0
-			for action in e.actions:								#  Action = (label, start time, start frame, end time, end frame).
-				label       = action[0]
-				start_time  = action[1]
-				start_frame = action[2]
-				end_time    = action[3]
-				end_frame   = action[4]
+			for i in range(0, e.num_actions()):
+				if e.action_len(i) >= self.snippet_size:			#  Only admit actions of size sufficient to make at least one snippet.
+					action = e.actions[i]							#  Action = (label, start time, start frame, end time, end frame).
+					label       = action[0]
+					start_time  = action[1]
+					start_frame = action[2]
+					end_time    = action[3]
+					end_frame   = action[4]
 																	#  If we are not wholesale omitting this action (several snippets), this enactment.
-				if (enactment, action_ctr) not in self.dropped_actions:
-					for snippet in e.snippets_from_action(self.snippet_size, self.stride, action_ctr):
-						snippet_label       = snippet[0]
-						snippet_start_time  = snippet[1]
-						snippet_start_frame = snippet[2]
-						snippet_end_time    = snippet[3]
-						snippet_end_frame   = snippet[4]
-						snippet_tuple = (e.enactment_name, snippet_start_time, snippet_start_frame, snippet_end_time, snippet_end_frame)
+					if (enactment, action_ctr) not in self.dropped_actions:
+						for snippet in e.snippets_from_action(self.snippet_size, self.stride, action_ctr):
+							snippet_label       = snippet[0]
+							snippet_start_time  = snippet[1]
+							snippet_start_frame = snippet[2]
+							snippet_end_time    = snippet[3]
+							snippet_end_frame   = snippet[4]
+							snippet_tuple = (e.enactment_name, snippet_start_time, snippet_start_frame, snippet_end_time, snippet_end_frame)
 
-						if snippet_label not in self.Xy:
-							self.Xy[snippet_label] = {}
-							self.Xy[snippet_label]['actions'] = []
-							self.Xy[snippet_label]['mean-signal-strength'] = []
-							self.Xy[snippet_label]['left-hand-strength'] = []
-							self.Xy[snippet_label]['right-hand-strength'] = []
+							if snippet_label not in self.Xy:
+								self.Xy[snippet_label] = {}
+								self.Xy[snippet_label]['actions'] = []
+								self.Xy[snippet_label]['mean-signal-strength'] = []
+								self.Xy[snippet_label]['left-hand-strength'] = []
+								self.Xy[snippet_label]['right-hand-strength'] = []
 
-						self.Xy[snippet_label]['actions'].append( snippet_tuple )
+							self.Xy[snippet_label]['actions'].append( snippet_tuple )
 																	#  Computing signal strengths takes time!
 																	#  Only do it if requested.
-						self.Xy[snippet_label]['mean-signal-strength'].append(0.0)
-						self.Xy[snippet_label]['left-hand-strength'].append(0.0)
-						self.Xy[snippet_label]['right-hand-strength'].append(0.0)
+							self.Xy[snippet_label]['mean-signal-strength'].append(0.0)
+							self.Xy[snippet_label]['left-hand-strength'].append(0.0)
+							self.Xy[snippet_label]['right-hand-strength'].append(0.0)
 
-				action_ctr += 1
+					action_ctr += 1
 
-				if self.verbose:
-					if int(round(float(ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
-						prev_ctr = int(round(float(ctr) / float(num - 1) * float(max_ctr)))
-						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num - 1) * 100.0))) + '%]')
-						sys.stdout.flush()
+					if self.verbose:
+						if int(round(float(ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+							prev_ctr = int(round(float(ctr) / float(num - 1) * float(max_ctr)))
+							sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num - 1) * 100.0))) + '%]')
+							sys.stdout.flush()
 
-				ctr += 1
+					ctr += 1
 
 		self.keep_all()												#  Initially, set everything to be kept.
 		self.count()												#  (Re)count.
