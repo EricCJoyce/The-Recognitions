@@ -965,7 +965,14 @@ class Classifier():
 																	#                         confidence-of-prediction, probability-of-pred,
 																	#                         enactment-source, timestamp, DB-index, fair ),
 																	#                       ... ]
-
+		classification_stats['_test-conf'] = []						#  key:_test-conf ==> val:[ (c_0, c_1, c_2, ..., c_N) for test 0,
+																	#                           (c_0, c_1, c_2, ..., c_N) for test 1,
+																	#                           (c_0, c_1, c_2, ..., c_N) for test 2,
+																	#                           ... ]
+		classification_stats['_test-prob'] = []						#  key:_test-prob ==> val:[ (p_0, p_1, p_2, ..., p_N) for test 0,
+																	#                           (p_0, p_1, p_2, ..., p_N) for test 1,
+																	#                           (p_0, p_1, p_2, ..., p_N) for test 2,
+																	#                           ... ]
 		classification_stats['_conf'] = []							#  key:_conf  ==> val:[ (confidence-for-label, label, ground-truth,
 																	#                        source-enactment, first-snippet-timestamp, final-snippet-timestamp),
 																	#                       (confidence-for-label, label, ground-truth,
@@ -1121,7 +1128,14 @@ class Classifier():
 	#                                                      confidence-of-prediction, probability-of-prediction,
 	#                                                      enactment-source, timestamp, DB-index, fair ),
 	#                                                    ... ]
-	#
+	#                             key:'_test-conf' ==> val:[ (c_0, c_1, c_2, ..., c_N) for test 0,
+	#                                                        (c_0, c_1, c_2, ..., c_N) for test 1,
+	#                                                        (c_0, c_1, c_2, ..., c_N) for test 2,
+	#                                                        ... ]
+	#                             key:'_test-prob' ==> val:[ (p_0, p_1, p_2, ..., p_N) for test 0,
+	#                                                        (p_0, p_1, p_2, ..., p_N) for test 1,
+	#                                                        (p_0, p_1, p_2, ..., p_N) for test 2,
+	#                                                        ... ]
 	#                             key:'_conf'  ==> val:[ (confidence, label, ground-truth), (confidence, label, ground-truth), ... ]
 	#
 	#                             key:'_prob'  ==> val:[ (probability, label, ground-truth), (probability, label, ground-truth), ... ]
@@ -1181,7 +1195,7 @@ class Classifier():
 		fh.write('Per-Class:\n')
 		fh.write('==========\n')
 		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
-		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_conf', '_prob', '*']] ):
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
 			if v['support'] > 0:									#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
 				tn = np.sum(np.delete(np.delete(conf_mat, train_labels.index(k), axis=0), train_labels.index(k), axis=1))
 				tp = conf_mat[train_labels.index(k), train_labels.index(k)]
@@ -1265,7 +1279,7 @@ class Classifier():
 		fh.write('Raw Results:\n')
 		fh.write('============\n')
 		fh.write('\tTP\tFP\tFN\tSupport\tTests\n')
-		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_conf', '_prob', '*']] ):
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
 			fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t')
 			fh.write(str(len( [x for x in stats['_tests'] if x[1] == k and x[-1]] )) + '\n')
 		fh.write('\n')
@@ -1275,10 +1289,40 @@ class Classifier():
 		for label in train_labels:
 			fh.write(label + '\t' + str(len( [x for x in stats['_tests'] if x[1] == label and x[-1]] )) + '\n')
 		fh.write('\n')
+		fh.close()
 
-		fh.write('Complete Itemization:\n')
-		fh.write('Pred.    G.T.    Conf.    Prob.    Enactment    Time    DB-Index    fair/unfair\n')
-		fh.write('===============================================================================\n')
+		self.write_test_itemization(stats, file_timestamp)			#  Log test itemization.
+		self.write_per_test_confidences(stats, file_timestamp)		#  Log per-test confidences.
+		self.write_per_test_probabilities(stats, file_timestamp)	#  Log per-test probabilities.
+
+		return
+
+	#  Write an itemization of test results in the order in which they were performed.
+	#  'stats' is dictionary with key:'_tests' ==> val:[ ( prediction, ground-truth,
+	#                                                      confidence-of-prediction, probability-of-prediction,
+	#                                                      enactment-source, timestamp, DB-index, fair ),
+	#                                                    ( prediction, ground-truth,
+	#                                                      confidence-of-prediction, probability-of-prediction,
+	#                                                      enactment-source, timestamp, DB-index, fair ),
+	#                                                    ... ]
+	def write_test_itemization(self, stats, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		train_labels = self.labels('train')							#  List of strings.
+
+		fh = open('test-itemization_' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier test itemization completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
+			fh.write('#  COMMAND:\n')
+			fh.write('#    ' + ' '.join(sys.argv) + '\n')
+		fh.write('#  RECOGNIZABLE ACTIONS:\n')
+		fh.write('#    ' + '\t'.join(train_labels) + '\n')
+		fh.write('#  FORMAT per LINE:\n')
+		fh.write('#    Pred.    G.T.    Conf.    Prob.    Enactment    Time    DB-Index    fair/unfair\n')
+
+		train_labels.append('*')									#  Add the nothing-label, a posteriori.
+
 		for i in range(0, len(stats['_tests'])):
 			if stats['_tests'][i][0] is None:						#  [0]  Prediction
 				pred = '*'
@@ -1296,8 +1340,58 @@ class Classifier():
 				fh.write('fair\n')
 			else:
 				fh.write('unfair\n')
+		fh.close()
+
+		return
+
+	#  'stats' is dictionary with key:'_test-conf' ==> val:[ (c_0, c_1, c_2, ..., c_N) for test 0,
+	#                                                        (c_0, c_1, c_2, ..., c_N) for test 1,
+	#                                                        (c_0, c_1, c_2, ..., c_N) for test 2,
+	#                                                        ... ]
+	def write_per_test_confidences(self, stats, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		train_labels = self.labels('train')							#  List of strings.
+
+		fh = open('test-confidences_' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier test confidences per class, completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
+			fh.write('#  COMMAND:\n')
+			fh.write('#    ' + ' '.join(sys.argv) + '\n')
+		fh.write('#  RECOGNIZABLE ACTIONS:\n')
+		fh.write('#    ' + '\t'.join(train_labels) + '\n')
+
+		for conf in stats['_test-conf']:
+			fh.write('\t'.join([str(x) for x in conf]) + '\n')
 
 		fh.close()
+
+		return
+
+	#  'stats' is dictionary with key:'_test-prob' ==> val:[ (p_0, p_1, p_2, ..., p_N) for test 0,
+	#                                                        (p_0, p_1, p_2, ..., p_N) for test 1,
+	#                                                        (p_0, p_1, p_2, ..., p_N) for test 2,
+	#                                                        ... ]
+	def write_per_test_probabilities(self, stats, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		train_labels = self.labels('train')							#  List of strings.
+
+		fh = open('test-probabilities_' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier test probabilities per class, completed at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		if len(sys.argv) > 1:										#  Was this called from a script? Save the command-line call.
+			fh.write('#  COMMAND:\n')
+			fh.write('#    ' + ' '.join(sys.argv) + '\n')
+		fh.write('#  RECOGNIZABLE ACTIONS:\n')
+		fh.write('#    ' + '\t'.join(train_labels) + '\n')
+
+		for prob in stats['_test-prob']:
+			fh.write('\t'.join([str(x) for x in prob]) + '\n')
+
+		fh.close()
+
 		return
 
 	#  Look for:
@@ -1741,14 +1835,13 @@ class AtemporalClassifier(Classifier):
 
 																	#  For the Atemporal Classifier, ground_truth_label will never be None.
 			classification_stats = self.update_stats(prediction, ground_truth_label, fair, classification_stats)
-			classification_stats['_tests'].append( (prediction, \
-			                                        ground_truth_label, \
-			                                        confidences[tentative_prediction], \
-			                                        probabilities[tentative_prediction], \
-			                                        'Test-snippet', \
-			                                        i, \
+			classification_stats['_tests'].append( (prediction, ground_truth_label, \
+			                                        confidences[tentative_prediction], probabilities[tentative_prediction], \
+			                                        'Test-snippet', i, \
 			                                        metadata[tentative_prediction]['db-index'], \
 			                                        fair) )
+			classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
+			classification_stats['_test-prob'].append( tuple([probabilities[x] for x in self.labels('train')]) )
 
 			if self.render:											#  Put the query and the template side by side.
 				if prediction is not None:							#  If there's no prediction, there is nothing to render.
@@ -3217,14 +3310,13 @@ class TemporalClassifier(Classifier):
 
 					classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
 																	#  Whether or not it's skipped, put it on record.
-					classification_stats['_tests'].append( (prediction, \
-					                                        ground_truth_label, \
-					                                        confidences[tentative_prediction], \
-					                                        probabilities[tentative_prediction], \
-					                                        enactment_input, \
-					                                        time_stamp_buffer[frame_ctr], \
+					classification_stats['_tests'].append( (prediction, ground_truth_label, \
+					                                        confidences[tentative_prediction], tentative_probability, \
+					                                        enactment_input, time_stamp_buffer[frame_ctr], \
 					                                        metadata[tentative_prediction]['db-index'], \
 					                                        fair) )
+					classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
+					classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -3632,14 +3724,13 @@ class TemporalClassifier(Classifier):
 
 					classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
 																	#  Whether or not it's skipped, put it on record.
-					classification_stats['_tests'].append( (prediction, \
-					                                        ground_truth_label, \
-					                                        confidences[tentative_prediction], \
-					                                        probabilities[tentative_prediction], \
-					                                        enactment_input, \
-					                                        time_stamp_buffer[frame_ctr], \
+					classification_stats['_tests'].append( (prediction, ground_truth_label, \
+					                                        confidences[tentative_prediction], tentative_probability, \
+					                                        enactment_input, time_stamp_buffer[frame_ctr], \
 					                                        metadata[tentative_prediction]['db-index'], \
 					                                        fair) )
+					classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
+					classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
