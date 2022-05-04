@@ -1055,7 +1055,7 @@ class Classifier():
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
 		labels = self.labels(sets)
-		labels.append('*')
+		labels.append('*')											#  Add the nothing-label, a posteriori.
 		num_classes = len(labels)
 
 		M = self.confusion_matrix(predictions_truths, sets)
