@@ -12,37 +12,13 @@ For these reasons it was difficult to create a single script for this repository
 
 ```
 from database import *
-db = Database(stride=2, enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
+db = Database(stride=2, enactments=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], verbose=True)
 
 db.itemize_actions(['GT/Enactment7'])                               #  Some actions are just no good.
-                                                                    #  We spotted several in Enactment7 while reviewing the video.
-db.drop_enactment_action('GT/Enactment7', 0)
-db.drop_enactment_action('GT/Enactment7', 1)
-db.drop_enactment_action('GT/Enactment7', 2)
-db.drop_enactment_action('GT/Enactment7', 3)
-db.drop_enactment_action('GT/Enactment7', 4)
-db.drop_enactment_action('GT/Enactment7', 5)
-db.drop_enactment_action('GT/Enactment7', 6)
-db.drop_enactment_action('GT/Enactment7', 7)
-db.drop_enactment_action('GT/Enactment7', 8)
-db.drop_enactment_action('GT/Enactment7', 9)
-db.drop_enactment_action('GT/Enactment7', 10)
-db.drop_enactment_action('GT/Enactment7', 11)
-db.drop_enactment_action('GT/Enactment7', 12)
-db.drop_enactment_action('GT/Enactment7', 13)
-db.drop_enactment_action('GT/Enactment7', 14)
-db.drop_enactment_action('GT/Enactment7', 15)
-db.drop_enactment_action('GT/Enactment7', 18)
-db.drop_enactment_action('GT/Enactment7', 19)
-db.drop_enactment_action('GT/Enactment7', 20)
-db.drop_enactment_action('GT/Enactment7', 21)
-db.drop_enactment_action('GT/Enactment7', 22)
-db.drop_enactment_action('GT/Enactment7', 23)
-db.drop_enactment_action('GT/Enactment7', 24)
-db.drop_enactment_action('GT/Enactment7', 25)
-db.drop_enactment_action('GT/Enactment1', 21)                       #  Drop because hand is obscured.
-db.drop_enactment_action('GT/Enactment1', 23)                       #  Drop because hand is obscured.
-db.drop_enactment_action('GT/Enactment1', 24)                       #  Drop because hand is obscured.
+                                                                    #  We spotted several in Enactment7 and Enactment8 while reviewing the video.
+db.drop_enactment_action('GT/Enactment1', 21)                       #  Drop this action because hand is obscured.
+db.drop_enactment_action('GT/Enactment1', 23)                       #  Drop this action because hand is obscured.
+db.drop_enactment_action('GT/Enactment1', 24)                       #  Drop this action because hand is obscured.
 
 db.commit()                                                         #  Chop into snippets.
 
@@ -60,6 +36,7 @@ db.drop_all('Ungrab("Multimeter.RedProbe)')
 db.relabel_from_file('relabels.txt')                                #  Use shorter labels so the confusion matrix is easier to read.
 
 db.drop_all('Open (Safety)')                                        #  Drop because it is under-represented and useless.
+db.drop_all('Open Dcnnct (TFB)')                                    #  Drop because it is under-represented and useless.
 db.drop_all('Open (TFB)')                                           #  Drop because it is under-represented and useless.
 
 db.compute_signal_strength()                                        #  Compute signal strengths.
@@ -139,12 +116,6 @@ keepers = list(np.unique(keepers))
 db.drop_all('Close (Reg)')
 db.keep('Close (Reg)', keepers)
                                                                     #  Mitigate Open-Close ambiguities: admit only snippets containing a downturn in Closed or Unknown props + snippets containing an upturn in Open props.
-keepers = db.lambda_identify( db.snippets('Open Dcnnct (TFB)'), (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Closed') + 12) or db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Unknown') + 12)) )
-keepers += db.lambda_identify( db.snippets('Open Dcnnct (TFB)'), lambda seq: db.contains_upturn(seq, db.recognizable_objects.index('Disconnect_Open') + 12) )
-keepers = list(np.unique(keepers))
-db.drop_all('Open Dcnnct (TFB)')
-db.keep('Open Dcnnct (TFB)', keepers)
-                                                                    #  Mitigate Open-Close ambiguities: admit only snippets containing a downturn in Closed or Unknown props + snippets containing an upturn in Open props.
 keepers = db.lambda_identify( db.snippets('Open Dcnnct (MFB)'), (lambda seq: db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Closed') + 12) or db.contains_downturn(seq, db.recognizable_objects.index('Disconnect_Unknown') + 12)) )
 keepers += db.lambda_identify( db.snippets('Open Dcnnct (MFB)'), lambda seq: db.contains_upturn(seq, db.recognizable_objects.index('Disconnect_Open') + 12) )
 keepers = list(np.unique(keepers))
@@ -169,7 +140,7 @@ keepers = list(np.unique(keepers))
 db.drop_all('Open (MFB)')
 db.keep('Open (MFB)', keepers)
                                                                     #########################
-db.output('10f-split2-stride2-GT-train-curated.db')                 #  Write a curated DB.  #
+db.output('10f-2s-GT-train-curated.db')                             #  Write a curated DB.  #
                                                                     #########################
 ```
 
