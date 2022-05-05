@@ -305,6 +305,19 @@ class Classifier():
 	def __init__(self, **kwargs):
 		self.confidence_function_names = ['sum2', 'sum3', 'sum4', 'sum5', 'n-min-obsv', 'min-obsv', 'max-marg', '2over1']
 		self.hand_schema_names = ['left-right', 'strong-hand']
+		self.hand_subvector_codes = {}
+		self.hand_subvector_codes['LHx'] = 0
+		self.hand_subvector_codes['LHy'] = 1
+		self.hand_subvector_codes['LHz'] = 2
+		self.hand_subvector_codes['LH0'] = 3
+		self.hand_subvector_codes['LH1'] = 4
+		self.hand_subvector_codes['LH2'] = 5
+		self.hand_subvector_codes['RHx'] = 6
+		self.hand_subvector_codes['RHy'] = 7
+		self.hand_subvector_codes['RHz'] = 8
+		self.hand_subvector_codes['RH0'] = 9
+		self.hand_subvector_codes['RH1'] = 10
+		self.hand_subvector_codes['RH2'] = 11
 
 		if 'conf_func' in kwargs:									#  Were we given a confidence function?
 			assert isinstance(kwargs['conf_func'], str) and kwargs['conf_func'] in self.confidence_function_names, \
@@ -338,12 +351,12 @@ class Classifier():
 			self.load_isotonic_map(kwargs['isotonic_file'])
 		else:
 			self.isotonic_map = None
-																	#  Were we given a cut-off conditions file?
-		if 'conditions_file' in kwargs and kwargs['conditions_file'] is not None:
-			assert isinstance(kwargs['conditions_file'], str), 'Argument \'conditions_file\' passed to Classifier must be a string.'
-			self.load_conditions(kwargs['conditions_file'])
-		else:
-			self.conditions = None
+
+		self.conditions = None										#  Were we given cut-off conditions?
+		if 'conditions' in kwargs and kwargs['conditions'] is not None:
+			assert isinstance(kwargs['conditions'], str) or isinstance(kwargs['conditions'], list), \
+			       'Argument \'conditions\' passed to Classifier must be a string or a list of strings.'
+			self.load_conditions(kwargs['conditions'])
 
 		if 'hands_coeff' in kwargs:									#  Were we given a hands-subvector coefficient?
 			assert isinstance(kwargs['hands_coeff'], float), 'Argument \'hands_coeff\' passed to Classifier must be a float.'
@@ -375,7 +388,7 @@ class Classifier():
 			       'Argument \'presence_threshold\' passed to Classifier must be a float in (0.0, 1.0].'
 			self.object_presence_threshold = kwargs['presence_threshold']
 		else:
-			self.object_presence_threshold = 0.8
+			self.object_presence_threshold = 0.5
 
 		if 'open_begin' in kwargs:									#  Were we told to permit or refuse an open beginning?
 			assert isinstance(kwargs['open_begin'], bool), \
@@ -581,34 +594,47 @@ class Classifier():
 
 		return
 
+	#  Read cut-off conditions from file and add them to the Classifier's 'conditions' table.
 	def load_conditions(self, conditions_file):
+		if self.conditions is None:									#  If the attribute doesn't already exist, create it now.
+			self.conditions = {}
+
+		if isinstance(conditions_file, str):						#  Convert singleton conditions file to list.
+			conditions_file = [conditions_file]
+
+		for cond_file in conditions_file:
+			if self.verbose:
+				print('>>> Loading cut-off conditions from "' + cond_file + '".')
+
+			fh = open(cond_file, 'r')
+			for line in fh.readlines():
+				if line[0] != '#' and len(line) > 1:
+					arr = line.strip().split('\t')
+					action = arr[0]
+					condition = arr[1]
+					if action not in self.conditions:				#  If conditions for this action are not already in the table...
+						self.conditions[action] = {}
+						self.conditions[action]['and'] = []
+						self.conditions[action]['or'] = []
+					for i in range(2, len(arr)):
+						if condition == 'AND':
+							self.conditions[action]['and'].append( arr[i] )
+						else:
+							self.conditions[action]['or'].append( arr[i] )
+			fh.close()
+
 		if self.verbose:
-			print('>>> Loading cut-off conditions from "' + conditions_file + '".')
-
-		self.conditions = {}
-
-		fh = open(conditions_file, 'r')
-		for line in fh.readlines():
-			if line[0] != '#':
-				arr = line.strip().split('\t')
-				action = arr[0]
-				condition = arr[1]
-				self.conditions[action] = {}
-				self.conditions[action]['and'] = []
-				self.conditions[action]['or'] = []
-				for i in range(2, len(arr)):
-					if condition == 'AND':
-						self.conditions[action]['and'].append( arr[i] )
-					else:
-						self.conditions[action]['or'].append( arr[i] )
-		fh.close()
-
-		if self.verbose:
+			max_header_str_len = 0
 			for key in sorted(self.conditions.keys()):
 				header_str = '    In order to consider "' + key + '": '
-				print(header_str + ' AND '.join(self.conditions[key]['and']))
+				if len(header_str) > max_header_str_len:
+					max_header_str_len = len(header_str)
+
+			for key in sorted(self.conditions.keys()):
+				header_str = '    In order to consider "' + key + '": '
+				print(header_str + ' '*(max_header_str_len - len(header_str)) + ' * '.join(self.conditions[key]['and']))
 				if len(self.conditions[key]['or']) > 0:
-					print(' '*(len(header_str)) + ' OR '.join(self.conditions[key]['or']))
+					print(' '*max_header_str_len + ' + '.join(self.conditions[key]['or']))
 		return
 
 	#################################################################
@@ -651,7 +677,7 @@ class Classifier():
 
 			conditions_passed = False
 			if self.conditions is not None:
-				conditions_passed = self.cutoff_conditions(template_label, query_seq)
+				conditions_passed = self.test_cutoff_conditions(template_label, query)
 
 			if self.conditions is None or conditions_passed:		#  Either we have no conditions, or our conditions give us reason to run DTW.
 																	#  What is the distance between this query and this template?
@@ -684,7 +710,7 @@ class Classifier():
 			for label, confidence in confidences.items():
 				brackets = sorted(self.isotonic_map.keys())
 				i = 0
-				while i < len(brackets) and not (confidence >= brackets[i][0] and confidence < brackets[i][1]):
+				while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
 					i += 1
 
 				probabilities[label] = self.isotonic_map[ brackets[i] ]
@@ -694,7 +720,10 @@ class Classifier():
 
 		prob_norm = sum( probabilities.values() )					#  Normalize probabilities.
 		for k in probabilities.keys():
-			probabilities[k] /= prob_norm
+			if prob_norm > 0.0:
+				probabilities[k] /= prob_norm
+			else:
+				probabilities[k] = 0.0
 
 		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
 
@@ -710,10 +739,15 @@ class Classifier():
 				for vector in query_seq:
 					i = 0
 					while i < len(self.conditions[candidate_label]['and']):
+						if self.conditions[candidate_label]['and'][i] in self.recognizable_objects:
 																	#  12 is the offset past the hand encodings, into the props sub-vector.
 																	#  If anything required in the AND list has a zero signal, then this frame fails.
-						if vector[ self.recognizable_objects.index(self.conditions[candidate_label]['and'][i]) + 12 ] == 0.0:
-							break
+							if vector[ self.recognizable_objects.index(self.conditions[candidate_label]['and'][i]) + 12 ] == 0.0:
+								break
+						else:										#  Necessary object in {LHx, LHy, LHz, LH0, LH1, LH2,
+																	#                       RHx, RHy, RHz, RH0, RH1, RH2}
+							if vector[ self.hand_subvector_codes[ self.conditions[candidate_label]['and'][i] ] ] == 0.0:
+								break
 						i += 1
 																	#  Did we make it all the way through the list without zero-ing out?
 																	#  That means that, for this frame at least, all necessary objects are non-zero.
@@ -732,10 +766,15 @@ class Classifier():
 				for vector in query_seq:
 					i = 0
 					while i < len(self.conditions[candidate_label]['or']):
+						if self.conditions[candidate_label]['or'][i] in self.recognizable_objects:
 																	#  12 is the offset past the hand encodings, into the props sub-vector.
 																	#  If anything required in the AND list has a zero signal, then this frame fails.
-						if vector[ self.recognizable_objects.index(self.conditions[candidate_label]['or'][i]) + 12 ] > 0.0:
-							break
+							if vector[ self.recognizable_objects.index(self.conditions[candidate_label]['or'][i]) + 12 ] > 0.0:
+								break
+						else:										#  Necessary object in {LHx, LHy, LHz, LH0, LH1, LH2,
+																	#                       RHx, RHy, RHz, RH0, RH1, RH2}
+							if vector[ self.hand_subvector_codes[ self.conditions[candidate_label]['or'][i] ] ] > 0.0:
+								break
 						i += 1
 																	#  Did we bail early because we found something--anything that was > 0.0?
 																	#  That means that, for this frame at least, at least one necessary object is non-zero.
@@ -749,7 +788,7 @@ class Classifier():
 			else:
 				passed_or = True
 
-			return passed_and or passed_or
+			return passed_and and passed_or
 
 		return True
 
@@ -763,21 +802,29 @@ class Classifier():
 			s = sum([x[1] for x in labels_costs[:2]])
 			for i in range(0, len(labels_costs)):
 				conf[ labels_costs[i][0] ] = s / (labels_costs[i][1] + self.epsilon)
+				if np.isnan(conf[ labels_costs[i][0] ]):
+					conf[ labels_costs[i][0] ] = 0.0
 
 		elif self.confidence_function == 'sum3':					#  (Sum of three minimal distances) / my distance
 			s = sum([x[1] for x in labels_costs[:3]])
 			for i in range(0, len(labels_costs)):
 				conf[ labels_costs[i][0] ] = s / (labels_costs[i][1] + self.epsilon)
+				if np.isnan(conf[ labels_costs[i][0] ]):
+					conf[ labels_costs[i][0] ] = 0.0
 
 		elif self.confidence_function == 'sum4':					#  (Sum of four minimal distances) / my distance
 			s = sum([x[1] for x in labels_costs[:4]])
 			for i in range(0, len(labels_costs)):
 				conf[ labels_costs[i][0] ] = s / (labels_costs[i][1] + self.epsilon)
+				if np.isnan(conf[ labels_costs[i][0] ]):
+					conf[ labels_costs[i][0] ] = 0.0
 
 		elif self.confidence_function == 'sum5':					#  (Sum of five minimal distances) / my distance
 			s = sum([x[1] for x in labels_costs[:5]])
 			for i in range(0, len(labels_costs)):
 				conf[ labels_costs[i][0] ] = s / (labels_costs[i][1] + self.epsilon)
+				if np.isnan(conf[ labels_costs[i][0] ]):
+					conf[ labels_costs[i][0] ] = 0.0
 
 		elif self.confidence_function == 'n-min-obsv':				#  Normalized minimum distance observed / my distance
 			min_d = labels_costs[0][1]
@@ -786,16 +833,22 @@ class Classifier():
 			s = sum(conf.values())
 			for i in range(0, len(labels_costs)):
 				conf[ labels_costs[i][0] ] /= s
+				if np.isnan(conf[ labels_costs[i][0] ]):
+					conf[ labels_costs[i][0] ] = 0.0
 
 		elif self.confidence_function == 'min-obsv':				#  Minimum distance observed / my distance
 			min_d = labels_costs[0][1]								#  DO NOT ACTUALLY USE THIS FUNCTION! it's an illustrative fail-case ONLY.
 			for i in range(0, len(labels_costs)):
 				conf[ labels_costs[i][0] ] = min_d / (labels_costs[i][1] + self.epsilon)
+				if np.isnan(conf[ labels_costs[i][0] ]):
+					conf[ labels_costs[i][0] ] = 0.0
 
 		elif self.confidence_function == 'max-marg':				#  Second-best distance minus best distance. Worst match gets zero.
 			for i in range(0, len(labels_costs)):
 				if i < len(labels_costs) - 1:
 					conf[ labels_costs[i][0] ] = labels_costs[i + 1][1] - labels_costs[i][1]
+					if np.isnan(conf[ labels_costs[i][0] ]):
+						conf[ labels_costs[i][0] ] = 0.0
 				else:
 					conf[ labels_costs[i][0] ] = 0.0
 
@@ -803,6 +856,8 @@ class Classifier():
 			for i in range(0, len(labels_costs)):
 				if i < len(labels_costs) - 1:
 					conf[ labels_costs[i][0] ] = labels_costs[i + 1][1] / (labels_costs[i][1] + self.epsilon)
+					if np.isnan(conf[ labels_costs[i][0] ]):
+						conf[ labels_costs[i][0] ] = 0.0
 				else:
 					conf[ labels_costs[i][0] ] = 0.0
 
@@ -1805,7 +1860,7 @@ class AtemporalClassifier(Classifier):
 			self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 			#########################################################
-			#  tentative_prediction:          label                 #
+			#  tentative_prediction:                  label or None #
 			#  matching_costs: key: label ==> val: cost             #
 			#  confidences:    key: label ==> val: score            #
 			#  probabilities:  key: label ==> val: probability      #
@@ -1823,23 +1878,30 @@ class AtemporalClassifier(Classifier):
 				                                       'Test-snippet', 0, self.window_size - 1) )
 
 			t1_start = time.process_time()							#  Start timer.
+			prediction = None
+			if tentative_prediction is not None:
 																	#  Is it above the threshold?
-			if probabilities[tentative_prediction] >= self.threshold:
-				prediction = tentative_prediction
-				if prediction in self.hidden_labels:				#  Is this a hidden label? Then dummy up.
-					prediction = None
-			else:
-				prediction = None
+				if probabilities[tentative_prediction] >= self.threshold:
+					prediction = tentative_prediction
+					if prediction in self.hidden_labels:			#  Is this a hidden label? Then dummy up.
+						prediction = None
 			t1_stop = time.process_time()							#  Stop timer.
 			self.timing['make-decision'].append(t1_stop - t1_start)
 
 																	#  For the Atemporal Classifier, ground_truth_label will never be None.
 			classification_stats = self.update_stats(prediction, ground_truth_label, fair, classification_stats)
-			classification_stats['_tests'].append( (prediction, ground_truth_label, \
-			                                        confidences[tentative_prediction], probabilities[tentative_prediction], \
-			                                        'Test-snippet', i, \
-			                                        metadata[tentative_prediction]['db-index'], \
-			                                        fair) )
+			if tentative_prediction is not None:
+				classification_stats['_tests'].append( (prediction, ground_truth_label, \
+				                                        confidences[tentative_prediction], probabilities[tentative_prediction], \
+				                                        'Test-snippet', i, \
+				                                        metadata[tentative_prediction]['db-index'], \
+				                                        fair) )
+			else:													#  #  The tentative prediction is None if applied conditions make ALL possibilities impossible.
+				classification_stats['_tests'].append( (prediction, ground_truth_label, \
+				                                        0.0, 0.0, \
+				                                        'Test-snippet', i, \
+				                                        -1, \
+				                                        fair) )
 			classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
 			classification_stats['_test-prob'].append( tuple([probabilities[x] for x in self.labels('train')]) )
 
@@ -3246,7 +3308,7 @@ class TemporalClassifier(Classifier):
 					self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 					#################################################
-					#  tentative_prediction:           label        #
+					#  tentative_prediction:          label or None #
 					#  matching_costs = key: label ==> val: cost    #
 					#  confidences    = key: label ==> val: score   #
 					#  probabilities  = key: label ==> val: prob.   #
@@ -3296,25 +3358,31 @@ class TemporalClassifier(Classifier):
 					if self.render and 'smooth' in self.render_modes:
 						smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
+					prediction = None
 					t1_start = time.process_time()					#  Start timer.
-
-					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
-					if tentative_probability >= self.threshold:
-						prediction = tentative_prediction
-						if prediction in self.hidden_labels:		#  Is this a hidden label? Then dummy up.
-							prediction = None
-					else:
-						prediction = None
+					if tentative_prediction is not None:
+						tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
+						if tentative_probability >= self.threshold:
+							prediction = tentative_prediction
+							if prediction in self.hidden_labels:	#  Is this a hidden label? Then dummy up.
+								prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
 
 					classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
 																	#  Whether or not it's skipped, put it on record.
-					classification_stats['_tests'].append( (prediction, ground_truth_label, \
-					                                        confidences[tentative_prediction], tentative_probability, \
-					                                        enactment_input, time_stamp_buffer[frame_ctr], \
-					                                        metadata[tentative_prediction]['db-index'], \
-					                                        fair) )
+					if tentative_prediction is not None:
+						classification_stats['_tests'].append( (prediction, ground_truth_label, \
+						                                        confidences[tentative_prediction], tentative_probability, \
+						                                        enactment_input, time_stamp_buffer[frame_ctr], \
+						                                        metadata[tentative_prediction]['db-index'], \
+						                                        fair) )
+					else:											#  The tentative prediction is None if applied conditions make ALL possibilities impossible.
+						classification_stats['_tests'].append( (prediction, ground_truth_label, \
+						                                        0.0, 0.0, \
+						                                        enactment_input, time_stamp_buffer[frame_ctr], \
+						                                        -1, \
+						                                        fair) )
 					classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
 					classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
 
@@ -3671,7 +3739,7 @@ class TemporalClassifier(Classifier):
 					self.timing['dtw-classification'].append(t1_stop - t1_start)
 
 					#################################################
-					#  tentative_prediction:          label         #
+					#  tentative_prediction:          label or None #
 					#  matching_costs: key: label ==> val: cost     #
 					#  confidences:    key: label ==> val: score    #
 					#  probabilities:  key: label ==> val: prob.    #
@@ -3711,24 +3779,30 @@ class TemporalClassifier(Classifier):
 					self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
 					t1_start = time.process_time()					#  Start timer.
-
-					tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
-					if tentative_probability >= self.threshold:
-						prediction = tentative_prediction
-						if prediction in self.hidden_labels:		#  Is this a hidden label? Then dummy up.
-							prediction = None
-					else:
-						prediction = None
+					prediction = None
+					if tentative_prediction is not None:
+						tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
+						if tentative_probability >= self.threshold:
+							prediction = tentative_prediction
+							if prediction in self.hidden_labels:	#  Is this a hidden label? Then dummy up.
+								prediction = None
 					t1_stop = time.process_time()					#  Stop timer.
 					self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
 
 					classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
 																	#  Whether or not it's skipped, put it on record.
-					classification_stats['_tests'].append( (prediction, ground_truth_label, \
-					                                        confidences[tentative_prediction], tentative_probability, \
-					                                        enactment_input, time_stamp_buffer[frame_ctr], \
-					                                        metadata[tentative_prediction]['db-index'], \
-					                                        fair) )
+					if tentative_prediction is not None:
+						classification_stats['_tests'].append( (prediction, ground_truth_label, \
+						                                        confidences[tentative_prediction], tentative_probability, \
+						                                        enactment_input, time_stamp_buffer[frame_ctr], \
+						                                        metadata[tentative_prediction]['db-index'], \
+						                                        fair) )
+					else:											#  The tentative prediction is None if applied conditions make ALL possibilities impossible.
+						classification_stats['_tests'].append( (prediction, ground_truth_label, \
+						                                        0.0, 0.0, \
+						                                        enactment_input, time_stamp_buffer[frame_ctr], \
+						                                        -1, \
+						                                        fair) )
 					classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
 					classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
 
