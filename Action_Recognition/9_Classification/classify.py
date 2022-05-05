@@ -29,6 +29,7 @@ def main():
 	                              props_coeff=params['props-coeff'], \
 	                              hands_one_hot_coeff=params['one-hot-coeff'], \
 	                              dtw_diagonal=params['dtw-diagonal'], \
+	                              conditions=params['conditions-files'], \
 	                              inputs=params['enactments'], \
 	                              min_bbox=params['minimum-pixels'], \
 	                              detection_confidence=params['detection-threshold'], \
@@ -75,6 +76,7 @@ def get_command_line_params():
 	params['props-coeff'] = 9.0
 	params['dtw-diagonal'] = 2.0									#  Classifier defaults to 2.0 anyway.
 	params['hidden-labels'] = []
+	params['conditions-files'] = None
 
 	params['result-string'] = None									#  Default to the timestamp.
 	params['load-from'] = None										#  Directory from which enactment files should be loaded into the working directory at runtime.
@@ -86,7 +88,7 @@ def get_command_line_params():
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
 	flags = ['-e', '-db', '-model', \
-	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', '-dtw', '-hide', \
+	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', '-dtw', '-hide', '-cond', \
 	         '-lddir', '-id', '-fair', \
 	         '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
@@ -125,6 +127,10 @@ def get_command_line_params():
 					params['relabel-file'] = argval
 				elif argtarget == '-hide':
 					params['hidden-labels'].append(argval)
+				elif argtarget == '-cond':
+					if params['conditions-files'] is None:
+						params['conditions-files'] = []
+					params['conditions-files'].append(argval)
 				elif argtarget == '-lddir':
 					params['load-from'] = argval
 				elif argtarget == '-id':
@@ -140,7 +146,8 @@ def usage():
 	print('')
 	print('Usage:  python3 classify.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -model training/exported-models/ssd_mobilenet_640x640 -db 10f-split2-stride2-MobileNet0.2-train.db -map MobileNet-th0.2.isomap -relabel relabels.txt -detth 0.2 -lddir MobileNet-th0.2 -id MobileNet-th0.2 -v')
-	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT.isomap -relabel relabels.txt -lddir GT -id GT -hide Read\\ \\(C.\\ Panel\\) -v')
+	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT-sum2.isomap -relabel relabels.txt -lddir GT -id GT -hide Read\\ \\(C.\\ Panel\\) -v')
+	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT-sum2.isomap -relabel relabels.txt -cond hands.conditions -lddir GT -id GT -v')
 	print('')
 	print('Flags:  -e        Following argument is the name of an enactment on which to perform classification.')
 	print('                  Must have at least one.')
@@ -162,6 +169,8 @@ def usage():
 	print('        -minpx    Following integer > 0 is the pixel area minimum to use when recognizing objects.')
 	print('                  The default is 1.')
 	print('        -dtw      Following real number is the weight to give to diagonal moves in the DTW cost matrix. Default is 2.0.')
+	print('        -cond     Following string is the path to a conditions file to give the classifier.')
+	print('                  You may supply more than one, but each one must be preceded by this flag.')
 	print('        -hide     Following string (escaped where necessary) is a label the system should "hide".')
 	print('                  Hidden labels are in the database, and can be recognized; but when they are chosen as the system prediction,.')
 	print('                  hidden labels are changed to no-votes.')
