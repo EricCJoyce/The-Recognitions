@@ -1,0 +1,32 @@
+#  In order to consider A we must have non-zero elements for B and/or C and/or ...
+#  To consider A, we must have non-zeros for B or C
+#  A  <tab>  OR  <tab>  B  <tab>  C
+#  To consider A, we must have non-zeros for B and C
+#  A  <tab>  AND  <tab>  B  <tab>  C
+#  Singleton conditions can be either
+#  HAND ONE-HOTS:
+#    0 = relaxed
+#    1 = grasping
+#    2 = pointing
+
+Close (BB)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Close (MFB)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Close (Reg)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Grab (ArcSuit)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Grab (F.light)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Grab (Meter)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Grab (Sw. Stick)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Grab (Tritector)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Grab (Y. Tag)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Open (BB)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Open (MFB)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Open (Reg)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Push (C. Panel)	OR	LHx	LHy	LHz	LH2	RHx	RHy	RHz	RH2
+Release (ArcSuit)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Release (F.light)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Release (Meter)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Release (Sw. Stick)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Release (Tritector)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Release (Y. Tag)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Unwear (ArcSuit)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
+Wear (ArcSuit)	OR	LHx	LHy	LHz	LH0	LH1	RHx	RHy	RHz	RH0	RH1
