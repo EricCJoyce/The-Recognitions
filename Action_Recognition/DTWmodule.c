@@ -376,7 +376,7 @@ static PyObject* path(PyObject* Py_UNUSED(self), PyObject* args)
 
     PyObject* ret;                                                  //  The PyObject to be returned.
 
-    if(!PyArg_ParseTuple(args, "O!d", &PyList_Type, &C, &diagonal)) //  Expect arguments: List of lists of floats; (optionally) a double.
+    if(!PyArg_ParseTuple(args, "O!d", &PyList_Type, &C, &diagonal)) //  Expect arguments: List of lists of floats; a double.
       return NULL;
 
     c_rows = PyList_Size(C);                                        //  Save list size: number of frames in Q
@@ -664,8 +664,8 @@ static PyObject* DTW(PyObject* Py_UNUSED(self), PyObject* args)
 static PyMethodDef methods[] =
   {
     {"L2", &L2, METH_VARARGS, "Compute the cost matrix between all frames using L2 distance.\nInput: two lists of tuples of floats, Q and T. The number of columns must be the same.\nOutput: a matrix with as many rows as Q has frames and as many columns as T has frames."},
-    {"path", &path, METH_VARARGS, "Compute the alignment path through a given cost matrix.\nInput: cost matrix as a list of lists of floats (number of Q frames by number of T frames).\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
-    {"DTW", &DTW, METH_VARARGS, "Compute the alignment for a given Query and a given Template.\nInput: query as a list of tuples of floats (number of Q frames by vector length); template as a list of tuples of floats (number of T frames by vector length).\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
+    {"path", &path, METH_VARARGS, "Compute the alignment path through a given cost matrix.\nInput: cost matrix as a list of lists of floats (number of Q frames by number of T frames); cost of diagonal matches.\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
+    {"DTW", &DTW, METH_VARARGS, "Compute the alignment for a given Query and a given Template.\nInput: query as a list of tuples of floats (number of Q frames by vector length); template as a list of tuples of floats (number of T frames by vector length); cost of diagonal matches.\nOutput: the cost of the path; the path itself indexing into the cost matrix; alignment of Query frames; alignment of Template frames."},
     {NULL, NULL, 0, NULL}
   };
 
