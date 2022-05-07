@@ -265,7 +265,7 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C, double dia
                 if(left_exists && up_exists)                        //  Compare cost of arriving at 'index' from 'neighbor' = above-left.
                   {
                     neighbor = index - cols - 1;
-                    if((diagonal * C[index] + T_1[neighbor]) < T_1[index])
+                    if(diagonal * C[index] + T_1[neighbor] < T_1[index])
                       {
                         T_1[index] = diagonal * C[index] + T_1[neighbor];
                         T_2[index] = neighbor;
@@ -275,7 +275,7 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C, double dia
                 if(left_exists)                                     //  Compare cost of arriving at 'index' from 'neighbor' = left.
                   {
                     neighbor = index - 1;
-                    if((C[index] + T_1[neighbor]) < T_1[index])
+                    if(C[index] + T_1[neighbor] < T_1[index])
                       {
                         T_1[index] = C[index] + T_1[neighbor];
                         T_2[index] = neighbor;
@@ -285,7 +285,7 @@ unsigned int viterbi(unsigned int rows, unsigned int cols, double* C, double dia
                 if(up_exists)                                       //  Compare cost of arriving at 'index' from 'neighbor' = above.
                   {
                     neighbor = index - cols;
-                    if((C[index] + T_1[neighbor]) < T_1[index])
+                    if(C[index] + T_1[neighbor] < T_1[index])
                       {
                         T_1[index] = C[index] + T_1[neighbor];
                         T_2[index] = neighbor;
