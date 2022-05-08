@@ -33,8 +33,8 @@ class ProcessedEnactment():
 																	#                          key:ground-truth-label ==> val:label (incl. "*");
 																	#                          key:vector             ==> val:vector}
 		self.actions = []											#  List of tuples: (label, start time, start frame, end time, end frame).
-																	#  Note that we avoid using the Action class defined in "enactment.py"
-																	#  because these are not supposed to be mutable after processing.
+																	#  Note that we avoid using the enactment.Action class because these are
+																	#  not supposed to be mutable after processing.
 		self.load_from_file()
 
 	def load_from_file(self):
