@@ -2,6 +2,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
+from enactment.RecognizableObject import RecognizableObject
 
 '''
 Frames contain information about the files (normal, depth, colormap), visible objects, and poses at a given time-stamp.
