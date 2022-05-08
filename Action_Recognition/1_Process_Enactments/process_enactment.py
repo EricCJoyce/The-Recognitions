@@ -1,5 +1,6 @@
 import cv2
 import datetime
+import matplotlib.pyplot as plt
 import sys
 
 from enactment import *
