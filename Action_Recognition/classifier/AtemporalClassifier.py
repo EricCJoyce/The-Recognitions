@@ -1,3 +1,6 @@
+import os
+import sys
+
 from classifier.Classifier import Classifier
 from enactment import ProcessedEnactment
 
