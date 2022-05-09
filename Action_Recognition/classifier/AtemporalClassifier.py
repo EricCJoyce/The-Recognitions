@@ -1,4 +1,5 @@
 from classifier.Classifier import Classifier
+from enactment import ProcessedEnactment
 
 '''
 Why "atemporal"? Because sequence boundaries are given; they need not be discovered frame by frame.
