@@ -1,5 +1,7 @@
-from classifier import *
+import sys
+
 from enactment import *
+from classifier import *
 
 def main():
 	params = get_command_line_params()								#  Collect parameters
