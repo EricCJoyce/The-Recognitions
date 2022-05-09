@@ -15,18 +15,28 @@ This repository contains the modules of a pipeline. The primordial inputs are la
 [2]<----[4]
  |
  |
- |----->[5]------+    5. Use *.enactment files to atemporally match snippets.
- |               |
- |               V
- |-------+-------+
- |       |       |
- V       V       V
-[6]     [8]     [7]   6. Build a database from *.enactment files.
- |       |       |    7. Compute probabilities using isotonic regression.
- +-------+-------+    8. Derive cutoff conditions to improve classification.
-         |
-         V
-        [9]           9. Simulate real-time classification.
+ |----->[5]           5. Use *.enactment files to atemporally match snippets.
+ |       |
+ |       V
+ |<------+
+ |
+ |----->[6]           6. Build a database from *.enactment files.
+ |       |
+ |       V
+ |<------+
+ |
+ |----->[7]           7. Compute probabilities using isotonic regression.
+ |       |
+ |       V
+ |<------+
+ |
+ |----->[8]           8. Derive cutoff conditions to improve classification.
+ |       |
+ |       V
+ |<------+
+ |
+ V
+[9]                   9. Simulate real-time classification.
 ```
 
 ## Requirements
@@ -96,13 +106,6 @@ pip install opencv-python
 **Ubuntu 16.04 LTS**:
 The development tools for Python should have already been handled by the call above, `sudo apt install python3.6-dev`.
 
-You will need this library to compile the C code in `DTWmodule.c` into a Python library. Do this by running
-```
-python3.6 setup.py build
-```
-
-This creates a folder named `build`. Inside, find a file named `DTW.cpython-36m-x86_64-linux-gnu.so` or something appropriately named, given your system specs. Copy this `*.so` file into the same directory as your other Recognition scripts.
-
 Additionally, you will need the following tools, if your system doesn't have them already:
 ```
 sudo apt-get install -y build-essential cmake gfortran git pkg-config
@@ -147,14 +150,14 @@ sudo pip3 install chardet==3.0.2
 ```
 ### Dynamic Time Warping
 
-Included in this repository is a Python binding for an implementation of Dynamic Time Warping (DTW) written in C. DTW matches temporal snippets, allowing that instances of the same action may take more or less time to perform.
+Included in the `classifier` module of this repository is a Python binding for an implementation of Dynamic Time Warping (DTW) written in C. DTW matches temporal snippets, allowing that instances of the same action may take more or less time to perform.
 
 **Ubuntu 16.04 LTS**:
-To build a shared library for your machine, make the following call:
+You will need this library to compile the C code in `DTWmodule.c` into a Python library. Do this by running
 ```
-python3 setup.py build
+python3.6 setup.py build
 ```
-On my machine (Ubuntu 16.04), this compiles `DTWmodule.c` into `./build/lib.linux-x86_64-3.6/DTW.cpython-36m-x86_64-linux-gnu.so`. The file name and path for your compiled `*.so` will depend on your machine's configuration. Move this `*.so` file into the project directory where `classifier.py` can reach it. You can throw away the `./build/` directory.
+This creates a folder named `build`. Inside, find a file named `DTW.cpython-36m-x86_64-linux-gnu.so` or something named appropriately, given your system specs. Copy this `*.so` file into the `classifier` directory. Then, you can throw away the `build` directory.
 
 **Windows**:
 
