@@ -1,3 +1,4 @@
-from classifier.Classifier import AtemporalClassifier
+from classifier import DTW
+from classifier.Classifier import Classifier
 from classifier.AtemporalClassifier import AtemporalClassifier
 from classifier.TemporalClassifier import TemporalClassifier
