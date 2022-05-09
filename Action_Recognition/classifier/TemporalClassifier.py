@@ -5,6 +5,10 @@ import time
 
 from classifier.Classifier import Classifier
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'							#  Suppress TensorFlow barf.
+import tensorflow as tf
+from object_detection.utils import label_map_util					#  Works with TensorFlow Object-Model Zoo's model library.
+
 sys.path.append('../enactment')
 from enactment import Enactment, Gaussian3D, ProcessedEnactment
 
