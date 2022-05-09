@@ -1,0 +1,3 @@
+from classifier.Classifier import AtemporalClassifier
+from classifier.AtemporalClassifier import AtemporalClassifier
+from classifier.TemporalClassifier import TemporalClassifier
