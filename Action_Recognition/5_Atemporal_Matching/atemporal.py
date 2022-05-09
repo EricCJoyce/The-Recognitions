@@ -40,7 +40,7 @@ def main():
 	total = M.sum()													#  Total snippets.
 
 	atemporal.write_confusion_matrix(stats['_tests'], time_stamp)	#  Write confidence files.
-	atemporal.write_confidences(stats['_tests'], stats['_conf'], time_stamp)
+	atemporal.write_confidences(stats['_conf'], time_stamp)
 	atemporal.write_results(stats, time_stamp)
 	atemporal.write_timing(time_stamp)
 
