@@ -35,8 +35,13 @@ This repository contains the modules of a pipeline. The primordial inputs are la
  |       V
  |<------+
  |
+ |----->[9]           9. Build and train a neural network to fine-tune classifications.
+ |       |
+ |       V
+ |<------+
+ |
  V
-[9]                   9. Simulate real-time classification.
+[10]                  10. Simulate real-time classification.
 ```
 
 ## Requirements
