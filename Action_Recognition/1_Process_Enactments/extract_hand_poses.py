@@ -1,3 +1,5 @@
+import sys
+
 from enactment import *
 
 acceptable_pose_sources = ['IK', 'sensor']
