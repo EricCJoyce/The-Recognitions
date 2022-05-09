@@ -1,8 +1,7 @@
 import cv2
 import datetime
 																	#  python3 setup.py build
-import DTW															#    produces DTW.cpython-36m-x86_64-linux-gnu.so
-from enactment import Enactment, Gaussian3D, RObject, ProcessedEnactment
+from classifier import DTW											#    produces DTW.cpython-36m-x86_64-linux-gnu.so
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -13,6 +12,9 @@ import time
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'							#  Suppress TensorFlow barf.
 import tensorflow as tf
 from object_detection.utils import label_map_util					#  Works with TensorFlow Object-Model Zoo's model library.
+
+sys.path.append('../enactment')
+from enactment import Enactment, Gaussian3D, RecognizableObject, ProcessedEnactment
 
 '''
 The Classifier object really serves as a home for attributes and functions used by both its derived classes:
