@@ -1,5 +1,8 @@
 from classifier.Classifier import Classifier
 
+sys.path.append('../enactment')
+from enactment import Enactment, Gaussian3D, ProcessedEnactment
+
 '''
 Give this classifier a database file and enactment files.
 The database becomes the training set, self.X_train, and the enactments will be marched through in simulated real time.
