@@ -9,10 +9,6 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import sys
 import time
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'							#  Suppress TensorFlow barf.
-import tensorflow as tf
-from object_detection.utils import label_map_util					#  Works with TensorFlow Object-Model Zoo's model library.
-
 sys.path.append('../enactment')
 from enactment import Enactment, Gaussian3D, RecognizableObject, ProcessedEnactment
 
