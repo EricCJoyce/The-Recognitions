@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import sys
 
 '''
 Similar to the Enactment class but completely separated from the raw materials and file structure.
