@@ -349,7 +349,12 @@ class TemporalClassifier(Classifier):
 					#################################################
 																	#  Among other tasks, this method pushes to the temporal buffer.
 					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
-
+																	#  Save all costs for all labels.
+					classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
+					                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
+					                                             [enactment_input] + \
+					                                             [matching_costs[label] for label in self.labels('train')] + \
+					                                             [ground_truth_label]) )
 																	#  Save confidence scores for all labels, regardless of what the system picks.
 					for label in self.labels('train'):				#  We use these values downstream in the pipeline for isotonic regression.
 						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
@@ -780,6 +785,12 @@ class TemporalClassifier(Classifier):
 					#################################################
 																	#  Among other tasks, this method pushes to the temporal buffer.
 					sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
+																	#  Save all costs for all labels.
+					classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
+					                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
+					                                             [enactment_input] + \
+					                                             [matching_costs[label] for label in self.labels('train')] + \
+					                                             [ground_truth_label]) )
 																	#  Save confidence scores for all labels, regardless of what the system picks.
 					for label in self.labels('train'):				#  We use these values downstream in the pipeline for isotonic regression.
 						classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
