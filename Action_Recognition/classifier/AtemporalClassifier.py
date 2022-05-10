@@ -214,6 +214,10 @@ class AtemporalClassifier(Classifier):
 			#                                       tmplate-indices,#
 			#                                       db-index}       #
 			#########################################################
+																	#  Save all costs for all labels.
+			classification_stats['_costs'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
+			                                             [matching_costs[label] for label in self.labels('train')] + \
+			                                             [ground_truth_label]) )
 																	#  Save confidence scores for all labels, regardless of what the system picks.
 			for label in self.labels('train'):						#  We use these values downstream in the pipeline for isotonic regression.
 				classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
