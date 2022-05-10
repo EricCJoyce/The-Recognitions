@@ -99,38 +99,58 @@ class Enactment():
 			       isinstance(kwargs['wh'][1], int) and kwargs['wh'][1] > 0, 'Argument \'wh\' passed to Enactment must be a tuple of integers > 0.'
 			self.width = kwargs['wh'][0]
 			self.height = kwargs['wh'][1]
-		elif self.width is None or self.height is None:				#  If not, check every file for bogies.
-			discovered_w = {}
-			discovered_h = {}
-
-			video_frames = self.load_frame_sequence(True)
-			num_frames = len(video_frames)
-			prev_ctr = 0
-			max_ctr = os.get_terminal_size().columns - 7			#  Leave enough space for the brackets, space, and percentage.
-			if self.verbose:
-				print('>>> Scanning enactment frames for consistent image dimensions.')
-
-			for i in range(0, num_frames):
-				img = cv2.imread(video_frames[i], cv2.IMREAD_UNCHANGED)
-				if img.shape[1] not in discovered_w:
-					discovered_w[ img.shape[1] ] = 0
-				if img.shape[0] not in discovered_h:
-					discovered_h[ img.shape[0] ] = 0
+		elif self.width is None or self.height is None:				#  If not, first check for a dimensions file.
+																	#  If an explicit frame-size file exists, use that.
+			if os.path.exists(self.enactment_name + '/dimensions.txt'):
 				if self.verbose:
-					if int(round(float(i) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
-						prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
-						sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
-						sys.stdout.flush()
-				discovered_w[ img.shape[1] ] += 1
-				discovered_h[ img.shape[0] ] += 1
-			if self.verbose:
-				print('')
+					print('>>> Found ' + self.enactment_name + '/dimensions.txt')
+				fh = open(self.enactment_name + '/dimensions.txt', 'r')
+				for line in fh.readlines():
+					if line[0] != '#':
+						arr = line.strip().split('\t')
+						self.width = int(arr[0])
+						self.height = int(arr[1])
+				fh.close()
+			else:													#  If not, then check every file for bogies (time-consuming but justified!)
+				discovered_w = {}
+				discovered_h = {}
 
-			if len(discovered_w) != 1 or len(discovered_h) != 1:
-				assert False, 'Frames discovered for Enactment "' + self.name + '" do not have consistent shape.'
-			else:
-				self.width = [x for x in discovered_w.keys()][0]
-				self.height = [x for x in discovered_h.keys()][0]
+				video_frames = self.load_frame_sequence(True)
+				num_frames = len(video_frames)
+				prev_ctr = 0
+				max_ctr = os.get_terminal_size().columns - 7		#  Leave enough space for the brackets, space, and percentage.
+				if self.verbose:
+					print('>>> Scanning enactment frames for consistent image dimensions.')
+
+				for i in range(0, num_frames):
+					img = cv2.imread(video_frames[i], cv2.IMREAD_UNCHANGED)
+					if img.shape[1] not in discovered_w:
+						discovered_w[ img.shape[1] ] = 0
+					if img.shape[0] not in discovered_h:
+						discovered_h[ img.shape[0] ] = 0
+					if self.verbose:
+						if int(round(float(i) / float(num_frames) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+							prev_ctr = int(round(float(i) / float(num_frames) * float(max_ctr)))
+							sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(i) / float(num_frames) * 100.0))) + '%]')
+							sys.stdout.flush()
+					discovered_w[ img.shape[1] ] += 1
+					discovered_h[ img.shape[0] ] += 1
+				if self.verbose:
+					print('')
+
+				if len(discovered_w) != 1 or len(discovered_h) != 1:
+					assert False, 'Frames discovered for Enactment "' + self.name + '" do not have consistent shape.'
+				else:
+					self.width = [x for x in discovered_w.keys()][0]
+					self.height = [x for x in discovered_h.keys()][0]
+																	#  Save this! So we won't have to do it again and again and again....
+				fh = open(self.enactment_name + '/dimensions.txt', 'w')
+				fh.write('#  Checked frame dimensions for FactualVR enactment.\n')
+				fh.write('#  This file created ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '.\n')
+				fh.write('#  ENCODING STRUCTURE:\n')
+				fh.write('#    Width\tHeight\n')
+				fh.write(str(self.width) + '\t' + str(self.height))
+				fh.close()
 
 		if 'min_depth' in kwargs:									#  Were we given a minimum depth?
 			assert isinstance(kwargs['min_depth'], float), 'Argument \'min_depth\' passed to Enactment must be a float.'
