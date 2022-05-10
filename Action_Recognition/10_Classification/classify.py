@@ -50,6 +50,7 @@ def main():
 
 	temporal.write_confusion_matrix(stats['_tests'], params['result-string'], 'train')
 	temporal.write_results(stats, params['result-string'])
+	temporal.write_matching_costs(stats['_costs'], params['result-string'])
 	temporal.write_confidences(stats['_conf'], params['result-string'])
 	temporal.write_probabilities(stats['_prob'], params['result-string'])
 
