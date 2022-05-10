@@ -35,7 +35,7 @@ This repository contains the modules of a pipeline. The primordial inputs are la
  |       V
  |<------+
  |
- |----->[9]           9. Build and train a neural network to fine-tune classifications.
+ |----->[9]           9. Build and train a multi-layer perceptron (MLP) to aid classifications.
  |       |
  |       V
  |<------+
