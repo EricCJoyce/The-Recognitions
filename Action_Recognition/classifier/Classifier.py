@@ -729,6 +729,11 @@ class Classifier():
 
 	def initialize_stats(self):
 		classification_stats = {}
+		classification_stats['_costs'] = []							#  key:_costs ==> val:[ (timestamp-start, timestamp-end, enactment-source,
+																	#                        cost_0, cost_1, cost_2, ..., cost_N, ground-truth-label),
+																	#                       (timestamp-start, timestamp-end, enactment-source,
+																	#                        cost_0, cost_1, cost_2, ..., cost_N, ground-truth-label),
+																	#                       ... ]
 		classification_stats['_tests'] = []							#  key:_tests ==> val:[ ( prediction, ground-truth,
 																	#                         confidence-of-prediction, probability-of-pred,
 																	#                         enactment-source, timestamp, DB-index, fair ),
@@ -836,6 +841,34 @@ class Classifier():
 		fh.write('\t' + '\t'.join(labels) + '\n')					#  Write the column headers.
 		for i in range(0, num_classes):
 			fh.write(labels[i] + '\t' + '\t'.join([str(x) for x in M[i]]) + '\n')
+		fh.close()
+
+		return
+
+	#  Writes file: "matching_costs-<time stamp>.txt".
+	#  This contains all matching costs for all training-set labels for each call to DTW.
+	#  Each line of this file reads:  time-start  <tab>  time-end  <tab>  enactment  <tab>  cost_0  <tab>  cost_1  <tab> ... <tab>  cost_N  <tab>  ground-truth  <tab>  {fair/unfair}.
+	def write_matching_costs(self, costs, file_timestamp=None):
+		if file_timestamp is None:
+			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
+
+		train_labels = self.labels('train')
+		fh = open('matching_costs-' + file_timestamp + '.txt', 'w')
+		fh.write('#  Classifier matching costs made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  Each line is:\n')
+		fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
+		         '    '.join(['Cost_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair/unfair}' + '\n')
+		for i in range(0, len(costs)):
+			fh.write(str(costs[i][0]) + '\t' + str(costs[i][1]) + '\t' + costs[i][2] + '\t')
+
+			for j in range(0, len(train_labels)):					#  Write all costs.
+				fh.write(str(costs[i][j + 3]) + '\t')
+			fh.write(costs[i][-1] + '\t')							#  Write ground truth.
+																	#  Anything in the training set is fair,
+			if costs[i][-1] in train_labels or costs[i][-1] == '*':	#  and the nothing-label is fair.
+				fh.write('fair\n')
+			else:
+				fh.write('unfair\n')
 		fh.close()
 
 		return
@@ -966,7 +999,7 @@ class Classifier():
 		fh.write('Per-Class:\n')
 		fh.write('==========\n')
 		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
-		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_costs', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
 			if v['support'] > 0:									#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
 				tn = np.sum(np.delete(np.delete(conf_mat, train_labels.index(k), axis=0), train_labels.index(k), axis=1))
 				tp = conf_mat[train_labels.index(k), train_labels.index(k)]
@@ -1050,7 +1083,7 @@ class Classifier():
 		fh.write('Raw Results:\n')
 		fh.write('============\n')
 		fh.write('\tTP\tFP\tFN\tSupport\tTests\n')
-		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_costs', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
 			fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t')
 			fh.write(str(len( [x for x in stats['_tests'] if x[1] == k and x[-1]] )) + '\n')
 		fh.write('\n')
