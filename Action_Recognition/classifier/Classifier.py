@@ -859,7 +859,7 @@ class Classifier():
 		fh.write('#    ' + '\t'.join(train_labels) + '\n')
 		fh.write('#  Each line is:\n')
 		fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
-		         '    '.join(['Cost_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair/unfair}' + '\n')
+		         '    '.join(['Cost_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair,unfair}' + '\n')
 		for i in range(0, len(costs)):
 			fh.write(str(costs[i][0]) + '\t' + str(costs[i][1]) + '\t' + costs[i][2] + '\t')
 
