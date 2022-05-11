@@ -855,6 +855,8 @@ class Classifier():
 		train_labels = self.labels('train')
 		fh = open('matching_costs-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier matching costs made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
+		fh.write('#  RECOGNIZABLE ACTIONS:\n')
+		fh.write('#    ' + '\t'.join(train_labels) + '\n')
 		fh.write('#  Each line is:\n')
 		fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
 		         '    '.join(['Cost_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair/unfair}' + '\n')
