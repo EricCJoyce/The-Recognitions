@@ -1,1 +1,1 @@
-# 9 - Build and Train a Multi-Layer Perceptron to Aid Classifications
+# 9 - Build and train a multi-layer perceptron for classification
