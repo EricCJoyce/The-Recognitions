@@ -151,3 +151,7 @@ One or more `*.enactment` files from the same detection source, that is from gro
 ## Outputs
 
 A human-readable `*.db` database file(s). (For deployment, you may want to re-write this as a binary file.)
+
+## Survey Enactment Labels
+
+Also included in this module is the script `survey_labels.py`. This tool catalogues all labels covered by the given enactments. Use this to help design splits for training and testing.
