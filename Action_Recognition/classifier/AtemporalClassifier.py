@@ -12,8 +12,8 @@ Give this classifier enactment files, and it will divvy them up, trying to be fa
 and perform "atemporal" classification.
 
 In the interpreter:
-  atemporal = AtemporalClassifier(window_size=10, stride=2, train=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], test=['Enactment11', 'Enactment12'], verbose=True)
-  atemporal = AtemporalClassifier(window_size=10, stride=2, divide=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment7', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2', 'Enactment11', 'Enactment12'], verbose=True)
+  atemporal = AtemporalClassifier(window_size=10, stride=2, train=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2'], test=['Enactment11', 'Enactment12'], verbose=True)
+  atemporal = AtemporalClassifier(window_size=10, stride=2, divide=['BackBreaker1', 'Enactment1', 'Enactment2', 'Enactment3', 'Enactment4', 'Enactment5', 'Enactment6', 'Enactment9', 'Enactment10', 'MainFeederBox1', 'Regulator1', 'Regulator2', 'Enactment11', 'Enactment12'], verbose=True)
 
 Alternatively, you can give this class only a test set, not training set, and load a database file like the TemporalClassifier uses.
 
@@ -32,6 +32,9 @@ Or this:
 class AtemporalClassifier(Classifier):
 	def __init__(self, **kwargs):
 		super(AtemporalClassifier, self).__init__(**kwargs)
+
+		train_portion = 0.8											#  Set defaults. If they get overridden, then they get overridden.
+		test_portion = 0.2
 
 		if 'window_size' in kwargs:									#  Were we given a window size?
 			assert isinstance(kwargs['window_size'], int) and kwargs['window_size'] > 0, \
@@ -69,17 +72,13 @@ class AtemporalClassifier(Classifier):
 			assert isinstance(kwargs['train_portion'], float) and kwargs['train_portion'] > 0.0 and kwargs['train_portion'] < 1.0, \
 			       'Argument \'train_portion\' passed to AtemporalClassifier must be a float in (0.0, 1.0).'
 			train_portion = kwargs['train_portion']
-		else:
-			train_portion = 0.8
-		test_portion = 1.0 - train_portion
+			test_portion = 1.0 - train_portion
 
 		if 'test_portion' in kwargs:								#  Were we given a portion of divided enactments to allocate to the test set?
 			assert isinstance(kwargs['test_portion'], float) and kwargs['test_portion'] > 0.0 and kwargs['test_portion'] < 1.0, \
 			       'Argument \'test_portion\' passed to AtemporalClassifier must be a float in (0.0, 1.0).'
 			test_portion = kwargs['test_portion']
-		else:
-			test_portion = 0.2
-		train_portion = 1.0 - test_portion
+			train_portion = 1.0 - test_portion
 
 		if 'minimum_length' in kwargs:								#  Were we given a minimum sequence length?
 			assert isinstance(kwargs['minimum_length'], int) and kwargs['minimum_length'] > 0, \
