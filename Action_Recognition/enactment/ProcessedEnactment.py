@@ -264,7 +264,7 @@ class ProcessedEnactment():
 
 	#  March through time by 'stride', and when the ground-truth label of every frame within 'window_length' is the same, add it to a list and return that list.
 	#  The action tuples in this list reflect a temporal examination of the Enactment because we do NOT know where true boundaries are.
-	def snippets_from_frames(self, window_length, stride):
+	def snippets_from_frames(self, window_length, stride, include_nothings=False):
 		video_frames = [y[1]['file'] for y in sorted([x for x in self.frames.items()], key=lambda x: x[0])]
 		time_stamps = sorted([x[0] for x in self.frames.items()])
 
@@ -275,7 +275,7 @@ class ProcessedEnactment():
 		for i in range(0, num_frames - window_length, stride):		#  March through time by 'stride'. Halt 'window_length' short of the end of time.
 			buffer_labels = [self.frames[time_stamps[i + x]]['ground-truth-label'] for x in range(0, window_length)]
 																	#  Labels in the buffer are uniform and not nothing.
-			if buffer_labels[0] != '*' and buffer_labels.count(buffer_labels[0]) == window_length:
+			if (buffer_labels[0] != '*' or include_nothings) and buffer_labels.count(buffer_labels[0]) == window_length:
 				snippet_actions.append( (buffer_labels[0],                \
 				                         time_stamps[i],                  \
 				                         video_frames[i],                 \
