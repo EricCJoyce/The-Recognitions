@@ -283,3 +283,20 @@ class ProcessedEnactment():
 				                         video_frames[i + window_length]) )
 
 		return snippet_actions
+
+	#  Return the index into this enactment's frames for the given time stamp.
+	#  (Actually returns the index of the frame with time stamp *nearest* the query time stamp.)
+	def time_index(self, time_stamp):
+		all_time_stamps = sorted(self.frames.keys())
+		min_index = 0
+		min_dist = float('inf')
+		for i in range(0, len(all_time_stamps)):
+			if np.abs(time_stamp - all_time_stamps[i]) < min_dist:
+				min_dist = np.abs(time_stamp - all_time_stamps[i])
+				min_index = i
+		return min_index
+
+	#  Return the time stamp for the index-th frame of this enactment.
+	def index_time(self, index):
+		all_time_stamps = sorted(self.frames.keys())
+		return all_time_stamps[ max(0, min(index, len(all_time_stamps) - 1)) ]
