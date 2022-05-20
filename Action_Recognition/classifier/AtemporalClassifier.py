@@ -208,11 +208,15 @@ class AtemporalClassifier(Classifier):
 			#  tentative_prediction:                  label or None #
 			#  matching_costs: key: label ==> val: cost             #
 			#  confidences:    key: label ==> val: score            #
+			#                  or None                              #
 			#  probabilities:  key: label ==> val: probability      #
 			#  metadata:       key: label ==> val: {query-indices,  #
 			#                                       tmplate-indices,#
 			#                                       db-index}       #
 			#########################################################
+
+			#####  LEFT OFF HERE !!! ***
+			#  Accommodate MLP in Atemporal
 																	#  Save all costs for all labels.
 			classification_stats['_costs'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
 			                                             [matching_costs[label] for label in self.labels('train')] + \
