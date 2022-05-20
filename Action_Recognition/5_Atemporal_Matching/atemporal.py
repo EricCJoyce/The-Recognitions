@@ -71,7 +71,7 @@ def get_command_line_params():
 	params['window'] = 10											#  Length of the sliding window.
 	params['stride'] = 2											#  Stride of the slide.
 
-	params['hand-schema'] = 'left-right'							#  Hand subvector encoding.
+	params['hand-schema'] = 'strong-hand'							#  Hand subvector encoding.
 	params['hands-coeff'] = 1.0										#  Coefficient for the hands subvector (excluding the one-hot components.)
 	params['props-coeff'] = 1.0										#  Coefficient for the props subvector.
 
@@ -202,6 +202,8 @@ def usage():
 	print('        -window   Following integer > 0 is the length of the sliding window used to chop actions into snippets. Default is 10.')
 	print('        -stride   Following integer > 0 is the stride of the sliding window. Default is 2.')
 	print('')
+	print('        -schema   Following string indicates which hand schema to apply to the descriptors.')
+	print('                  Must be in {' + ', '.join(c.hand_schema_names) + '}. Default is "strong-hand".')
 	print('        -hands    Following real number is the coefficient for the hands subvector. Default is 1.0.')
 	print('        -props    Following real number is the coefficient for the props subvector. Default is 1.0.')
 	print('')
