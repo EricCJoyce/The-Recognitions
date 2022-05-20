@@ -9,8 +9,11 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import sys
 import time
 
-sys.path.append('../enactment')
+sys.path.append('../enactment')										#  Be able to access enactment classes.
 from enactment import Enactment, Gaussian3D, RecognizableObject, ProcessedEnactment
+
+sys.path.append('../mlp')											#  Be able to access MLP class.
+from mlp import MLP
 
 '''
 The Classifier object really serves as a home for attributes and functions used by both its derived classes:
@@ -98,6 +101,13 @@ class Classifier():
 			self.hand_schema = kwargs['hand_schema']
 		else:
 			self.hand_schema = 'strong-hand'						#  Default to strong-hand.
+
+		if 'mlp' in kwargs:											#  Were we given an MLP?
+			assert isinstance(kwargs['mlp'], MLP), \
+			       'Argument \'mlp\' passed to Classifier must be an instance of the class MLP.'
+			self.mlp = kwargs['mlp']
+		else:
+			self.mlp = None
 
 		if 'presence_threshold' in kwargs:							#  Were we given an object presence threshold?
 			assert isinstance(kwargs['presence_threshold'], float) and kwargs['presence_threshold'] > 0.0 and kwargs['presence_threshold'] <= 1.0, \
@@ -357,35 +367,154 @@ class Classifier():
 	#  Shared classification engine.                                #
 	#################################################################
 
-	#  This is the core classification routine, usable by Atemporal and Temporal subclasses alike.
-	#  Given a single query sequence, return:
-	#    - Matching costs over all classes
-	#    - Confidences over all classes
-	#    - Probability distribution over all classes
-	#    - Metadata (nearest neighbor indices, alignment sequences) over all classes
-	#  Use the C-extension DTW module.
-	def classify(self, query):
-		least_cost = float('inf')
-		nearest_neighbor_label = None
+	#  Return a dictionary of the form: key: action-label ==> val: inf
+	#  Include the nothing-label "*" if self.mlp is not None.
+	def prepare_matching_costs_table(self):
+		matching_costs = {}											#  Matching cost for the nearest neighbor per class.
 																	#  In defense of hashing versus building a flat list:
 																	#  a database is likely to have many more samples than there are labels.
 																	#  As a hash table, updating takes O(1) * |X_train| rather than
 																	#  O(n) * |X_train| to find matching_costs[ matching_costs.index(template_label) ].
-		matching_costs = {}											#  Matching cost for the nearest neighbor per class.
 		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
 			labels = self.labels('train')
 		else:
 			labels = sorted(np.unique(self.y_train))
+
 		for label in labels:										#  Initialize everything to infinitely far away.
 			matching_costs[label] = float('inf')
 
+		if self.mlp is not None:									#  The MLP explicitly predicts the nothing-label.
+			matching_costs['*'] = float('inf')
+
+		return matching_costs
+
+	#  "metadata" includes innformation about matches: which template snippet made the best match, and how the template and query frames align.
+	def prepare_metadata_table(self):
 		metadata = {}												#  Track information about the best match per class.
 		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
 			labels = self.labels('both')							#  Include labels the classifier may not know; these will simply be empty.
 		else:
 			labels = sorted(np.unique(self.y_train))
+
 		for label in labels:
 			metadata[label] = {}
+																	#  The MLP explicitly predicts the nothing-label.
+		if self.mlp is not None:									#  Included here for completeness, but the DB is never expected
+			metadata['*'] = {}										#  to include "nothing" snippets.
+
+		return metadata
+
+	#  Return a dictionary of the form: key: action-label ==> val: 0.0
+	def prepare_probabilities_table(self):
+		probabilities = {}											#  If we apply isotonic mapping, then this is a different measure than confidence.
+		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+			labels = self.labels('train')
+		else:
+			labels = sorted(np.unique(self.y_train))
+
+		for label in labels:
+			probabilities[label] = 0.0
+
+		if self.mlp is not None:									#  The MLP explicitly predicts the nothing-label.
+			probabilities['*'] = 0.0
+
+		return probabilities
+
+	#  This is the core classification routine, usable by Atemporal and Temporal subclasses alike.
+	#  Given a single query sequence, return:
+	#    - nearest_neighbor_label:                      string
+	#    - Matching costs over all classes:             dict = key: label ==> val: least cost
+	#    - Confidences over all classes:                dict = key: label ==> val: confidence
+	#    - Probability distribution over all classes:   dict = key: label ==> val: probability
+	#    - Metadata (nearest neighbor indices, alignment sequences) over all classes
+	#                                                   dict = key: label ==> val:{key: db-index         ==> DB index
+	#                                                                              key: template-indices ==> frames
+	#                                                                              key: query-indices    ==> frames }
+	#  Use the C-extension DTW module.
+	def classify(self, query):
+		nearest_neighbor_label, matching_costs, metadata = self.DTW_match(query)
+
+		probabilities = self.prepare_probabilities_table()			#  Initialize all probabilities to zero.
+
+		#############################################################
+		#  The Classifier can use the matching costs to compute     #
+		#  confidences according to self.confidence_function and    #
+		#  then convert these to probabilities.                     #
+		#  In this case, classify() returns:                        #
+		#    nearest_neighbor_label                                 #
+		#    matching_costs in R^N                                  #
+		#    confidences    in R^N                                  #
+		#    probabilities  in R^N                                  #
+		#    metadata                                               #
+		#############################################################
+
+		if self.mlp is None:
+																	#  Get a dictionary of key:label ==> val:confidence.
+			confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
+
+
+			if self.isotonic_map is not None:						#  We have an isotonic mapping to apply.
+				for label, confidence in confidences.items():
+					brackets = sorted(self.isotonic_map.keys())
+					i = 0
+					while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
+						i += 1
+
+					probabilities[label] = self.isotonic_map[ brackets[i] ]
+			else:													#  If no isotonic mapping is provided,
+				for label, confidence in confidences.items():		#  then probability = (normalized) confidence, which is sloppy, but... meh.
+					probabilities[label] = confidence
+
+			prob_norm = sum( probabilities.values() )				#  Normalize probabilities.
+			for k in probabilities.keys():
+				if prob_norm > 0.0:
+					probabilities[k] /= prob_norm
+				else:
+					probabilities[k] = 0.0
+
+		#############################################################
+		#  Alternatively, the Classifier can pass the matching      #
+		#  costs to an MLP to directly compute probabilities.       #
+		#  In this case, classify() returns:                        #
+		#    nearest_neighbor_label                                 #
+		#    matching_costs in R^N                                  #
+		#    confidences    = None                                  #
+		#    probabilities  in R^{N+1}                              #
+		#    metadata                                               #
+		#############################################################
+
+		else:
+			if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+				labels = self.labels('train')
+			else:
+				labels = sorted(np.unique(self.y_train))
+
+			labels_and_nothing = labels + ['*']						#  Append the nothing-label.
+
+			y_hat = self.mlp.run( [matching_costs[label] for label in labels] )
+
+			for i in range(0, len(labels_and_nothing)):
+				probabilities[ labels_and_nothing[i] ] = y_hat[i]
+
+			confidences = None
+
+		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
+
+	#  Performs DTW matching on the given query snippet.
+	#  If curoff conditions apply (such as "Only consider Grab(Helmet) if vector[helmet] > 0.0"), they apply here.
+	#  Returns
+	#    'nearest_neighbor_label', a string
+	#    'matching_costs',         a dictionary:  key: action-label ==> val: matching-cost
+	#    'metadata',               a dictionary:  key: action-label ==> val: {key:'db-index'         ==> val: index of best matching DB snippet
+	#                                                                         key:'template-indices' ==> val: frames in T snippet
+	#                                                                         key:'query-indices'    ==> val: frames in Q snippet
+	#                                                                        }
+	def DTW_match(self, query):
+		matching_costs = self.prepare_matching_costs_table()		#  Initialize all costs for all predictable labels as +inf.
+		metadata = self.prepare_metadata_table()					#  Initialize all metadata.
+
+		least_cost = float('inf')									#  Initialize least cost found to +inf.
+		nearest_neighbor_label = None								#  Initialize best label to None.
 
 		db_index = 0												#  Index into self.X_train let us know which sample best matches the query.
 		for template in self.X_train:								#  For every training-set sample, 'template'...
@@ -411,37 +540,8 @@ class Classifier():
 					metadata[template_label]['query-indices'] = query_indices
 
 			db_index += 1
-																	#  Get a dictionary of key:label ==> val:confidence.
-		confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
 
-		probabilities = {}											#  If we apply isotonic mapping, then this is a different measure than confidence.
-		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
-			labels = self.labels('train')
-		else:
-			labels = sorted(np.unique(self.y_train))
-		for label in labels:
-			probabilities[label] = 0.0
-
-		if self.isotonic_map is not None:							#  We have an isotonic mapping to apply.
-			for label, confidence in confidences.items():
-				brackets = sorted(self.isotonic_map.keys())
-				i = 0
-				while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
-					i += 1
-
-				probabilities[label] = self.isotonic_map[ brackets[i] ]
-		else:														#  No mapping; probability = confidence, which is sloppy, but... meh.
-			for label, confidence in confidences.items():
-				probabilities[label] = confidence
-
-		prob_norm = sum( probabilities.values() )					#  Normalize probabilities.
-		for k in probabilities.keys():
-			if prob_norm > 0.0:
-				probabilities[k] /= prob_norm
-			else:
-				probabilities[k] = 0.0
-
-		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
+		return nearest_neighbor_label, matching_costs, metadata
 
 	#  Does the given 'query_seq' present enough support for us to even consider attempting to match this query
 	#  with templates exemplifying 'candidate_label'?
@@ -1035,7 +1135,7 @@ class Classifier():
 		for i in range(0, len(stats['_tests'])):
 			pred_label = stats['_tests'][i][0]
 			gt_label   = stats['_tests'][i][1]
-			conf       = stats['_tests'][i][2]
+			conf       = stats['_tests'][i][2]						#  Confidence may be None
 			prob       = stats['_tests'][i][3]
 			fair       = stats['_tests'][i][-1]
 			if pred_label is None:
@@ -1048,10 +1148,12 @@ class Classifier():
 					decision_ctr += 1
 
 				if pred_label == gt_label:
-					conf_correct.append(conf)
+					if conf is not None:
+						conf_correct.append(conf)
 					prob_correct.append(prob)
 				else:
-					conf_incorrect.append(conf)
+					if conf is not None:
+						conf_incorrect.append(conf)
 					prob_incorrect.append(prob)
 
 		avg_conf_correct = np.mean(conf_correct)					#  Compute average confidence when correct.
@@ -1135,13 +1237,17 @@ class Classifier():
 			else:
 				pred = stats['_tests'][i][0]
 			gt = stats['_tests'][i][1]								#  [1]  Ground-Truth
-			conf = stats['_tests'][i][2]							#  [2]  Confidence
+			conf = stats['_tests'][i][2]							#  [2]  Confidence (may be None)
+			if conf is None:
+				conf = '*'
+			else:
+				conf = str(conf)
 			prob = stats['_tests'][i][3]							#  [3]  Probability
 			enactment_src = stats['_tests'][i][4]					#  [4]  Enactment source
 			timestamp = stats['_tests'][i][5]						#  [5]  Time stamp at of newest frame
 			db_index = stats['_tests'][i][6]						#  [6]  Database index
 
-			fh.write(pred + '\t' + gt + '\t' + str(conf) + '\t' + str(prob) + '\t' + enactment_src + '\t' + str(timestamp) + '\t' + str(db_index) + '\t')
+			fh.write(pred + '\t' + gt + '\t' + conf + '\t' + str(prob) + '\t' + enactment_src + '\t' + str(timestamp) + '\t' + str(db_index) + '\t')
 			if stats['_tests'][i][7]:								#  [7]  Fair/Unfair
 				fh.write('fair\n')
 			else:
