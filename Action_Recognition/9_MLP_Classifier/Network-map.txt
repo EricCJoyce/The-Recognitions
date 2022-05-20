@@ -1,0 +1,6 @@
+#  Layer  <t>  Number of units
+#  Not including the output layer, which is determined by the number of labels.
+
+0	128
+1	64
+2	32
