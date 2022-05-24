@@ -212,6 +212,7 @@ class TemporalClassifier(Classifier):
 	def simulated_classify(self, skip_unfair=True):
 		assert isinstance(skip_unfair, bool), 'Argument \'skip_unfair\' passed to TemporalClassifier.classify() must be a Boolean.'
 
+		n_labels = self.num_labels('train')							#  Store the number of training-set labels.
 		classification_stats = self.initialize_stats()				#  Init.
 
 		self.initialize_timers()									#  (Re)set.
@@ -339,118 +340,27 @@ class TemporalClassifier(Classifier):
 
 					#################################################
 					#  tentative_prediction:          label or None #
-					#  matching_costs = key: label ==> val: cost    #
-					#  confidences    = key: label ==> val: score   #
-					#                   or None                     #
-					#  probabilities  = key: label ==> val: prob.   #
-					#  metadata       = key: label ==>              #
-					#                     val: {query-indices,      #
-					#                           template-indices,   #
-					#                           db-index}           #
+					#  matching_costs: key: label ==> val: cost     #
+					#                  in R^N                       #
+					#  confidences:    key: label ==> val: score    #
+					#                  in R^N                       #
+					#  probabilities:  key: label ==> val: prob.    #
+					#                  in R^N or R^{N+1}            #
+					#  metadata:       key: label ==>               #
+					#                    val: {query-indices,       #
+					#                          template-indices,    #
+					#                          db-index}            #
 					#################################################
 
-					#####  LEFT OFF HERE !!! ***
-					#####  REDO THIS PART TO MATCH classify()!!!!!
-
 					#################################################
-					#  A Classifier with an MLP makes an explicit   #
-					#  prediction for the nothing-label.            #
+					#  When probabilities is in R^N the nothing-    #
+					#  label is predicted only if all other scores  #
+					#  are below a threshold.                       #
 					#################################################
-					if self.mlp is not None:
-						labels_and_nothing = self.labels('train') + ['*']
-
-						sorted_probabilities = [probabilities[label] for label in labels_and_nothing]
-						t1_start = time.process_time()				#  Start timer.
-																	#  Add this probability distribution to the temporal buffer.
-						self.push_temporal( sorted_probabilities[:-1] )
-																	#  The temporal buffer always receives distributions sorted
-																	#  according to the labels('train') method.
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
-
-																	#  Save all costs for all labels.
-						classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
-						                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
-						                                             [enactment_input] + \
-						                                             [matching_costs[label] for label in labels_and_nothing] + \
-						                                             [ground_truth_label]) )
-
-																	#  Save confidence scores for all labels, regardless of what the system picks.
-						#for label in labels_and_nothing:			#  We use these values downstream in the pipeline for isotonic regression.
-						#	classification_stats['_conf'].append( (probabilities[label], label, ground_truth_label, \
-						#	                                       enactment_input, \
-						#	                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
-						#	                                       time_stamp_buffer[ frame_ctr ]) )
-
-						for label in labels_and_nothing:			#  Save probabilities for all labels, regardless of what the system picks.
-							classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
-							                                       enactment_input, \
-							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
-							                                       time_stamp_buffer[ frame_ctr ]) )
-
-																	#  If we are rendering confidences, then add to the confidences buffer.
-						if self.render and 'confidence' in self.render_modes:
-							confidence_store = self.push_buffer(sorted_probabilities, confidence_store)
-																	#  If we are rendering probabilities, then add to the probabilities buffer.
-						if self.render and 'probabilities' in self.render_modes:
-							probability_store = self.push_buffer(sorted_probabilities, probability_store)
-
-						#############################################
-						#  Smooth the contents of the temporal      #
-						#  buffer and make a prediction (or abstain #
-						#  from predicting).                        #
-						#############################################
-
-						t1_start = time.process_time()				#  Start timer.
-						smoothed_probabilities = np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0)
-						smoothed_norm = sum(smoothed_probabilities)
-						if smoothed_norm > 0.0:
-							smoothed_probabilities /= smoothed_norm
-						smoothed_probabilities = list(smoothed_probabilities)
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
-
-						if self.render and 'smooth' in self.render_modes:
-							smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
-
-						prediction = None
-						t1_start = time.process_time()				#  Start timer.
-						if tentative_prediction is not None:
-							tentative_probability = smoothed_probabilities[ labels_and_nothing.index(tentative_prediction) ]
-							if tentative_probability >= self.threshold:
-								prediction = tentative_prediction
-								if prediction == '*':				#  Convert from explicitly labeled nothing-class...
-									prediction = None				#  ...to None
-								if prediction in self.hidden_labels:#  Is this a hidden label? Then dummy up.
-									prediction = None
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
-
-						classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
-																	#  Whether or not it's skipped, put it on record.
-						if tentative_prediction is not None:
-							classification_stats['_tests'].append( (prediction, ground_truth_label, \
-							                                        confidences[tentative_prediction], tentative_probability, \
-							                                        enactment_input, time_stamp_buffer[frame_ctr], \
-							                                        metadata[tentative_prediction]['db-index'], \
-							                                        fair) )
-						else:										#  The tentative prediction is None if applied conditions make ALL possibilities impossible.
-							classification_stats['_tests'].append( (prediction, ground_truth_label, \
-							                                        0.0, 0.0, \
-							                                        enactment_input, time_stamp_buffer[frame_ctr], \
-							                                        -1, \
-							                                        fair) )
-						classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
-						classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
-
-					#################################################
-					#  A Classifier without an MLP predicts the     #
-					#  nothing-label only if all other scores are   #
-					#  below a threshold.                           #
-					#################################################
-					else:
+					if len(probabilities) == n_labels:				#  Probabilities is in R^N.
 																	#  Among other tasks, this method pushes to the temporal buffer.
 						sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
+
 																	#  Save all costs for all labels.
 						classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
 						                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
@@ -495,8 +405,8 @@ class TemporalClassifier(Classifier):
 						if self.render and 'smooth' in self.render_modes:
 							smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
-						prediction = None
 						t1_start = time.process_time()				#  Start timer.
+						prediction = None
 						if tentative_prediction is not None:
 							tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
 							if tentative_probability >= self.threshold:
@@ -520,8 +430,125 @@ class TemporalClassifier(Classifier):
 							                                        enactment_input, time_stamp_buffer[frame_ctr], \
 							                                        -1, \
 							                                        fair) )
-						classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
-						classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
+
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Confs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-conf'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [confidences[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [probabilities[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Smoothed-Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-smooth-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                         time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                        [smoothed_probabilities[x] for x in range(0, n_labels)] + \
+						                                                        [ground_truth_label, fair]) )
+					#################################################
+					#  When probabilities is in R^{N+1} the nothing-#
+					#  label has an explicit prediction.            #
+					#  This becomes the system's prediction if this #
+					#  probability is the highest and high enough,  #
+					#  OR if no other label is probable enough.     #
+					#################################################
+					else:											#  Probabilities is in R^{N+1}. Meaning the nothing label has been explicitly predicted.
+						labels_and_nothing = self.labels('train') + ['*']
+
+						sorted_probabilities = [probabilities[label] for label in labels_and_nothing]
+						t1_start = time.process_time()				#  Start timer.
+
+						self.push_temporal( sorted_probabilities )	#  Add this probability distribution to the temporal buffer.
+																	#  The temporal buffer always receives distributions sorted
+																	#  according to the labels('train') method.
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
+
+																	#  Save all costs for all labels.
+																	#  (There is no matching cost for the explicitly predicted nothing-label.)
+						classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
+						                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
+						                                             [enactment_input] + \
+						                                             [matching_costs[label] for label in labels_and_nothing[:-1]] + \
+						                                             [ground_truth_label]) )
+																	#  Save confidence scores for all labels, regardless of what the system picks.
+						for label in self.labels('train'):			#  We use these values downstream in the pipeline for isotonic regression.
+							classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
+							                                       enactment_input, \
+							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+							                                       time_stamp_buffer[ frame_ctr ]) )
+
+						for label in labels_and_nothing:			#  Save probabilities for all labels, regardless of what the system picks.
+							classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
+							                                       enactment_input, \
+							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+							                                       time_stamp_buffer[ frame_ctr ]) )
+
+						#############################################
+						#  Smooth the contents of the temporal      #
+						#  buffer and make a prediction (or abstain #
+						#  from predicting).                        #
+						#############################################
+
+						t1_start = time.process_time()				#  Start timer.
+						smoothed_probabilities = np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0)
+						smoothed_norm = sum(smoothed_probabilities)
+						if smoothed_norm > 0.0:
+							smoothed_probabilities /= smoothed_norm
+						smoothed_probabilities = list(smoothed_probabilities)
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
+
+						if self.render and 'smooth' in self.render_modes:
+							smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
+
+						prediction = None
+						t1_start = time.process_time()				#  Start timer.
+						if tentative_prediction is not None:
+							tentative_probability = smoothed_probabilities[ self.labels('train').index(tentative_prediction) ]
+							if tentative_probability >= self.threshold:
+								prediction = tentative_prediction
+								if prediction == '*':				#  Convert from explicitly labeled nothing-class...
+									prediction = None				#  ...to None.
+								if prediction in self.hidden_labels:#  Is this a hidden label? Then dummy up.
+									prediction = None
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
+
+						classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
+
+																	#  Whether or not it's skipped, put it on record.
+						test_tuple = [prediction, ground_truth_label]
+						if confidences is not None:
+							test_tuple.append(confidences[tentative_prediction])
+						else:
+							test_tuple.append(None)
+						test_tuple.append(tentative_probability)
+						test_tuple.append(enactment_input)
+						test_tuple.append(time_stamp_buffer[frame_ctr])
+						if 'db-index' in metadata[tentative_prediction]:
+							test_tuple.append(metadata[tentative_prediction]['db-index'])
+						else:
+							test_tuple.append(None)
+						test_tuple.append(fair)
+						classification_stats['_tests'].append( tuple(test_tuple) )
+
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Confs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-conf'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [confidences[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [probabilities[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Smoothed-Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-smooth-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                         time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                        [smoothed_probabilities[x] for x in range(0, n_labels)] + \
+						                                                        [ground_truth_label, fair]) )
 
 				#####################################################
 				#  Rendering?                                       #
@@ -624,6 +651,7 @@ class TemporalClassifier(Classifier):
 		for gpu in gpus:
 			tf.config.experimental.set_memory_growth(gpu, True)		#  For each GPU, limit memory use.
 
+		n_labels = self.num_labels('train')							#  Store the number of training-set labels.
 		flip = np.array([[-1.0,  0.0, 0.0], \
 		                 [ 0.0, -1.0, 0.0], \
 		                 [ 0.0,  0.0, 1.0]], dtype=np.float32)		#  Build the flip matrix
@@ -878,9 +906,11 @@ class TemporalClassifier(Classifier):
 					#################################################
 					#  tentative_prediction:          label or None #
 					#  matching_costs: key: label ==> val: cost     #
+					#                  in R^N                       #
 					#  confidences:    key: label ==> val: score    #
-					#                  or None                      #
+					#                  in R^N                       #
 					#  probabilities:  key: label ==> val: prob.    #
+					#                  in R^N or R^{N+1}            #
 					#  metadata:       key: label ==>               #
 					#                    val: {query-indices,       #
 					#                          template-indices,    #
@@ -888,98 +918,11 @@ class TemporalClassifier(Classifier):
 					#################################################
 
 					#################################################
-					#  A Classifier with an MLP makes an explicit   #
-					#  prediction for the nothing-label.            #
+					#  When probabilities is in R^N the nothing-    #
+					#  label is predicted only if all other scores  #
+					#  are below a threshold.                       #
 					#################################################
-					if self.mlp is not None:
-						labels_and_nothing = self.labels('train') + ['*']
-
-						sorted_probabilities = [probabilities[label] for label in labels_and_nothing]
-						t1_start = time.process_time()				#  Start timer.
-																	#  Add this probability distribution to the temporal buffer.
-						self.push_temporal( sorted_probabilities )
-																	#  The temporal buffer always receives distributions sorted
-																	#  according to the labels('train') method.
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
-
-																	#  Save all costs for all labels.
-																	#  (There is no matching cost for the explicitly predicted nothing-label.)
-						classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
-						                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
-						                                             [enactment_input] + \
-						                                             [matching_costs[label] for label in labels_and_nothing[:-1]] + \
-						                                             [ground_truth_label]) )
-																	#  Save confidence scores for all labels, regardless of what the system picks.
-						#for label in labels_and_nothing:			#  We use these values downstream in the pipeline for isotonic regression.
-						#	classification_stats['_conf'].append( (probabilities[label], label, ground_truth_label, \
-						#	                                       enactment_input, \
-						#	                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
-						#	                                       time_stamp_buffer[ frame_ctr ]) )
-
-						for label in labels_and_nothing:			#  Save probabilities for all labels, regardless of what the system picks.
-							classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
-							                                       enactment_input, \
-							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
-							                                       time_stamp_buffer[ frame_ctr ]) )
-
-						#############################################
-						#  Smooth the contents of the temporal      #
-						#  buffer and make a prediction (or abstain #
-						#  from predicting).                        #
-						#############################################
-
-						t1_start = time.process_time()				#  Start timer.
-						smoothed_probabilities = np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0)
-						smoothed_norm = sum(smoothed_probabilities)
-						if smoothed_norm > 0.0:
-							smoothed_probabilities /= smoothed_norm
-						smoothed_probabilities = list(smoothed_probabilities)
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
-
-						prediction = None
-						t1_start = time.process_time()				#  Start timer.
-						if tentative_prediction is not None:
-							tentative_probability = smoothed_probabilities[ labels_and_nothing.index(tentative_prediction) ]
-							if tentative_probability >= self.threshold:
-								prediction = tentative_prediction
-								if prediction == '*':				#  Convert from explicitly labeled nothing-class...
-									prediction = None				#  ...to None
-								if prediction in self.hidden_labels:#  Is this a hidden label? Then dummy up.
-									prediction = None
-						t1_stop = time.process_time()				#  Stop timer.
-						self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
-
-						classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
-
-																	#  Whether or not it's skipped, put it on record.
-						test_tuple = [prediction, ground_truth_label]
-						if confidences is not None:
-							test_tuple.append(confidences[tentative_prediction])
-						else:
-							test_tuple.append(None)
-						test_tuple.append(tentative_probability)
-						test_tuple.append(enactment_input)
-						test_tuple.append(time_stamp_buffer[frame_ctr])
-						if 'db-index' in metadata[tentative_prediction]:
-							test_tuple.append(metadata[tentative_prediction]['db-index'])
-						else:
-							test_tuple.append(None)
-						test_tuple.append(fair)
-						classification_stats['_tests'].append( tuple(test_tuple) )
-
-						if confidences is not None:
-							classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
-
-						classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
-
-					#################################################
-					#  A Classifier without an MLP predicts the     #
-					#  nothing-label only if all other scores are   #
-					#  below a threshold.                           #
-					#################################################
-					else:
+					if len(probabilities) == n_labels:				#  Probabilities is in R^N.
 																	#  Among other tasks, this method pushes to the temporal buffer.
 						sorted_confidences, sorted_probabilities = self.process_dtw_results(matching_costs, confidences, probabilities)
 																	#  Save all costs for all labels.
@@ -1041,8 +984,121 @@ class TemporalClassifier(Classifier):
 							                                        enactment_input, time_stamp_buffer[frame_ctr], \
 							                                        -1, \
 							                                        fair) )
-						classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
-						classification_stats['_test-prob'].append( tuple(smoothed_probabilities) )
+
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Confs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-conf'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [confidences[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [probabilities[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Smoothed-Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-smooth-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                         time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                        [smoothed_probabilities[x] for x in range(0, n_labels)] + \
+						                                                        [ground_truth_label, fair]) )
+					#################################################
+					#  When probabilities is in R^{N+1} the nothing-#
+					#  label has an explicit prediction.            #
+					#  This becomes the system's prediction if this #
+					#  probability is the highest and high enough,  #
+					#  OR if no other label is probable enough.     #
+					#################################################
+					else:											#  Probabilities is in R^{N+1}. Meaning the nothing label has been explicitly predicted.
+						labels_and_nothing = self.labels('train') + ['*']
+
+						sorted_probabilities = [probabilities[label] for label in labels_and_nothing]
+						t1_start = time.process_time()				#  Start timer.
+																	#  Add this probability distribution to the temporal buffer.
+						self.push_temporal( sorted_probabilities )
+																	#  The temporal buffer always receives distributions sorted
+																	#  according to the labels('train') method.
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['push-temporal-buffer'].append(t1_stop - t1_start)
+
+																	#  Save all costs for all labels.
+																	#  (There is no matching cost for the explicitly predicted nothing-label.)
+						classification_stats['_costs'].append( tuple([time_stamp_buffer[ frame_ctr ]] + \
+						                                             [time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ]] + \
+						                                             [enactment_input] + \
+						                                             [matching_costs[label] for label in labels_and_nothing[:-1]] + \
+						                                             [ground_truth_label]) )
+																	#  Save confidence scores for all labels, regardless of what the system picks.
+						for label in self.labels('train'):			#  We use these values downstream in the pipeline for isotonic regression.
+							classification_stats['_conf'].append( (confidences[label], label, ground_truth_label, \
+							                                       enactment_input, \
+							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+							                                       time_stamp_buffer[ frame_ctr ]) )
+
+						for label in labels_and_nothing:			#  Save probabilities for all labels, regardless of what the system picks.
+							classification_stats['_prob'].append( (probabilities[label], label, ground_truth_label, \
+							                                       enactment_input, \
+							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+							                                       time_stamp_buffer[ frame_ctr ]) )
+
+						#############################################
+						#  Smooth the contents of the temporal      #
+						#  buffer and make a prediction (or abstain #
+						#  from predicting).                        #
+						#############################################
+
+						t1_start = time.process_time()				#  Start timer.
+						smoothed_probabilities = np.mean(np.array([x for x in self.temporal_buffer if x is not None]), axis=0)
+						smoothed_norm = sum(smoothed_probabilities)
+						if smoothed_norm > 0.0:
+							smoothed_probabilities /= smoothed_norm
+						smoothed_probabilities = list(smoothed_probabilities)
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
+
+						prediction = None
+						t1_start = time.process_time()				#  Start timer.
+						if tentative_prediction is not None:
+							tentative_probability = smoothed_probabilities[ labels_and_nothing.index(tentative_prediction) ]
+							if tentative_probability >= self.threshold:
+								prediction = tentative_prediction
+								if prediction == '*':				#  Convert from explicitly labeled nothing-class...
+									prediction = None				#  ...to None
+								if prediction in self.hidden_labels:#  Is this a hidden label? Then dummy up.
+									prediction = None
+						t1_stop = time.process_time()				#  Stop timer.
+						self.timing['make-temporally-smooth-decision'].append(t1_stop - t1_start)
+
+						classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
+
+																	#  Whether or not it's skipped, put it on record.
+						test_tuple = [prediction, ground_truth_label]
+						if confidences is not None:
+							test_tuple.append(confidences[tentative_prediction])
+						else:
+							test_tuple.append(None)
+						test_tuple.append(tentative_probability)
+						test_tuple.append(enactment_input)
+						test_tuple.append(time_stamp_buffer[frame_ctr])
+						if 'db-index' in metadata[tentative_prediction]:
+							test_tuple.append(metadata[tentative_prediction]['db-index'])
+						else:
+							test_tuple.append(None)
+						test_tuple.append(fair)
+						classification_stats['_tests'].append( tuple(test_tuple) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Confs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-conf'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [confidences[x] for x in self.labels('train')] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                  time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                 [probabilities[x] for x in labels_and_nothing] + \
+						                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Smoothed-Probs...    Ground-Truth-Label    {fair,unfair}
+						classification_stats['_test-smooth-prob'].append( tuple([time_stamp_buffer[max(0, frame_ctr - (self.rolling_buffer_length - 1))], \
+						                                                         time_stamp_buffer[frame_ctr], enactment_input] + \
+						                                                        [smoothed_probabilities[x] for x in range(0, n_labels)] + \
+						                                                        [ground_truth_label, fair]) )
 
 				if self.verbose:									#  Progress bar.
 					if int(round(float(frame_ctr) / float(num - 1) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
