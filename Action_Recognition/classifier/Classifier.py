@@ -525,7 +525,7 @@ class Classifier():
 			for i in range(0, len(labels_and_nothing)):
 				probabilities[ labels_and_nothing[i] ] = y_hat[i]
 
-		else:
+		else:														#  Probabilities to be computed some other way.
 			#########################################################
 			#  The Classifier can use the matching costs to compute #
 			#  confidences according to self.confidence_function    #
