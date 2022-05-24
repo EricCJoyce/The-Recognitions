@@ -525,91 +525,94 @@ class Classifier():
 			for i in range(0, len(labels_and_nothing)):
 				probabilities[ labels_and_nothing[i] ] = y_hat[i]
 
-		#############################################################
-		#  The Classifier can use the matching costs to compute     #
-		#  confidences according to self.confidence_function and    #
-		#  then convert these to probabilities.                     #
-		#                                                           #
-		#  In this case, classify() returns:                        #
-		#    nearest_neighbor_label                                 #
-		#    matching_costs in R^N                                  #
-		#    confidences    in R^N                                  #
-		#    probabilities  in R^N                                  #
-		#    metadata                                               #
-		#############################################################
-		if self.confidence_to_probability['mode'] == 'isotonic':	#  Expect self.confidence_to_probability['pipeline'] is an isotonic lookup table.
+		else:
+			#########################################################
+			#  The Classifier can use the matching costs to compute #
+			#  confidences according to self.confidence_function    #
+			#  and then convert these to probabilities.             #
+			#                                                       #
+			#  In this case, classify() returns:                    #
+			#    nearest_neighbor_label                             #
+			#    matching_costs in R^N                              #
+			#    confidences    in R^N                              #
+			#    probabilities  in R^N                              #
+			#    metadata                                           #
+			#########################################################
+																	#  Expect self.confidence_to_probability['pipeline'] is an isotonic lookup table.
+			if self.confidence_to_probability['mode'] == 'isotonic':
+																	#  Initialize all to zero. DO NOT explicitly predict the nothing-label.
+				probabilities = self.prepare_probabilities_table(False)
 
-			probabilities = self.prepare_probabilities_table(False)	#  Initialize all to zero. DO NOT explicitly predict the nothing-label.
+				for label, confidence in confidences.items():
+					brackets = sorted(self.confidence_to_probability['pipeline'].keys())
+					i = 0
+					while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
+						i += 1
 
-			for label, confidence in confidences.items():
-				brackets = sorted(self.confidence_to_probability['pipeline'].keys())
-				i = 0
-				while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
-					i += 1
+					probabilities[label] = self.confidence_to_probability['pipeline'][ brackets[i] ]
 
-				probabilities[label] = self.confidence_to_probability['pipeline'][ brackets[i] ]
+				prob_norm = sum( probabilities.values() )			#  Normalize probabilities.
+				for k in probabilities.keys():
+					if prob_norm > 0.0:
+						probabilities[k] /= prob_norm
+					else:
+						probabilities[k] = 0.0
 
-			prob_norm = sum( probabilities.values() )				#  Normalize probabilities.
-			for k in probabilities.keys():
-				if prob_norm > 0.0:
-					probabilities[k] /= prob_norm
+			#########################################################
+			#  The Classifier can pass confidence scores to a Multi-#
+			#  Layer Perceptron (MLP) to estimate probabilities.    #
+			#                                                       #
+			#  In this case, classify() returns:                    #
+			#    nearest_neighbor_label                             #
+			#    matching_costs in R^N                              #
+			#    confidences    in R^N                              #
+			#    probabilities  in R^{N+1}                          #
+			#    metadata                                           #
+			#########################################################
+			elif self.confidence_to_probability['mode'] == 'mlp':	#  Expect self.confidence_to_probability['pipeline'] is an MLP object.
+																	#  Initialize all to zero. Explicitly predict the nothing-label.
+				probabilities = self.prepare_probabilities_table(True)
+
+				if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+					labels = self.labels('train')
 				else:
-					probabilities[k] = 0.0
+					labels = sorted(np.unique(self.y_train))
 
-		#############################################################
-		#  The Classifier can pass confidence scores to a Multi-    #
-		#  Layer Perceptron (MLP) to estimate probabilities.        #
-		#                                                           #
-		#  In this case, classify() returns:                        #
-		#    nearest_neighbor_label                                 #
-		#    matching_costs in R^N                                  #
-		#    confidences    in R^N                                  #
-		#    probabilities  in R^{N+1}                              #
-		#    metadata                                               #
-		#############################################################
-		elif self.confidence_to_probability['mode'] == 'mlp':		#  Expect self.confidence_to_probability['pipeline'] is an MLP object.
+				labels_and_nothing = labels + ['*']					#  Append the nothing-label.
 
-			probabilities = self.prepare_probabilities_table(True)	#  Initialize all to zero. Explicitly predict the nothing-label.
+				assert isinstance(self.confidence_to_probability['pipeline'], MLP), \
+				  'In order to estimate label probabilities from confidence scores, the Classifier.confidence_to_probability[\'pipeline\'] must be an MLP object.'
 
-			if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
-				labels = self.labels('train')
-			else:
-				labels = sorted(np.unique(self.y_train))
+				y_hat = self.confidence_to_probability['pipeline'].run( [confidences[label] for label in labels] )
 
-			labels_and_nothing = labels + ['*']						#  Append the nothing-label.
+				for i in range(0, len(labels_and_nothing)):
+					probabilities[ labels_and_nothing[i] ] = y_hat[i]
 
-			assert isinstance(self.confidence_to_probability['pipeline'], MLP), \
-			  'In order to estimate label probabilities from confidence scores, the Classifier.confidence_to_probability[\'pipeline\'] must be an MLP object.'
+			#########################################################
+			#  The Classifier can simply normalize confidence scores#
+			#  and consider them probabilities, though this is      #
+			#  discouraged.                                         #
+			#                                                       #
+			#  In this case, classify() returns:                    #
+			#    nearest_neighbor_label                             #
+			#    matching_costs in R^N                              #
+			#    confidences    in R^N                              #
+			#    probabilities  in R^N                              #
+			#    metadata                                           #
+			#########################################################
+			else:													#  No isotonic map and no MLP?
+																	#  Initialize all to zero. DO NOT explicitly predict the nothing-label.
+				probabilities = self.prepare_probabilities_table(False)
 
-			y_hat = self.confidence_to_probability['pipeline'].run( [confidences[label] for label in labels] )
+				for label, confidence in confidences.items():		#  Then probability = (normalized) confidence, which is sloppy, but... meh.
+					probabilities[label] = confidence
 
-			for i in range(0, len(labels_and_nothing)):
-				probabilities[ labels_and_nothing[i] ] = y_hat[i]
-
-		#############################################################
-		#  The Classifier can simply normalize confidence scores and#
-		#  consider them probabilities, though this is discouraged. #
-		#                                                           #
-		#  In this case, classify() returns:                        #
-		#    nearest_neighbor_label                                 #
-		#    matching_costs in R^N                                  #
-		#    confidences    in R^N                                  #
-		#    probabilities  in R^N                                  #
-		#    metadata                                               #
-		#############################################################
-		else:														#  No isotonic map and no MLP?
-
-			probabilities = self.prepare_probabilities_table(False)	#  Initialize all to zero. DO NOT explicitly predict the nothing-label.
-
-			for label, confidence in confidences.items():			#  Then probability = (normalized) confidence, which is sloppy, but... meh.
-				probabilities[label] = confidence
-
-			prob_norm = sum( probabilities.values() )				#  Normalize probabilities.
-			for k in probabilities.keys():
-				if prob_norm > 0.0:
-					probabilities[k] /= prob_norm
-				else:
-					probabilities[k] = 0.0
+				prob_norm = sum( probabilities.values() )			#  Normalize probabilities.
+				for k in probabilities.keys():
+					if prob_norm > 0.0:
+						probabilities[k] /= prob_norm
+					else:
+						probabilities[k] = 0.0
 
 		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
 
@@ -1226,7 +1229,7 @@ class Classifier():
 		fh.write('Per-Class:\n')
 		fh.write('==========\n')
 		fh.write('\tAccuracy\tPrecision\tRecall\tF1-score\tSupport\n')
-		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_costs', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_costs', '_test-conf', '_test-prob', '_test-smooth-prob', '_conf', '_prob', '*']] ):
 			if v['support'] > 0:									#  ONLY ATTEMPT TO CLASSIFY IF THIS IS A "FAIR" QUESTION
 				tn = np.sum(np.delete(np.delete(conf_mat, train_labels.index(k), axis=0), train_labels.index(k), axis=1))
 				tp = conf_mat[train_labels.index(k), train_labels.index(k)]
@@ -1312,7 +1315,7 @@ class Classifier():
 		fh.write('Raw Results:\n')
 		fh.write('============\n')
 		fh.write('\tTP\tFP\tFN\tSupport\tTests\n')
-		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_costs', '_test-conf', '_test-prob', '_conf', '_prob', '*']] ):
+		for k, v in sorted( [x for x in stats.items() if x[0] not in ['_tests', '_costs', '_test-conf', '_test-prob', '_test-smooth-prob', '_conf', '_prob', '*']] ):
 			fh.write(k + '\t' + str(v['tp']) + '\t' + str(v['fp']) + '\t' + str(v['fn']) + '\t' + str(v['support']) + '\t')
 			fh.write(str(len( [x for x in stats['_tests'] if x[1] == k and x[-1]] )) + '\n')
 		fh.write('\n')
