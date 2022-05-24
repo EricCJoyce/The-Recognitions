@@ -208,15 +208,11 @@ class AtemporalClassifier(Classifier):
 			#  tentative_prediction:                  label or None #
 			#  matching_costs: key: label ==> val: cost             #
 			#  confidences:    key: label ==> val: score            #
-			#                  or None                              #
 			#  probabilities:  key: label ==> val: probability      #
 			#  metadata:       key: label ==> val: {query-indices,  #
 			#                                       tmplate-indices,#
 			#                                       db-index}       #
 			#########################################################
-
-			#####  LEFT OFF HERE !!! ***
-			#  Accommodate MLP in Atemporal
 																	#  Save all costs for all labels.
 			classification_stats['_costs'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
 			                                             [matching_costs[label] for label in self.labels('train')] + \
@@ -249,14 +245,20 @@ class AtemporalClassifier(Classifier):
 				                                        'Test-snippet', i, \
 				                                        metadata[tentative_prediction]['db-index'], \
 				                                        fair) )
-			else:													#  #  The tentative prediction is None if applied conditions make ALL possibilities impossible.
+			else:													#  The tentative prediction is None if applied conditions make ALL possibilities impossible.
 				classification_stats['_tests'].append( (prediction, ground_truth_label, \
 				                                        0.0, 0.0, \
 				                                        'Test-snippet', i, \
 				                                        -1, \
 				                                        fair) )
-			classification_stats['_test-conf'].append( tuple([confidences[x] for x in self.labels('train')]) )
-			classification_stats['_test-prob'].append( tuple([probabilities[x] for x in self.labels('train')]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Confs...    Ground-Truth-Label    {fair,unfair}
+			classification_stats['_test-conf'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
+			                                                 [confidences[x] for x in self.labels('train')] + \
+			                                                 [ground_truth_label, fair]) )
+																	#  First-Timestamp    Final-Timestamp    Source-Enactment    Probs...    Ground-Truth-Label    {fair,unfair}
+			classification_stats['_test-prob'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
+			                                                 [probabilities[x] for x in self.labels('train')] + \
+			                                                 [ground_truth_label, fair]) )
 
 			if self.render:											#  Put the query and the template side by side.
 				if prediction is not None:							#  If there's no prediction, there is nothing to render.
