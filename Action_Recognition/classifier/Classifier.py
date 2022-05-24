@@ -22,8 +22,16 @@ The Classifier object really serves as a home for attributes and functions used 
 '''
 class Classifier():
 	def __init__(self, **kwargs):
+		#############################################################
+		#  Define permissible values for confidence function and    #
+		#  hand schema.                                             #
+		#############################################################
 		self.confidence_function_names = ['sum2', 'sum3', 'sum4', 'sum5', 'n-min-obsv', 'min-obsv', 'max-marg', '2over1']
 		self.hand_schema_names = ['left-right', 'strong-hand']
+
+		#############################################################
+		#  Define subvector lookup codes.                           #
+		#############################################################
 		self.hand_subvector_codes = {}
 		self.hand_subvector_codes['LHx'] = 0
 		self.hand_subvector_codes['LHy'] = 1
@@ -37,6 +45,17 @@ class Classifier():
 		self.hand_subvector_codes['RH0'] = 9
 		self.hand_subvector_codes['RH1'] = 10
 		self.hand_subvector_codes['RH2'] = 11
+
+		#############################################################
+		#  Set default pipeline components.                         #
+		#############################################################
+		self.matchingcost_to_probability = {}
+		self.matchingcost_to_probability['mode'] = None				#  By default, do not expect an MLP to directly compute label probabilities.
+		self.matchingcost_to_probability['pipeline'] = None
+
+		self.confidence_to_probability = {}
+		self.confidence_to_probability['mode'] = None				#  By default, do not expect an isotonic lookup, and do not expect an MLP.
+		self.confidence_to_probability['pipeline'] = None
 
 		if 'conf_func' in kwargs:									#  Were we given a confidence function?
 			assert isinstance(kwargs['conf_func'], str) and kwargs['conf_func'] in self.confidence_function_names, \
@@ -52,6 +71,26 @@ class Classifier():
 		else:
 			self.diagonal_cost = 2.0								#  Default to 2.0.
 
+		if 'config' in kwargs:										#  Were we given a configuration, as a file path or a dictionary?
+			assert isinstance(kwargs['config'], str) or (isinstance(kwargs['config'], dict) and \
+			                                             'matching-cost-to-probability' in kwargs['config'] and \
+			                                             'confidence-to-probability' in kwargs['config'] and \
+			                                             isinstance(kwargs['config']['matching-cost-to-probability'], dict) and \
+			                                             isinstance(kwargs['config']['confidence-to-probability'], dict) and \
+			                                             'mode' in kwargs['config']['matching-cost-to-probability'] and \
+			                                             'pipeline' in kwargs['config']['matching-cost-to-probability'] and \
+			                                             'mode' in kwargs['config']['confidence-to-probability'] and \
+			                                             'pipeline' in kwargs['config']['confidence-to-probability']), \
+			  'Argument \'config\' passed to Classifier must be either a filepath (string) to a config file or a dictionary with the appropriate keys.'
+			if isinstance(kwargs['config'], str):
+				self.load_config_file(kwargs['config'])
+			else:
+				self.matchingcost_to_probability['mode'] = kwargs['config']['matching-cost-to-probability']['mode']
+				self.matchingcost_to_probability['pipeline'] = kwargs['config']['matching-cost-to-probability']['pipeline']
+
+				self.confidence_to_probability['mode'] = kwargs['config']['confidence-to-probability']['mode']
+				self.confidence_to_probability['pipeline'] = kwargs['config']['confidence-to-probability']['pipeline']
+
 		if 'verbose' in kwargs:
 			assert isinstance(kwargs['verbose'], bool), \
 			       'Argument \'verbose\' passed to Classifier must be a boolean.'
@@ -59,7 +98,7 @@ class Classifier():
 		else:
 			self.verbose = False									#  Default to False.
 
-		if 'threshold' in kwargs:									#  Were we given a threshold?
+		if 'threshold' in kwargs:									#  Were we given a threshold (for predictions)?
 			assert isinstance(kwargs['threshold'], float), 'Argument \'threshold\' passed to Classifier must be a float.'
 			self.threshold = kwargs['threshold']
 		else:
@@ -68,14 +107,19 @@ class Classifier():
 		if 'isotonic_file' in kwargs and kwargs['isotonic_file'] is not None:
 			assert isinstance(kwargs['isotonic_file'], str), 'Argument \'isotonic_file\' passed to Classifier must be a string.'
 			self.load_isotonic_map(kwargs['isotonic_file'])
-		else:
-			self.isotonic_map = None
 
 		self.conditions = None										#  Were we given cut-off conditions?
 		if 'conditions' in kwargs and kwargs['conditions'] is not None:
 			assert isinstance(kwargs['conditions'], str) or isinstance(kwargs['conditions'], list), \
 			       'Argument \'conditions\' passed to Classifier must be a string or a list of strings.'
 			self.load_conditions(kwargs['conditions'])
+
+		if 'presence_threshold' in kwargs:							#  Were we given an object presence threshold?
+			assert isinstance(kwargs['presence_threshold'], float) and kwargs['presence_threshold'] > 0.0 and kwargs['presence_threshold'] <= 1.0, \
+			       'Argument \'presence_threshold\' passed to Classifier must be a float in (0.0, 1.0].'
+			self.object_presence_threshold = kwargs['presence_threshold']
+		else:
+			self.object_presence_threshold = 0.5
 
 		if 'hands_coeff' in kwargs:									#  Were we given a hands-subvector coefficient?
 			assert isinstance(kwargs['hands_coeff'], float), 'Argument \'hands_coeff\' passed to Classifier must be a float.'
@@ -101,20 +145,6 @@ class Classifier():
 			self.hand_schema = kwargs['hand_schema']
 		else:
 			self.hand_schema = 'strong-hand'						#  Default to strong-hand.
-
-		if 'mlp' in kwargs:											#  Were we given an MLP?
-			assert isinstance(kwargs['mlp'], MLP), \
-			       'Argument \'mlp\' passed to Classifier must be an instance of the class MLP.'
-			self.mlp = kwargs['mlp']
-		else:
-			self.mlp = None
-
-		if 'presence_threshold' in kwargs:							#  Were we given an object presence threshold?
-			assert isinstance(kwargs['presence_threshold'], float) and kwargs['presence_threshold'] > 0.0 and kwargs['presence_threshold'] <= 1.0, \
-			       'Argument \'presence_threshold\' passed to Classifier must be a float in (0.0, 1.0].'
-			self.object_presence_threshold = kwargs['presence_threshold']
-		else:
-			self.object_presence_threshold = 0.5
 
 		if 'open_begin' in kwargs:									#  Were we told to permit or refuse an open beginning?
 			assert isinstance(kwargs['open_begin'], bool), \
@@ -171,12 +201,6 @@ class Classifier():
 		self.side_by_side_source_super['x'] = 10
 		self.side_by_side_source_super['y'] = 130
 		self.side_by_side_source_super['fontsize'] = 1.0
-
-	#  Unify this object's outputs with a unique time stamp.
-	def time_stamp(self):
-		now = datetime.datetime.now()								#  Build a distinct substring so I don't accidentally overwrite results.
-		file_timestamp = now.strftime("%d") + now.strftime("%m") + now.strftime("%Y")[-2:] + 'T' + now.strftime("%H:%M:%S").replace(':', '')
-		return file_timestamp
 
 	#################################################################
 	#  Loading.                                                     #
@@ -293,7 +317,8 @@ class Classifier():
 		if self.verbose:
 			print('>>> Loading isotonic map from "' + isotonic_file + '".')
 
-		self.isotonic_map = {}										#  key:(lower-bound, upper-bound) ==> val:probability
+		self.confidence_to_probability['mode'] = 'isotonic'
+		self.confidence_to_probability['pipeline'] = {}				#  key:(lower-bound, upper-bound) ==> val:probability
 
 		fh = open(isotonic_file, 'r')
 		for line in fh.readlines():
@@ -311,11 +336,11 @@ class Classifier():
 					ub = float(arr[1])
 
 				p = float(arr[2])
-				self.isotonic_map[ (lb, ub) ] = p
+				self.confidence_to_probability['pipeline'][ (lb, ub) ] = p
 		fh.close()
 
 		if self.verbose:
-			for k, v in sorted(self.isotonic_map.items()):
+			for k, v in sorted(self.confidence_to_probability['pipeline'].items()):
 				print('    [' + "{:.6f}".format(k[0]) + ', ' + "{:.6f}".format(k[1]) + '] ==> ' + "{:.6f}".format(v))
 
 		return
@@ -363,12 +388,41 @@ class Classifier():
 					print(' '*max_header_str_len + ' + '.join(self.conditions[key]['or']))
 		return
 
+	#  Load the pipeline from file.
+	def load_config_file(self, filename):
+		if self.verbose:
+			print('>>> Loading config file "' + filename + '"')
+
+		fh = open(filename, 'r')
+		for line in fh.readlines():
+			if line[0] != '#':
+				arr = line.strip().split('\t')
+				if arr[0] == 'matching-cost-to-probability':
+					self.matchingcost_to_probability['mode'] = arr[1]
+					if self.matchingcost_to_probability['mode'] == 'mlp':
+						self.matchingcost_to_probability['pipeline'] = MLP(arr[2], executable=arr[3])
+						if self.verbose:
+							print('    MLP(' + arr[2] + ') to compute probabilities from matching costs.')
+
+				elif arr[0] == 'confidence-to-probability':
+					self.confidence_to_probability['mode'] = arr[1]
+					if self.confidence_to_probability['mode'] == 'isotonic':
+						self.load_isotonic_map(arr[2])
+
+					elif self.confidence_to_probability['mode'] == 'mlp':
+						self.confidence_to_probability['pipeline'] = MLP(arr[2], executable=arr[3])
+						if self.verbose:
+							print('    MLP(' + arr[2] + ') to compute probabilities from confidence scores.')
+
+		fh.close()
+
+		return
+
 	#################################################################
-	#  Shared classification engine.                                #
+	#  Classification prep.                                         #
 	#################################################################
 
 	#  Return a dictionary of the form: key: action-label ==> val: inf
-	#  Include the nothing-label "*" if self.mlp is not None.
 	def prepare_matching_costs_table(self):
 		matching_costs = {}											#  Matching cost for the nearest neighbor per class.
 																	#  In defense of hashing versus building a flat list:
@@ -383,29 +437,10 @@ class Classifier():
 		for label in labels:										#  Initialize everything to infinitely far away.
 			matching_costs[label] = float('inf')
 
-		if self.mlp is not None:									#  The MLP explicitly predicts the nothing-label.
-			matching_costs['*'] = float('inf')
-
 		return matching_costs
 
-	#  "metadata" includes innformation about matches: which template snippet made the best match, and how the template and query frames align.
-	def prepare_metadata_table(self):
-		metadata = {}												#  Track information about the best match per class.
-		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
-			labels = self.labels('both')							#  Include labels the classifier may not know; these will simply be empty.
-		else:
-			labels = sorted(np.unique(self.y_train))
-
-		for label in labels:
-			metadata[label] = {}
-																	#  The MLP explicitly predicts the nothing-label.
-		if self.mlp is not None:									#  Included here for completeness, but the DB is never expected
-			metadata['*'] = {}										#  to include "nothing" snippets.
-
-		return metadata
-
 	#  Return a dictionary of the form: key: action-label ==> val: 0.0
-	def prepare_probabilities_table(self):
+	def prepare_probabilities_table(self, include_nothing_label=False):
 		probabilities = {}											#  If we apply isotonic mapping, then this is a different measure than confidence.
 		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
 			labels = self.labels('train')
@@ -415,31 +450,86 @@ class Classifier():
 		for label in labels:
 			probabilities[label] = 0.0
 
-		if self.mlp is not None:									#  The MLP explicitly predicts the nothing-label.
+		if include_nothing_label:									#  Expect to explicitly predict the nothing-label.
 			probabilities['*'] = 0.0
 
 		return probabilities
 
+	#  "metadata" includes innformation about matches: which template snippet made the best match, and how the template and query frames align.
+	def prepare_metadata_table(self, include_nothing_label=False):
+		metadata = {}												#  Track information about the best match per class.
+		if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+			labels = self.labels('both')							#  Include labels the classifier may not know; these will simply be empty.
+		else:
+			labels = sorted(np.unique(self.y_train))
+
+		for label in labels:
+			metadata[label] = {}
+
+		if include_nothing_label:									#  Allowed here for completeness, but the DB is never expected
+			metadata['*'] = {}										#  to include "nothing" snippets.
+
+		return metadata
+
+	#################################################################
+	#  Shared classification engine.                                #
+	#################################################################
+
 	#  This is the core classification routine, usable by Atemporal and Temporal subclasses alike.
 	#  Given a single query sequence, return:
 	#    - nearest_neighbor_label:                      string
-	#    - Matching costs over all classes:             dict = key: label ==> val: least cost
+	#    - Matching costs over all classes:             dict = key: label ==> val: least cost for that label
 	#    - Confidences over all classes:                dict = key: label ==> val: confidence
+	#                                                          * May include the nothing-label
 	#    - Probability distribution over all classes:   dict = key: label ==> val: probability
+	#                                                          * May include the nothing-label
 	#    - Metadata (nearest neighbor indices, alignment sequences) over all classes
 	#                                                   dict = key: label ==> val:{key: db-index         ==> DB index
 	#                                                                              key: template-indices ==> frames
 	#                                                                              key: query-indices    ==> frames }
-	#  Use the C-extension DTW module.
+	#  Use the DTW module written in C.
 	def classify(self, query):
+																	#  Always begin with matching costs.
 		nearest_neighbor_label, matching_costs, metadata = self.DTW_match(query)
+																	#  Compute confidences according to self.confidence_function.
+																	#  Get a dictionary of key:label ==> val:confidence.
+		confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
 
-		probabilities = self.prepare_probabilities_table()			#  Initialize all probabilities to zero.
+		#############################################################
+		#  The Classifier can pass the matching costs to a Multi-   #
+		#  Layer Perceptron to estimate probabilities directly.     #
+		#                                                           #
+		#  In this case, classify() returns:                        #
+		#    nearest_neighbor_label                                 #
+		#    matching_costs in R^N                                  #
+		#    confidences    in R^N                                  #
+		#    probabilities  in R^{N+1}                              #
+		#    metadata                                               #
+		#############################################################
+		if self.matchingcost_to_probability['mode'] == 'mlp':		#  Expect self.matchingcost_to_probability['pipeline'] is an MLP object.
+
+			probabilities = self.prepare_probabilities_table(True)	#  Initialize all to zero. Explicitly predict the nothing-label.
+
+			if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
+				labels = self.labels('train')
+			else:
+				labels = sorted(np.unique(self.y_train))
+
+			labels_and_nothing = labels + ['*']						#  Append the nothing-label.
+
+			assert isinstance(self.matchingcost_to_probability['pipeline'], MLP), \
+			  'In order to estimate label probabilities directly from matching costs, the Classifier.matchingcost_to_probability[\'pipeline\'] must be an MLP object.'
+
+			y_hat = self.matchingcost_to_probability['pipeline'].run( [matching_costs[label] for label in labels] )
+
+			for i in range(0, len(labels_and_nothing)):
+				probabilities[ labels_and_nothing[i] ] = y_hat[i]
 
 		#############################################################
 		#  The Classifier can use the matching costs to compute     #
 		#  confidences according to self.confidence_function and    #
 		#  then convert these to probabilities.                     #
+		#                                                           #
 		#  In this case, classify() returns:                        #
 		#    nearest_neighbor_label                                 #
 		#    matching_costs in R^N                                  #
@@ -447,23 +537,17 @@ class Classifier():
 		#    probabilities  in R^N                                  #
 		#    metadata                                               #
 		#############################################################
+		if self.confidence_to_probability['mode'] == 'isotonic':	#  Expect self.confidence_to_probability['pipeline'] is an isotonic lookup table.
 
-		if self.mlp is None:
-																	#  Get a dictionary of key:label ==> val:confidence.
-			confidences = self.compute_confidences(sorted([x for x in matching_costs.items()], key=lambda x: x[1]))
+			probabilities = self.prepare_probabilities_table(False)	#  Initialize all to zero. DO NOT explicitly predict the nothing-label.
 
+			for label, confidence in confidences.items():
+				brackets = sorted(self.confidence_to_probability['pipeline'].keys())
+				i = 0
+				while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
+					i += 1
 
-			if self.isotonic_map is not None:						#  We have an isotonic mapping to apply.
-				for label, confidence in confidences.items():
-					brackets = sorted(self.isotonic_map.keys())
-					i = 0
-					while i < len(brackets) and not (confidence > brackets[i][0] and confidence <= brackets[i][1]):
-						i += 1
-
-					probabilities[label] = self.isotonic_map[ brackets[i] ]
-			else:													#  If no isotonic mapping is provided,
-				for label, confidence in confidences.items():		#  then probability = (normalized) confidence, which is sloppy, but... meh.
-					probabilities[label] = confidence
+				probabilities[label] = self.confidence_to_probability['pipeline'][ brackets[i] ]
 
 			prob_norm = sum( probabilities.values() )				#  Normalize probabilities.
 			for k in probabilities.keys():
@@ -473,17 +557,20 @@ class Classifier():
 					probabilities[k] = 0.0
 
 		#############################################################
-		#  Alternatively, the Classifier can pass the matching      #
-		#  costs to an MLP to directly compute probabilities.       #
+		#  The Classifier can pass confidence scores to a Multi-    #
+		#  Layer Perceptron (MLP) to estimate probabilities.        #
+		#                                                           #
 		#  In this case, classify() returns:                        #
 		#    nearest_neighbor_label                                 #
 		#    matching_costs in R^N                                  #
-		#    confidences    = None                                  #
+		#    confidences    in R^N                                  #
 		#    probabilities  in R^{N+1}                              #
 		#    metadata                                               #
 		#############################################################
+		elif self.confidence_to_probability['mode'] == 'mlp':		#  Expect self.confidence_to_probability['pipeline'] is an MLP object.
 
-		else:
+			probabilities = self.prepare_probabilities_table(True)	#  Initialize all to zero. Explicitly predict the nothing-label.
+
 			if type(self).__name__ == 'AtemporalClassifier' or type(self).__name__ == 'TemporalClassifier':
 				labels = self.labels('train')
 			else:
@@ -491,12 +578,38 @@ class Classifier():
 
 			labels_and_nothing = labels + ['*']						#  Append the nothing-label.
 
-			y_hat = self.mlp.run( [matching_costs[label] for label in labels] )
+			assert isinstance(self.confidence_to_probability['pipeline'], MLP), \
+			  'In order to estimate label probabilities from confidence scores, the Classifier.confidence_to_probability[\'pipeline\'] must be an MLP object.'
+
+			y_hat = self.confidence_to_probability['pipeline'].run( [confidences[label] for label in labels] )
 
 			for i in range(0, len(labels_and_nothing)):
 				probabilities[ labels_and_nothing[i] ] = y_hat[i]
 
-			confidences = None
+		#############################################################
+		#  The Classifier can simply normalize confidence scores and#
+		#  consider them probabilities, though this is discouraged. #
+		#                                                           #
+		#  In this case, classify() returns:                        #
+		#    nearest_neighbor_label                                 #
+		#    matching_costs in R^N                                  #
+		#    confidences    in R^N                                  #
+		#    probabilities  in R^N                                  #
+		#    metadata                                               #
+		#############################################################
+		else:														#  No isotonic map and no MLP?
+
+			probabilities = self.prepare_probabilities_table(False)	#  Initialize all to zero. DO NOT explicitly predict the nothing-label.
+
+			for label, confidence in confidences.items():			#  Then probability = (normalized) confidence, which is sloppy, but... meh.
+				probabilities[label] = confidence
+
+			prob_norm = sum( probabilities.values() )				#  Normalize probabilities.
+			for k in probabilities.keys():
+				if prob_norm > 0.0:
+					probabilities[k] /= prob_norm
+				else:
+					probabilities[k] = 0.0
 
 		return nearest_neighbor_label, matching_costs, confidences, probabilities, metadata
 
@@ -849,6 +962,10 @@ class Classifier():
 																	#                           (p_0, p_1, p_2, ..., p_N) for test 1,
 																	#                           (p_0, p_1, p_2, ..., p_N) for test 2,
 																	#                           ... ]
+		classification_stats['_test-smooth-prob'] = []				#  key:_test-smooth-prob ==> val:[ (sp_0, sp_1, sp_2, ..., sp_N) for test 0,
+																	#                                  (sp_0, sp_1, sp_2, ..., sp_N) for test 1,
+																	#                                  (sp_0, sp_1, sp_2, ..., sp_N) for test 2,
+																	#                                  ... ]
 		classification_stats['_conf'] = []							#  key:_conf  ==> val:[ (confidence-for-label, label, ground-truth,
 																	#                        source-enactment, first-snippet-timestamp, final-snippet-timestamp),
 																	#                       (confidence-for-label, label, ground-truth,
@@ -896,6 +1013,12 @@ class Classifier():
 	#################################################################
 	#  Reporting.                                                   #
 	#################################################################
+
+	#  Unify this object's outputs with a unique time stamp.
+	def time_stamp(self):
+		now = datetime.datetime.now()								#  Build a distinct substring so I don't accidentally overwrite results.
+		file_timestamp = now.strftime("%d") + now.strftime("%m") + now.strftime("%Y")[-2:] + 'T' + now.strftime("%H:%M:%S").replace(':', '')
+		return file_timestamp
 
 	#  Given 'predictions_truths' is a list of tuples: ( prediction, ground-truth,
 	#                                                    confidence-of-prediction, probability-of-prediction,
@@ -953,6 +1076,7 @@ class Classifier():
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
 
 		train_labels = self.labels('train')
+
 		fh = open('matching_costs-' + file_timestamp + '.txt', 'w')
 		fh.write('#  Classifier matching costs made at ' + time.strftime('%l:%M%p %Z on %b %d, %Y') + '\n')
 		fh.write('#  RECOGNIZABLE ACTIONS:\n')
@@ -960,6 +1084,7 @@ class Classifier():
 		fh.write('#  Each line is:\n')
 		fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
 		         '    '.join(['Cost_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair,unfair}' + '\n')
+
 		for i in range(0, len(costs)):
 			fh.write(str(costs[i][0]) + '\t' + str(costs[i][1]) + '\t' + costs[i][2] + '\t')
 
@@ -1260,6 +1385,8 @@ class Classifier():
 	#                                                        (c_0, c_1, c_2, ..., c_N) for test 1,
 	#                                                        (c_0, c_1, c_2, ..., c_N) for test 2,
 	#                                                        ... ]
+	#  Each line of this file reads:  time-start  <tab>  time-end  <tab>  enactment  <tab>  conf_0  <tab>  conf_1  <tab> ... <tab>  conf_N  <tab>  ground-truth  <tab>  {fair/unfair}.
+	#  Note that we will never have a confidence score explicitly for the nothing-label.
 	def write_per_test_confidences(self, stats, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
@@ -1273,9 +1400,21 @@ class Classifier():
 			fh.write('#    ' + ' '.join(sys.argv) + '\n')
 		fh.write('#  RECOGNIZABLE ACTIONS:\n')
 		fh.write('#    ' + '\t'.join(train_labels) + '\n')
+		fh.write('#  Each line is:\n')
+		fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
+		         '    '.join(['Conf_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair,unfair}' + '\n')
 
 		for conf in stats['_test-conf']:
-			fh.write('\t'.join([str(x) for x in conf]) + '\n')
+			fh.write(str(conf[0]) + '\t' + str(conf[1]) + '\t' + conf[2] + '\t')
+
+			for i in range(0, len(train_labels)):					#  Write all costs.
+				fh.write(str(conf[i + 3]) + '\t')
+			fh.write(conf[-2] + '\t')								#  Write ground truth.
+
+			if conf[-1]:											#  Write fairness.
+				fh.write('fair\n')
+			else:
+				fh.write('unfair\n')
 
 		fh.close()
 
@@ -1285,6 +1424,8 @@ class Classifier():
 	#                                                        (p_0, p_1, p_2, ..., p_N) for test 1,
 	#                                                        (p_0, p_1, p_2, ..., p_N) for test 2,
 	#                                                        ... ]
+	#  Each line of this file reads:  time-start  <tab>  time-end  <tab>  enactment  <tab>  prob_0  <tab>  prob_1  <tab> ... <tab>  prob_N  <tab>  ground-truth  <tab>  {fair/unfair}.
+	#  Note that we MAY have a probability explicitly for the nothing-label.
 	def write_per_test_probabilities(self, stats, file_timestamp=None):
 		if file_timestamp is None:
 			file_timestamp = self.time_stamp()						#  Build a distinct substring so I don't accidentally overwrite results.
@@ -1298,9 +1439,32 @@ class Classifier():
 			fh.write('#    ' + ' '.join(sys.argv) + '\n')
 		fh.write('#  RECOGNIZABLE ACTIONS:\n')
 		fh.write('#    ' + '\t'.join(train_labels) + '\n')
+		fh.write('#  Each line is:\n')
+
+		if len(stats['_test-prob'][0]) == len(train_labels) + 5:	#  No nothing-label probability.
+			include_nothing = False
+			fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
+			         '    '.join(['Prob_' + label for label in train_labels]) + '    Ground-Truth-Label    {fair,unfair}' + '\n')
+		else:														#  Includes the nothing-label.
+			include_nothing = True
+			fh.write('#    First-Timestamp    Final-Timestamp    Source-Enactment    ' + \
+			         '    '.join(['Prob_' + label for label in train_labels]) + '    Prob_*    Ground-Truth-Label    {fair,unfair}' + '\n')
 
 		for prob in stats['_test-prob']:
-			fh.write('\t'.join([str(x) for x in prob]) + '\n')
+			fh.write(str(prob[0]) + '\t' + str(prob[1]) + '\t' + prob[2] + '\t')
+
+			for i in range(0, len(train_labels)):					#  Write all costs.
+				fh.write(str(prob[i + 3]) + '\t')
+
+			if include_nothing:
+				fh.write(str(prob[len(train_labels) + 3]) + '\t')
+
+			fh.write(prob[-2] + '\t')								#  Write ground truth.
+
+			if prob[-1]:											#  Write fairness.
+				fh.write('fair\n')
+			else:
+				fh.write('unfair\n')
 
 		fh.close()
 
