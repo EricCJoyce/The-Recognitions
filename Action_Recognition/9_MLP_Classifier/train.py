@@ -91,7 +91,7 @@ class BookmarkCallback(keras.callbacks.Callback):
 		plt.ylabel('Loss')
 		plt.legend()
 		plt.savefig('latest.png')
-		plt.clf()													#  Clear the graph--or it'll fill up with garbage
+		plt.clf()													#  Clear the graph--or it'll fill up with old plots
 
 		return
 
