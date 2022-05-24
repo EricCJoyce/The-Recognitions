@@ -1,4 +1,5 @@
 from classifier import *
+from mlp import *
 import shutil
 import sys
 
@@ -37,6 +38,9 @@ def main():
 	                              isotonic_file=params['map-conf-prob'], \
 	                              verbose=params['verbose'])
 
+	if params['config-file'] is not None:							#  Got a config file?
+		temporal.load_config_file(params['config-file'])
+
 	for label in params['hidden-labels']:							#  Hide all hidden labels.
 		temporal.hide_label(label)
 
@@ -61,6 +65,8 @@ def get_command_line_params():
 	params['enactments'] = []										#  Names of enactments on which to perform action recognition.
 	params['database'] = None										#  The database file to use.
 	params['detection-model'] = None								#  Default to ground-truth.
+	params['config-file'] = None									#  No default config file.
+
 	params['conf-function'] = 'sum2'								#  The default confidence function.
 	params['map-conf-prob'] = None									#  Default to using confidence scores.
 	params['threshold'] = 0.0										#  Default to 0.0 threshold.
@@ -74,8 +80,10 @@ def get_command_line_params():
 	params['temporal-buffer-stride'] = 1
 	params['hand-schema'] = 'strong-hand'
 	params['hand-coeff'] = 1.0
-	params['one-hot-coeff'] = 6.0
-	params['props-coeff'] = 9.0
+	#params['one-hot-coeff'] = 6.0
+	params['one-hot-coeff'] = 1.0
+	#params['props-coeff'] = 9.0
+	params['props-coeff'] = 1.0
 	params['dtw-diagonal'] = 2.0									#  Classifier defaults to 2.0 anyway.
 	params['hidden-labels'] = []
 	params['conditions-files'] = None
@@ -89,8 +97,10 @@ def get_command_line_params():
 
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
-	flags = ['-e', '-db', '-model', \
-	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', '-dtw', '-hide', '-cond', \
+	flags = ['-e', '-db', '-model', '-config', \
+	         '-conf', '-th', '-map', '-detth', '-minpx', '-relabel', \
+	         '-hands', '-handc', '-props', '-onehot', \
+	         '-dtw', '-hide', '-cond', \
 	         '-lddir', '-id', '-fair', \
 	         '-v', '-?', '-help', '--help']
 	for i in range(1, len(sys.argv)):
@@ -113,6 +123,8 @@ def get_command_line_params():
 					params['database'] = argval
 				elif argtarget == '-model':
 					params['detection-model'] = argval
+				elif argtarget == '-config':
+					params['config-file'] = argval
 				elif argtarget == '-th':
 					params['threshold'] = min(1.0, max(0.0, float(argval)))
 				elif argtarget == '-detth':
@@ -127,6 +139,14 @@ def get_command_line_params():
 					params['dtw-diagonal'] = float(argval)
 				elif argtarget == '-relabel':
 					params['relabel-file'] = argval
+				elif argtarget == '-hands':
+					params['hand-schema'] = argval
+				elif argtarget == '-handc':
+					params['hand-coeff'] = float(argval)
+				elif argtarget == '-props':
+					params['props-coeff'] = float(argval)
+				elif argtarget == '-onehot':
+					params['one-hot-coeff'] = float(argval)
 				elif argtarget == '-hide':
 					params['hidden-labels'].append(argval)
 				elif argtarget == '-cond':
@@ -150,6 +170,7 @@ def usage():
 	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -model training/exported-models/ssd_mobilenet_640x640 -db 10f-split2-stride2-MobileNet0.2-train.db -map MobileNet-th0.2.isomap -relabel relabels.txt -detth 0.2 -lddir MobileNet-th0.2 -id MobileNet-th0.2 -v')
 	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT-sum2.isomap -relabel relabels.txt -lddir GT -id GT -hide Read\\ \\(C.\\ Panel\\) -v')
 	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -map GT-sum2.isomap -relabel relabels.txt -cond hands.conditions -lddir GT -id GT -v')
+	print(' e.g.:  python3 classify.py -e Enactment11 -e Enactment12 -db 10f-split2-stride2-GT-train.db -config ConfidenceMLP.config -relabel relabels.txt -lddir GT/g0 -id GT -v')
 	print('')
 	print('Flags:  -e        Following argument is the name of an enactment on which to perform classification.')
 	print('                  Must have at least one.')
@@ -157,6 +178,8 @@ def usage():
 	print('                  REQUIRED.')
 	print('        -model    Following argument is the path to a trained object detector.')
 	print('                  If this argument is not provided, then ground-truth objects will be used.')
+	print('        -config   Following argument is the path to a config file.')
+	print('                  The default configuration is to convert confidence scores to probabilities without isotonic lookup or an MLP.')
 	print('        -map      Following argument is the path to a file describing probability bins to which confidence scores are mapped.')
 	print('                  If this argument is not provided, then confidence scores will be used in place of probabilities.')
 	print('                  This will function but is not advised.')
@@ -165,6 +188,14 @@ def usage():
 	print('                  used to compute the probability bins during isotonic regression.')
 	print('        -th       Following real number in [0.0, 1.0] is the threshold to use when classifying actions.')
 	print('                  The default is 0.0.')
+	print('        -hands    Following string in {' + ', '.join(c.hand_schema_names) + '} indicates the hand-encoding scheme the classifier should use.')
+	print('                  The default is \'strong-hand\'.')
+	print('        -handc    Following real number is the coefficient applied to the hands subvector.')
+	print('                  The default is 1.0.')
+	print('        -props    Following real number is the coefficient applied to the props subvector.')
+	print('                  The default is 1.0.')
+	print('        -onehot   Following real number is the coefficient applied to the hands one-hot subvector.')
+	print('                  The default is 1.0.')
 	print('        -relabel  Following argument is the path to a relabeling file, allowing you to rename actions at runtime.')
 	print('        -detth    Following real number in [0.0, 1.0] is the detection score threshold to use when recognizing objects.')
 	print('                  The default is 0.0.')
