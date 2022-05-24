@@ -168,6 +168,15 @@ def get_command_line_params():
 	return params
 
 def usage():
+	print('Convert a trained network from its native protobuff (*.pb) form to a Neuron-C (*.nn) form.')
+	print('')
+	print('Usage:  python3 convert_to_nn.py <parameters, preceded by flags>')
+	print(' e.g.:  python3 convert_to_nn.py -src 1982 -v')
+	print('')
+	print('Flags:  -src    MUST HAVE AT LEAST ONE. Following integer is an epoch to be converted.')
+	print('')
+	print('        -v      Enable verbosity')
+	print('        -?      Display this message')
 	return
 
 if __name__ == '__main__':
