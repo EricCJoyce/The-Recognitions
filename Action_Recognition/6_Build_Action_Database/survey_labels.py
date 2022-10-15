@@ -57,7 +57,7 @@ def main():
 		for enactment_name in sorted(present_in_enactments):
 			print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + enactment_name + ':' + ' '*(maxenactmentlen - len(enactment_name) + 2) + str(v.count(enactment_name)))
 		print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + 'TOTAL:' + ' '*(maxenactmentlen - 3) + str(len(v)) + ' instances')
-		print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + 'Avg.Duration:' + ' '*(maxenactmentlen - 6) + str(np.mean(durations[k])) + ' frames')
+		print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + 'Avg.Duration:' + ' '*max(maxenactmentlen - 11, 2) + str(np.mean(durations[k])) + ' frames')
 
 	return
 
