@@ -18,6 +18,7 @@ def main():
 		print('')
 																	#  Show which enactments contain which actions.
 	labels = {}														#  key: label ==> val: [filename, filename, ...]
+	durations = {}													#  key: label ==> val: [duration, duration, ...]
 
 	maxenactmentlen = 0												#  For the print-out, find the greatest enactment-name length.
 	for filename in params['enactments']:
@@ -32,14 +33,18 @@ def main():
 		if params['relabel-file'] is not None:
 			e.relabel_from_file(params['relabel-file'])
 
-		for label in e.labels():									#  Fill in dictionary.
+		for label in e.labels():									#  Fill in dictionaries.
 			if label != '*' and label not in labels:
 				labels[label] = []
+				durations[label] = []
 
 		for i in range(0, e.num_actions()):							#  Add instances to dictionary.
 			action_frames = e.action_frameset(i)
 			if len(action_frames) >= params['minimum-duration']:
 				labels[ e.actions[i].label ].append( filename )
+				durations[ e.actions[i].label ].append( len(action_frames) )
+		if params['verbose']:
+			print('\n')
 
 	maxlabellen = 0													#  For the print-out, find the greatest label length.
 	for k, v in sorted(labels.items()):
@@ -52,6 +57,7 @@ def main():
 		for enactment_name in sorted(present_in_enactments):
 			print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + enactment_name + ':' + ' '*(maxenactmentlen - len(enactment_name) + 2) + str(v.count(enactment_name)))
 		print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + 'TOTAL:' + ' '*(maxenactmentlen - 3) + str(len(v)) + ' instances')
+		print(' '*(len(k)) + ' '*(maxlabellen - len(k) + 2) + 'Avg.Duration' + ' '*(maxenactmentlen - 3) + str(np.mean(durations[k])) + ' frames')
 
 	return
 
@@ -92,7 +98,7 @@ def get_command_line_params():
 def usage():
 	print('Scan the given enactments and report all unique action labels.')
 	print('')
-	print('Usage:  python3 survey_labels.py <parameters, preceded by flags>')
+	print('Usage: python3 survey_labels.py <parameters, preceded by flags>')
 	print('')
 	print('e.g.:  python3 survey_labels.py -e BackBreaker1 -e Enactment1 -e Enactment2 -e Enactment3 -e Enactment4 -e Enactment5 -e Enactment6 -e Enactment9 -e Enactment10 -e Enactment11 -e Enactment12 -e MainFeederBox1 -e Regulator1 -e Regulator2 -relabel relabels.txt -v')
 	print('')
