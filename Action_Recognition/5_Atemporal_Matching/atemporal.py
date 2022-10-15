@@ -15,7 +15,7 @@ def main():
 	                                conf_func=params['confidence-function'], threshold=params['threshold'], \
 	                                dtw_diagonal=params['dtw-diagonal'], \
 	                                isotonic_file=params['isotonic-file'], conditions_file=params['conditions-file'], \
-	                                hand_schema=params['hand-schema'], hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], \
+	                                hand_schema=params['hand-schema'], hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], hands_onehot_coeff=params['onehot-coeff'], \
 	                                train_portion=params['train-portion'], test_portion=params['test-portion'], \
 	                                minimum_length=params['minimum-length'], shuffle=params['shuffle'], \
 	                                render=params['render'], verbose=params['verbose'])
@@ -72,8 +72,9 @@ def get_command_line_params():
 	params['stride'] = 2											#  Stride of the slide.
 
 	params['hand-schema'] = 'strong-hand'							#  Hand subvector encoding.
-	params['hands-coeff'] = 1.0										#  Coefficient for the hands subvector (excluding the one-hot components.)
+	params['hands-coeff'] = 1.0										#  Coefficient for the hands subvectors (excluding the one-hot components.)
 	params['props-coeff'] = 1.0										#  Coefficient for the props subvector.
+	params['onehot-coeff'] = 1.0									#  Coefficient for the one-hot subvectors.
 
 	params['minimum-length'] = 2
 	params['shuffle'] = False
@@ -95,7 +96,7 @@ def get_command_line_params():
 																	#  Permissible setting flags
 	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-split', '-splits', '-window', '-stride', \
 	         '-conf', '-th', '-iso', '-cond', '-minlen', '-shuffle', '-dtw', \
-	         '-schema', '-hand', '-hands', '-prop', '-props', '-relabel', '-color', '-colors', \
+	         '-schema', '-hand', '-hands', '-prop', '-props', '-onehot', '-relabel', '-color', '-colors', \
 	         '-render', '-V', '-?', '-help', '--help', \
 	         '-User', '-imgw', '-imgh', '-fontsize']
 	for i in range(1, len(sys.argv)):
@@ -158,6 +159,8 @@ def get_command_line_params():
 					params['hands-coeff'] = float(argval)
 				elif argtarget == '-prop' or argtarget == '-props':
 					params['props-coeff'] = float(argval)
+				elif argtarget == '-onehot':
+					params['onehot-coeff'] = float(argval)
 
 				elif argtarget == '-imgw':
 					params['imgw'] = max(1, int(argval))
@@ -204,8 +207,9 @@ def usage():
 	print('')
 	print('        -schema   Following string indicates which hand schema to apply to the descriptors.')
 	print('                  Must be in {' + ', '.join(c.hand_schema_names) + '}. Default is "strong-hand".')
-	print('        -hands    Following real number is the coefficient for the hands subvector. Default is 1.0.')
+	print('        -hands    Following real number is the coefficient for the hand subvectors. Default is 1.0.')
 	print('        -props    Following real number is the coefficient for the props subvector. Default is 1.0.')
+	print('        -onehot   Following real number is the coefficient for the one-hot hand-state subvectors. Default is 1.0.')
 	print('')
 	print('        -conf     Following string indicates which confidence function to use.')
 	print('                  Must be in {' + ', '.join(c.confidence_function_names) + '}. Default is "sum2".')
