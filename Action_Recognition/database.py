@@ -1018,6 +1018,8 @@ class Database():
 
 			magnitudes.append( np.linalg.norm(vec) )
 
+		assert len(magnitudes) > 0, 'WARNING! ' + snippet[0] + '[' + str(snippet[1]) + ', ' + str(snippet[3]) + ') is empty!'
+
 		return np.mean(magnitudes)
 
 	#  For each vector in the given 'snippet', compute the magnitude of the left-hand subvector only, excluding the one-hot-encoding.
