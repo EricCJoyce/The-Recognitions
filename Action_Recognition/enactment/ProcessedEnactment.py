@@ -20,9 +20,16 @@ class ProcessedEnactment():
 		self.vector_length = None
 		self.object_detection_source = None
 
+		if 'include_nothings' in kwargs:
+			assert isinstance(kwargs['include_nothings'], bool), \
+			       'Argument \'include_nothings\' passed to ProcessedEnactment must be a Boolean.'
+			include_nothings = kwargs['include_nothings']
+		else:
+			include_nothings = False								#  Default to False.
+
 		if 'verbose' in kwargs:
 			assert isinstance(kwargs['verbose'], bool), \
-			       'Argument \'verbose\' passed to Classifier must be a Boolean.'
+			       'Argument \'verbose\' passed to ProcessedEnactment must be a Boolean.'
 			self.verbose = kwargs['verbose']
 		else:
 			self.verbose = False									#  Default to False.
@@ -36,7 +43,10 @@ class ProcessedEnactment():
 		self.actions = []											#  List of tuples: (label, start time, start frame, end time, end frame).
 																	#  Note that we avoid using the enactment.Action class because these are
 																	#  not supposed to be mutable after processing.
-		self.load_from_file()
+		if include_nothings:
+			self.load_from_file_include_nothings()
+		else:
+			self.load_from_file()
 
 	def load_from_file(self):
 		if self.verbose:
@@ -134,6 +144,109 @@ class ProcessedEnactment():
 					sys.stdout.flush()
 			ctr += 1
 
+		if prev_action is not None and current_action != '*':		#  Cap the final action, if applicable.
+			self.actions[-1] = (self.actions[-1][0], self.actions[-1][1], self.actions[-1][2], time_stamp + 1.0 / self.fps, self.frames[time_stamp]['file'])
+
+		if self.verbose:
+			print('')
+
+		return
+
+	def load_from_file_include_nothings(self):
+		if self.verbose:
+			print('>>> Loading "' + self.enactment_name + '" from file.')
+
+		reading_dimensions = False
+		reading_fps = False
+		reading_gaussian = False
+		reading_object_detection_source = False
+		reading_recognizable_objects = False
+		reading_encoding_structure = False
+
+		self.frames = {}											#  (Re)set.
+		self.actions = []											#  Will include negative-class action tuples.
+
+		fh = open(self.enactment_name + '.enactment', 'r')
+		lines = fh.readlines()
+		fh.close()
+
+		num_lines = len(lines)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		ctr = 0
+		prev_action = None
+		current_action = None
+		for line in lines:
+			if line[0] == '#':										#  Header line
+				if 'WIDTH & HEIGHT' in line:						#  Read this enactment's dimensions.
+					reading_dimensions = True
+				elif reading_dimensions:
+					arr = line[1:].strip().split('\t')
+					self.width = int(arr[0])
+					self.height = int(arr[1])
+					reading_dimensions = False
+
+				if 'FPS' in line:									#  Read this enactment's frames-per-second.
+					reading_fps = True
+				elif reading_fps:
+					arr = line[1:].strip().split('\t')
+					self.fps = int(arr[0])
+					reading_fps = False
+
+				if 'GAUSSIAN' in line:								#  Read this enactment's Gaussian3D parameters.
+					reading_gaussian = True
+				elif reading_gaussian:
+					arr = line[1:].strip().split('\t')
+					self.gaussian_parameters = tuple([float(x) for x in arr])
+					reading_gaussian = False
+
+				if 'OBJECT DETECTION SOURCE' in line:				#  Read this enactment's object-detection source.
+					reading_object_detection_source = True
+				elif reading_object_detection_source:
+					arr = line[1:].strip().split('\t')
+					self.object_detection_source = arr[0]
+					reading_object_detection_source = False
+
+				if 'RECOGNIZABLE OBJECTS' in line:					#  Read this enactment's recognizable objects.
+					reading_recognizable_objects = True
+				elif reading_recognizable_objects:
+					arr = line[1:].strip().split('\t')
+					self.recognizable_objects = tuple(arr)
+					self.vector_length = 12 + len(self.recognizable_objects)
+					reading_recognizable_objects = False
+
+				if 'ENCODING STRUCTURE' in line:					#  Read this enactment's encoding structure (contents of each non-comment line).
+					reading_encoding_structure = True
+				elif reading_encoding_structure:
+					arr = line[1:].strip().split('\t')
+					self.encoding_structure = tuple(arr)
+					reading_encoding_structure = False
+			else:													#  Vector line
+				arr = line.strip().split('\t')
+				time_stamp = float(arr[0])
+
+				self.frames[time_stamp] = {}
+				self.frames[time_stamp]['file']               = arr[1]
+				self.frames[time_stamp]['ground-truth-label'] = arr[2]
+				self.frames[time_stamp]['vector']             = tuple([float(x) for x in arr[3:]])
+
+				if self.frames[time_stamp]['ground-truth-label'] != current_action:
+					if current_action is not None:					#  Cap the outgoing action.
+						prev_action = current_action
+						self.actions[-1] = (self.actions[-1][0], self.actions[-1][1], self.actions[-1][2], time_stamp, self.frames[time_stamp]['file'])
+					current_action = self.frames[time_stamp]['ground-truth-label']
+					self.actions.append( (current_action, time_stamp, self.frames[time_stamp]['file'], None, None) )
+
+			if self.verbose:
+				if int(round(float(ctr) / float(num_lines) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_lines) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_lines) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+																	#  Cap the final action.
+		self.actions[-1] = (self.actions[-1][0], self.actions[-1][1], self.actions[-1][2], time_stamp + 1.0 / self.fps, self.frames[time_stamp]['file'])
+
 		if self.verbose:
 			print('')
 
@@ -145,6 +258,59 @@ class ProcessedEnactment():
 
 	def get_frames(self):
 		return sorted([x for x in self.frames.items()], key=lambda x: x[0])
+
+	#################################################################
+	#  Nothings: we may wish to explicitly identify sequences       #
+	#            with no action labels.                             #
+	#################################################################
+
+	def get_nothings(self):
+		nothings = []
+
+		fh = open(self.enactment_name + '.enactment', 'r')
+		lines = fh.readlines()
+		fh.close()
+
+		num_lines = len(lines)
+		prev_ctr = 0
+		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
+
+		ctr = 0
+		prev_action = None
+		current_action = None
+		for line in lines:
+			if line[0] != '#':										#  Vector line.
+				arr = line.strip().split('\t')
+				time_stamp = float(arr[0])
+
+				filename           = arr[1]
+				ground_truth_label = arr[2]
+				vector             = tuple([float(x) for x in arr[3:]])
+
+				if ground_truth_label != current_action:
+					prev_action = current_action
+					current_action = ground_truth_label
+																	#  Cap the outgoing nothing.
+					if prev_action is not None and prev_action == '*':
+						nothings[-1] = (nothings[-1][0], nothings[-1][1], nothings[-1][2], time_stamp, filename)
+																	#  Create the incoming nothing.
+					if current_action is not None and current_action == '*':
+						nothings.append( (current_action, time_stamp, filename, None, None) )
+
+			if self.verbose:
+				if int(round(float(ctr) / float(num_lines) * float(max_ctr))) > prev_ctr or prev_ctr == 0:
+					prev_ctr = int(round(float(ctr) / float(num_lines) * float(max_ctr)))
+					sys.stdout.write('\r[' + '='*prev_ctr + ' ' + str(int(round(float(ctr) / float(num_lines) * 100.0))) + '%]')
+					sys.stdout.flush()
+			ctr += 1
+
+		if prev_action is not None and current_action == '*':		#  Cap the final nothing.
+			nothings[-1] = (nothings[-1][0], nothings[-1][1], nothings[-1][2], time_stamp + 1.0 / self.fps, filename)
+
+		if self.verbose:
+			print('')
+
+		return nothings
 
 	#################################################################
 	#  Recap: list the current state of the enactment               #
