@@ -52,7 +52,7 @@ class Database():
 		self.protected_vector = {}									#  For elements of the props subvector. key: object-label ==> val: True
 
 	#  Parse the ProcessedEnactments allocated to this database.
-	def commit(self):
+	def commit(self, include_nothings=False):
 		assert self.align_recognizable_objects(), 'The given enactments must recognize the same objects and have the same vector length.'
 
 		self.Xy = {}												#  Putative training set, keyed by labels.
@@ -80,12 +80,12 @@ class Database():
 		max_ctr = os.get_terminal_size().columns - 7				#  Leave enough space for the brackets, space, and percentage.
 		num = 0
 		for enactment in self.enactments:
-			e = ProcessedEnactment(enactment, verbose=False)
+			e = ProcessedEnactment(enactment, include_nothings=include_nothings, verbose=False)
 			num += e.num_actions()
 		prev_ctr = 0
 		ctr = 0
 		for enactment in self.enactments:
-			e = ProcessedEnactment(enactment, verbose=False)
+			e = ProcessedEnactment(enactment, include_nothings=include_nothings, verbose=False)
 			for action_ctr in range(0, e.num_actions()):
 				action = e.actions[action_ctr]						#  Action = (label, start time, start frame, end time, end frame).
 				label       = action[0]
