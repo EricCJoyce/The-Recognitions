@@ -5,31 +5,46 @@ from classifier import *
 
 def main():
 	params = get_command_line_params()								#  Collect parameters
-	if params['helpme'] or (len(params['training']) == 0 and len(params['divide']) == 0) or \
-	                       (len(params['test']) == 0 and len(params['divide']) == 0):
+	if params['helpme'] or (len(params['training']) == 0 and len(params['divide']) == 0 and len(params['test']) == 0):
 		usage()
 		return
 
 	atemporal = AtemporalClassifier(window_size=params['window'], stride=params['stride'], \
 	                                train=params['training'], divide=params['divide'], test=params['test'], \
 	                                conf_func=params['confidence-function'], threshold=params['threshold'], \
-	                                dtw_diagonal=params['dtw-diagonal'], dtw_l=params['dtw-L'], \
+	                                dtw_diagonal=params['dtw-diagonal'], dtw_l=params['dtw-l'], \
 	                                isotonic_file=params['isotonic-file'], conditions_file=params['conditions-file'], \
-	                                hand_schema=params['hand-schema'], hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], hands_onehot_coeff=params['onehot-coeff'], \
+	                                hand_schema=params['hand-schema'], hands_coeff=params['hands-coeff'], props_coeff=params['props-coeff'], \
 	                                train_portion=params['train-portion'], test_portion=params['test-portion'], \
 	                                minimum_length=params['minimum-length'], shuffle=params['shuffle'], \
 	                                render=params['render'], verbose=params['verbose'])
+
+	if params['config-file'] is not None:							#  Got a config file?
+		atemporal.load_config_file(params['config-file'])
 
 	if params['color-file'] is not None:
 		atemporal.load_color_map(params['color-file'])
 
 	if params['relabel-file'] is not None:
-		atemporal.relabel_from_file(params['relabel-file'])
+		atemporal.relabel_allocations_from_file(params['relabel-file'])
 
 	if params['split-file'] is not None:
 		atemporal.load_data_split(params['split-file'])
 
 	atemporal.commit()												#  Chop the allocated actions up into snippets.
+
+	if params['database'] is not None:								#  Got a database?
+		atemporal.load_db(params['database'])
+
+	if params['fair']:												#  Only run fair tests: drop from the test set anything
+		atemporal.drop_bogie_snippets()								#  with a ground-truth label not represented in the training set.
+
+	if params['reduce-training-set']:								#  Reduce the training set to only what will actually be tested in the test set.
+		train_labels = atemporal.labels('train')
+		test_labels = atemporal.labels('test')
+		for train_label in train_labels:
+			if train_label not in test_labels:
+				atemporal.drop_snippets_from_train(train_label)
 
 	stats = atemporal.classify()									#  Do it.
 	time_stamp = atemporal.time_stamp()								#  Save a time stamp to unify our outputs.
@@ -39,8 +54,8 @@ def main():
 	trace = M.trace()												#  Total correct.
 	total = M.sum()													#  Total snippets.
 
-	atemporal.write_confusion_matrix(stats['_tests'], time_stamp)	#  Write confidence files.
-	atemporal.write_matching_costs(stats['_costs'], params['result-string'])
+	atemporal.write_confusion_matrix(stats['_tests'], time_stamp)	#  Confusion matrix.
+	atemporal.write_matching_costs(stats['_costs'], time_stamp)
 	atemporal.write_confidences(stats['_conf'], time_stamp)
 	atemporal.write_results(stats, time_stamp)
 	atemporal.write_timing(time_stamp)
@@ -53,6 +68,11 @@ def main():
 
 def get_command_line_params():
 	params = {}
+	params['database'] = None										#  The database file to use.
+	params['config-file'] = None									#  No default config file.
+	params['fair'] = False
+	params['reduce-training-set'] = False
+
 	params['training'] = []											#  List of enactment names to allocate entirely to the training set.
 	params['test'] = []												#  List of enactment names to allocate entirely to the test set.
 	params['divide'] = []											#  List of enactment names to allocate to training and testing in the given proportion.
@@ -72,15 +92,15 @@ def get_command_line_params():
 	params['stride'] = 2											#  Stride of the slide.
 
 	params['hand-schema'] = 'strong-hand'							#  Hand subvector encoding.
-	params['hands-coeff'] = 1.0										#  Coefficient for the hands subvectors (excluding the one-hot components.)
+	params['hands-coeff'] = 1.0										#  Coefficient for the hands subvector (excluding the one-hot components.)
 	params['props-coeff'] = 1.0										#  Coefficient for the props subvector.
-	params['onehot-coeff'] = 1.0									#  Coefficient for the one-hot subvectors.
+	params['one-hot-coeff'] = 1.0
 
-	params['minimum-length'] = 2
+	params['minimum-length'] = 10
 	params['shuffle'] = False
 
 	params['dtw-diagonal'] = 2.0									#  The Classifier defaults to 2.0 anyway.
-	params['dtw-L'] = 1												#  The Classifier defaults to L1 anyway.
+	params['dtw-l'] = 1												#  The Classifier defaults to L1 anyway.
 
 	params['color-file'] = None										#  Recognizable-object color look up table.
 	params['render'] = False										#  Rendering, yes or no?
@@ -95,15 +115,20 @@ def get_command_line_params():
 
 	argtarget = None												#  Current argument to be set
 																	#  Permissible setting flags
-	flags = ['-t', '-v', '-d', '-tPor', '-vPor', '-split', '-splits', '-window', '-stride', \
+	flags = ['-config', '-db', \
+	         '-t', '-v', '-d', '-tPor', '-vPor', '-split', '-splits', '-window', '-stride', \
 	         '-conf', '-th', '-iso', '-cond', '-minlen', '-shuffle', '-dtwd', '-dtwl', \
-	         '-schema', '-hand', '-hands', '-prop', '-props', '-onehot', '-relabel', '-color', '-colors', \
+	         '-schema', '-hand', '-hands', '-prop', '-props', '-onehot', '-relabel', '-fair', '-reduce', '-color', '-colors', \
 	         '-render', '-V', '-?', '-help', '--help', \
 	         '-User', '-imgw', '-imgh', '-fontsize']
 	for i in range(1, len(sys.argv)):
 		if sys.argv[i] in flags:
 			if sys.argv[i] == '-V':
 				params['verbose'] = True
+			elif sys.argv[i] == '-fair':
+				params['fair'] = True
+			elif sys.argv[i] == '-reduce':
+				params['reduce-training-set'] = True
 			elif sys.argv[i] == '-?' or sys.argv[i] == '-help' or sys.argv[i] == '--help':
 				params['helpme'] = True
 			elif sys.argv[i] == '-render':
@@ -116,7 +141,12 @@ def get_command_line_params():
 			argval = sys.argv[i]
 
 			if argtarget is not None:
-				if argtarget == '-t':
+				if argtarget == '-config':
+					params['config-file'] = argval
+				elif argtarget == '-db':
+					params['database'] = argval
+
+				elif argtarget == '-t':
 					params['training'].append(argval)
 				elif argtarget == '-v':
 					params['test'].append(argval)
@@ -154,7 +184,7 @@ def get_command_line_params():
 				elif argtarget == '-dtwd':
 					params['dtw-diagonal'] = float(argval)
 				elif argtarget == '-dtwl':
-					params['dtw-L'] = min(max(1, int(argval)), 2)
+					params['dtw-l'] = int(argval)
 
 				elif argtarget == '-schema':
 					params['hand-schema'] = argval
@@ -163,7 +193,7 @@ def get_command_line_params():
 				elif argtarget == '-prop' or argtarget == '-props':
 					params['props-coeff'] = float(argval)
 				elif argtarget == '-onehot':
-					params['onehot-coeff'] = float(argval)
+					params['one-hot-coeff'] = float(argval)
 
 				elif argtarget == '-imgw':
 					params['imgw'] = max(1, int(argval))
@@ -196,6 +226,11 @@ def usage():
 	print('Usage:  python3 atemporal.py <parameters, preceded by flags>')
 	print(' e.g.:  python3 atemporal.py -d BackBreaker1 -d Enactment1 -d Enactment2 -d Enactment3 -d Enactment4 -d Enactment5 -d Enactment6 -d Enactment9 -d Enactment10 -d MainFeederBox1 -d Regulator1 -d Regulator2 -split data-split-04oct21.txt -V')
 	print(' e.g.:  python3 atemporal.py -t BackBreaker1 -t Enactment1 -t Enactment2 -t Enactment3 -t Enactment4 -t Enactment5 -t Enactment6 -t Enactment9 -t Enactment10 -t MainFeederBox1 -t Regulator1 -t Regulator2 -v Enactment11 -v Enactment12 -split data-split-1_09sep21.txt -colors colors_gt.txt -V -render')
+	print(' e.g.:  python3 atemporal.py -v GT/g0/Enactment11 -v GT/g0/Enactment12 -config RollingBufferNoNothingMLP.config -relabel relabels.txt -db 10f-stride2-GT.db -V -fair')
+	print(' e.g.:  python3 atemporal.py -v GT/g0/Enactment11 -v GT/g0/Enactment12 -config IsomapLookup.config -relabel relabels.txt -db 10f-s2-g0-GT.db -V -fair')
+	print('        python3 atemporal.py -v GT/g1/Enactment11 -v GT/g1/Enactment12 -config IsomapLookup.config -relabel relabels.txt -db 10f-s2-g1-GT.db -V -fair')
+	print('        python3 atemporal.py -v GT/g2/Enactment11 -v GT/g2/Enactment12 -config IsomapLookup.config -relabel relabels.txt -db 10f-s2-g2-GT.db -V -fair')
+	print('        python3 atemporal.py -v GT/g3/Enactment11 -v GT/g3/Enactment12 -config IsomapLookup.config -relabel relabels.txt -db 10f-s2-g3-GT.db -V -fair')
 	print('')
 	print('Flags:  -t        Following argument is the filepath to an enactment to be allocated entirely to the training set.')
 	print('        -v        Following argument is the filepath to an enactment to be allocated entirely to the test set.')
@@ -208,20 +243,24 @@ def usage():
 	print('        -window   Following integer > 0 is the length of the sliding window used to chop actions into snippets. Default is 10.')
 	print('        -stride   Following integer > 0 is the stride of the sliding window. Default is 2.')
 	print('')
+	print('        -db       Following argument is the path to a database file. No database is used by default.')
+	print('        -config   Following argument is the path to a config file.')
+	print('                  The default configuration is to convert confidence scores to probabilities without isotonic lookup or an MLP.')
+	print('')
 	print('        -schema   Following string indicates which hand schema to apply to the descriptors.')
 	print('                  Must be in {' + ', '.join(c.hand_schema_names) + '}. Default is "strong-hand".')
-	print('        -hands    Following real number is the coefficient for the hand subvectors. Default is 1.0.')
+	print('        -hands    Following real number is the coefficient for the hands subvector. Default is 1.0.')
 	print('        -props    Following real number is the coefficient for the props subvector. Default is 1.0.')
-	print('        -onehot   Following real number is the coefficient for the one-hot hand-state subvectors. Default is 1.0.')
 	print('')
 	print('        -conf     Following string indicates which confidence function to use.')
 	print('                  Must be in {' + ', '.join(c.confidence_function_names) + '}. Default is "sum2".')
 	print('        -th       Following real number is the confidence/probability threshold. Default is 0.0.')
 	print('        -dtwd     Following real number is the weight to give to diagonal moves in the DTW cost matrix. Default is 2.0.')
-	print('        -dtwl     Following int in {1, 2} indicates the distance functions used to build DTW\'s cost matrix. Default is 1, meaning L1.')
+	print('        -dtwl     Following integer > 0 is norm to use when comparing descriptors in DTW. Default is 1.')
 	print('')
 	print('        -relabel  Following argument is the filepath to a relabeling table.')
 	print('        -iso      Following argument is the filepath to an isotonic mapping table.')
+	print('                  Note that including an isotonic map forces the classifier configuration to change.')
 	print('        -cond     Following argument is the filepath to a cutoff conditions table.')
 	print('')
 	print('        -color    Used when rendering, the following argument is filepath to a color lookup table. If no color table is')
