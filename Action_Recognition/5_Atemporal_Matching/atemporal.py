@@ -249,6 +249,7 @@ def usage():
 	print('')
 	print('        -schema   Following string indicates which hand schema to apply to the descriptors.')
 	print('                  Must be in {' + ', '.join(c.hand_schema_names) + '}. Default is "strong-hand".')
+	print('        -onehot   Following real number is the coefficient for the one-hot hands subvector. Default is 1.0.')
 	print('        -hands    Following real number is the coefficient for the hands subvector. Default is 1.0.')
 	print('        -props    Following real number is the coefficient for the props subvector. Default is 1.0.')
 	print('')
