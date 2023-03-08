@@ -1969,6 +1969,7 @@ class Classifier():
 		self.write_per_test_probabilities(stats, file_timestamp)	#  Log per-test probabilities.
 		self.write_evaluation_scores(stats, file_timestamp)			#  Log scores.
 		self.write_detailed_matches(stats, file_timestamp)			#  Log match details.
+		self.write_timing(file_timestamp)							#  Log timing.
 
 		return
 
