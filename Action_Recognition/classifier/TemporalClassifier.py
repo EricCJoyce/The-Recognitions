@@ -91,6 +91,14 @@ class TemporalClassifier(Classifier):
 		else:
 			self.gaussian = Gaussian3D(mu=(0.0, 0.0, 0.0), sigma_gaze=(4.0, 3.5, 6.5), sigma_hand=(2.0, 2.0, 2.0))
 
+		if 'label_k' in kwargs:										#  Were we given a number of labels k to constitute a labeled snippet?
+			assert isinstance(kwargs['label_k'], int) and kwargs['label_k'] >= 0, \
+			  'Argument \'label_k\' passed to TemporalClassifier must be an integer >= 0.'
+			self.label_k = kwargs['label_k']
+		else:
+			self.label_k = 6										#  Default to 6. This means that the newest frame plus 5 more frames must have label L
+																	#  in order for the ground-truth of the query snippet to be L.
+
 		if 'min_bbox' in kwargs:									#  Were we given a minimum bounding box area for recognized objects?
 			assert isinstance(kwargs['min_bbox'], int) and kwargs['min_bbox'] > 0, \
 			  'Argument \'min_bbox\' passed to TemporalClassifier must be an integer greater than 0.'
@@ -291,6 +299,7 @@ class TemporalClassifier(Classifier):
 				print('    Minimum detection area:       ' + str(self.minimum_bbox_area))
 				print('    Minimum detection confidence: ' + str(self.detection_confidence))
 				print('    Prediction threshold:         ' + str(self.threshold))
+				print('    Query magnitude threshold:    ' + str(self.query_threshold))
 
 			nearest_neighbor_label = None							#  Initially nothing.
 			prediction = None
@@ -323,7 +332,7 @@ class TemporalClassifier(Classifier):
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
 																	#  Are the contents of the ground-truth buffer "fair"?
 				#fair = self.ground_truth_buffer_full() and self.ground_truth_buffer_uniform() and self.ground_truth_buffer_familiar()
-				fair = self.ground_truth_buffer_full() and (self.ground_truth_buffer_newest_frame_label() in self.labels('train') or self.ground_truth_buffer_newest_frame_label() == '*')
+				fair = self.ground_truth_buffer_full() and (self.query_snippet_label() in self.labels('train') or self.query_snippet_label() == '*')
 
 				#####################################################
 				#  If the rolling buffer is full, then classify.    #
@@ -334,7 +343,7 @@ class TemporalClassifier(Classifier):
 				#####################################################
 				if self.is_rolling_buffer_full() and (fair or not skip_unfair):
 																	#  Identify ground-truth.
-					ground_truth_label = self.ground_truth_buffer_newest_frame_label()
+					ground_truth_label = self.query_snippet_label()
 
 					prediction = None								#  (Re)set.
 
@@ -356,6 +365,8 @@ class TemporalClassifier(Classifier):
 					#                    val: {query-indices,       #
 					#                          template-indices,    #
 					#                          db-index}            #
+					#                  key: mean-query-magnitude    #
+					#                    ==> val: float             #
 					#################################################
 
 					#################################################
@@ -385,7 +396,8 @@ class TemporalClassifier(Classifier):
 							                                       enactment_input, \
 							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
 							                                       time_stamp_buffer[ frame_ctr ]) )
-
+																	#  Save mean query magnitude.
+						classification_stats['_mean-query-magnitude'].append( metadata['mean-query-magnitude'] )
 																	#  If we are rendering confidences, then add to the confidences buffer.
 						if self.render and 'confidence' in self.render_modes:
 							confidence_store = self.push_buffer(sorted_confidences, confidence_store)
@@ -495,6 +507,8 @@ class TemporalClassifier(Classifier):
 							                                       enactment_input, \
 							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
 							                                       time_stamp_buffer[ frame_ctr ]) )
+																	#  Save mean query magnitude.
+						classification_stats['_mean-query-magnitude'].append( metadata['mean-query-magnitude'] )
 
 						#############################################
 						#  Smooth the contents of the temporal      #
@@ -690,7 +704,7 @@ class TemporalClassifier(Classifier):
 			self.timing['load-model'] = t1_stop - t1_start
 
 		if self.verbose:
-			print('    Done')
+			print('    Done\n')
 
 		t0_start = time.process_time()								#  Start timer.
 		for enactment_input in self.enactment_inputs:				#  Treat each input enactment as a separate slice of time.
@@ -769,6 +783,7 @@ class TemporalClassifier(Classifier):
 				print('    Minimum detection area:       ' + str(self.minimum_bbox_area))
 				print('    Minimum detection confidence: ' + str(self.detection_confidence))
 				print('    Prediction threshold:         ' + str(self.threshold))
+				print('    Query magnitude threshold:    ' + str(self.query_threshold))
 
 			prediction = None										#  Initially nothing.
 
@@ -900,7 +915,7 @@ class TemporalClassifier(Classifier):
 				self.push_ground_truth_buffer( ground_truth_buffer[frame_ctr] )
 																	#  Are the contents of the ground-truth buffer "fair"?
 				#fair = self.ground_truth_buffer_full() and self.ground_truth_buffer_uniform() and self.ground_truth_buffer_familiar()
-				fair = self.ground_truth_buffer_full() and (self.ground_truth_buffer_newest_frame_label() in self.labels('train') or self.ground_truth_buffer_newest_frame_label() == '*')
+				fair = self.ground_truth_buffer_full() and (self.query_snippet_label() in self.labels('train') or self.query_snippet_label() == '*')
 
 				#####################################################
 				#  If the rolling buffer is full, then classify.    #
@@ -911,7 +926,7 @@ class TemporalClassifier(Classifier):
 				#####################################################
 				if self.is_rolling_buffer_full():
 																	#  Identify ground-truth.
-					ground_truth_label = self.ground_truth_buffer_newest_frame_label()
+					ground_truth_label = self.query_snippet_label()
 
 					prediction = None								#  (Re)set.
 
@@ -933,6 +948,8 @@ class TemporalClassifier(Classifier):
 					#                    val: {query-indices,       #
 					#                          template-indices,    #
 					#                          db-index}            #
+					#                  key: mean-query-magnitude    #
+					#                    ==> val: float             #
 					#################################################
 
 					#################################################
@@ -961,6 +978,8 @@ class TemporalClassifier(Classifier):
 							                                       enactment_input, \
 							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
 							                                       time_stamp_buffer[ frame_ctr ]) )
+																	#  Save the mean query magnitude.
+						classification_stats['_mean-query-magnitude'].append( metadata['mean-query-magnitude'] )
 
 						#############################################
 						#  Smooth the contents of the temporal      #
@@ -998,12 +1017,20 @@ class TemporalClassifier(Classifier):
 						#############################################
 						classification_stats = self.update_stats(prediction, ground_truth_label, (fair or not skip_unfair), classification_stats)
 																	#  Make ourselves able to render each match side by side.
-						classification_stats['_matches'].append( (prediction, nearest_neighbor_label, ground_truth_label, metadata[nearest_neighbor_label]['db-index'], \
-						                                          enactment_input, \
-						                                          time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
-						                                          time_stamp_buffer[ min(num - 1, frame_ctr + 1) ], \
-						                                          metadata[nearest_neighbor_label]['query-indices'], metadata[nearest_neighbor_label]['template-indices'], \
-						                                          fair) )
+						if nearest_neighbor_label is not None:
+							classification_stats['_matches'].append( (prediction, nearest_neighbor_label, ground_truth_label, metadata[nearest_neighbor_label]['db-index'], \
+							                                          enactment_input, \
+							                                          time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+							                                          time_stamp_buffer[ min(num - 1, frame_ctr + 1) ], \
+							                                          metadata[nearest_neighbor_label]['query-indices'], metadata[nearest_neighbor_label]['template-indices'], \
+							                                          fair) )
+						else:
+							classification_stats['_matches'].append( (prediction, nearest_neighbor_label, ground_truth_label, -1, \
+							                                          enactment_input, \
+							                                          time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
+							                                          time_stamp_buffer[ min(num - 1, frame_ctr + 1) ], \
+							                                          None, None, \
+							                                          fair) )
 																	#  Whether or not it's skipped, put it on record.
 						if nearest_neighbor_label is not None:
 							classification_stats['_tests'].append( (prediction, ground_truth_label, \
@@ -1071,6 +1098,8 @@ class TemporalClassifier(Classifier):
 							                                       enactment_input, \
 							                                       time_stamp_buffer[ max(0, frame_ctr - (self.rolling_buffer_length - 1)) ], \
 							                                       time_stamp_buffer[ frame_ctr ]) )
+																	#  Save the mean query magnitude.
+						classification_stats['_mean-query-magnitude'].append( metadata['mean-query-magnitude'] )
 
 						#############################################
 						#  Smooth the contents of the temporal      #
@@ -1315,6 +1344,15 @@ class TemporalClassifier(Classifier):
 			i += 1
 
 		return label
+
+	#  This is where we define--not what is a "fair" test--but what constitutes a labeled query.
+	#  A given enactment's snippet's label is the lable of the newest frame if there are also (k - 1) more frames with that label.
+	#  Otherwise, the snippet is UNLABELED and the classifier should predict the nothing-label.
+	def query_snippet_label(self):
+		newest_label = self.ground_truth_buffer_newest_frame_label()
+		if newest_label is not None and self.buffer_labels.count(newest_label) >= self.label_k:
+			return newest_label
+		return '*'
 
 	#################################################################
 	#  Profiling.                                                   #
