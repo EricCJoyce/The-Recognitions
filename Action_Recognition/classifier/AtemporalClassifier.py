@@ -215,6 +215,7 @@ class AtemporalClassifier(Classifier):
 			#                  in R^N     if ! matchingcost_to_probability['explicit-nothing'] && ! confidence_to_probability['explicit-nothing'] #
 			#                  in R^{N+1} if   matchingcost_to_probability['explicit-nothing'] || confidence_to_probability['explicit-nothing']   #
 			#  metadata:       key: label ==> val: {query-indices, tmplate-indices, db-index}                                                     #
+			#                       mean-query-magnitude ==> val: float                                                                           #
 			#######################################################################################################################################
 																	#  Save all costs for all labels.
 			classification_stats['_costs'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
@@ -316,6 +317,8 @@ class AtemporalClassifier(Classifier):
 				classification_stats['_test-prob'].append( tuple([0, self.window_size - 1, 'Test-snippet'] + \
 				                                                 [probabilities[x] for x in self.labels('train')] + \
 				                                                 [ground_truth_label, fair]) )
+																	#  Save the mean query magnitude.
+			classification_stats['_mean-query-magnitude'].append( metadata['mean-query-magnitude'] )
 
 			if self.render:											#  Put the query and the template side by side.
 				if prediction is not None:							#  If there's no prediction, there is nothing to render.
