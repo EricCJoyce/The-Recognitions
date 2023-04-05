@@ -247,7 +247,7 @@ class TemporalClassifier(Classifier):
 					confidence_store = []
 				if 'probabilities' in self.render_modes:
 					probability_store = []
-				if 'smooth' in self.render_modes:
+				if 'smooth' in self.render_modes or 'smoothed' in self.render_modes:
 					smoothed_probability_store = []
 
 			vector_buffer = []										#  Takes the place of X_test or an input stream.
@@ -318,7 +318,7 @@ class TemporalClassifier(Classifier):
 				if 'probabilities' in self.render_modes:
 					vid_probabilities = cv2.VideoWriter(enactment_input + '_probabilities_seismograph.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
 					                                    pe.fps, (pe.width * 2, pe.height) )
-				if 'smooth' in self.render_modes:
+				if 'smooth' in self.render_modes or 'smoothed' in self.render_modes:
 					vid_smoothed_probabilities = cv2.VideoWriter(enactment_input + '_smoothed-probabilities_seismograph.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), \
 					                                             pe.fps, (pe.width * 2, pe.height) )
 
@@ -420,7 +420,7 @@ class TemporalClassifier(Classifier):
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
-						if self.render and 'smooth' in self.render_modes:
+						if self.render and ('smooth' in self.render_modes or 'smoothed' in self.render_modes):
 							smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
 						#############################################
@@ -525,7 +525,7 @@ class TemporalClassifier(Classifier):
 						t1_stop = time.process_time()				#  Stop timer.
 						self.timing['temporal-smoothing'].append(t1_stop - t1_start)
 
-						if self.render and 'smooth' in self.render_modes:
+						if self.render and ('smooth' in self.render_modes or 'smoothed' in self.render_modes):
 							smoothed_probability_store = self.push_buffer(smoothed_probabilities, smoothed_probability_store)
 
 						#############################################
@@ -631,7 +631,7 @@ class TemporalClassifier(Classifier):
 						concat_frame[:, self.width:, :] = graph[:, :, :]
 						vid_probabilities.write(concat_frame)
 
-					if 'smooth' in self.render_modes:
+					if 'smooth' in self.render_modes or 'smoothed' in self.render_modes:
 						t1_start = time.process_time()				#  Stop timer.
 						if metadata is not None:
 							label_picks = dict( [(x[0], x[1]['db-index']) for x in metadata.items() if x[0] in self.labels('train')] )
