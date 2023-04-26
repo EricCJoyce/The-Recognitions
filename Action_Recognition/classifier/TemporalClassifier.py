@@ -694,6 +694,8 @@ class TemporalClassifier(Classifier):
 					print('>>> Bootup: no object-detection model to load; using DETECTION SOURCE (*_' + self.use_detection_source + '_detections.txt) for detection')
 			else:
 				print('>>> Bootup: loading object-detection model "' + model + '"')
+				print('            Detection threshold = ' + str(self.detection_confidence))
+				print('            Minimum bounding box area = ' + str(self.minimum_bbox_area))
 
 		if model is not None:										#  Load saved model and build detection function.
 			t1_start = time.process_time()							#  Start timer.
@@ -1548,6 +1550,7 @@ class TemporalClassifier(Classifier):
 				               self.robject_colors[ mask[1] ][1], \
 				               self.robject_colors[ mask[1] ][0]), 3)
 
+		'''
 		if 'time_stamp' in kwargs:
 			assert isinstance(kwargs['time_stamp'], float), \
 			       'Argument \'time_stamp\' passed to TemporalClassifier.render_annotated_source_frame() must be a float.'
@@ -1571,6 +1574,7 @@ class TemporalClassifier(Classifier):
 				cv2.putText(vid_frame, kwargs['prediction'], (self.seismograph_prediction_super['x'], self.seismograph_prediction_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.seismograph_prediction_super['fontsize'], (0, 255, 0, 255), 3)
 			else:
 				cv2.putText(vid_frame, kwargs['prediction'], (self.seismograph_prediction_super['x'], self.seismograph_prediction_super['y']), cv2.FONT_HERSHEY_SIMPLEX, self.seismograph_prediction_super['fontsize'], (255, 255, 255, 255), 3)
+		'''
 
 		return vid_frame
 
