@@ -118,10 +118,6 @@ sudo apt-get install -y software-properties-common wget vim
 sudo apt-get autoremove
 ```
 
-**Windows**:
-
-???
-
 ### [TensorFlow](https://www.tensorflow.org/)
 
 We recommend TensorFlow for the GPU, version 2.6.
@@ -164,10 +160,10 @@ python3.6 setup.py build
 ```
 This creates a folder named `build`. Inside, find a file named `DTW.cpython-36m-x86_64-linux-gnu.so` or something named appropriately, given your system specs. Copy this `*.so` file into the `classifier` directory. Then, you can throw away the `build` directory.
 
-**Windows**:
-
-???
-
 ### Done for now.
 
 This gives you the boilerplate; additional requirements will be explained as each module requires them.
+
+## Data
+
+Available upon request.
